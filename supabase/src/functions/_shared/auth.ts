@@ -1,0 +1,165 @@
+// supabase/functions/_shared/auth.ts  
+  
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
+import { corsHeaders } from './cors.ts'  
+  
+interface JWTPayload {  
+  aud: string  
+  exp: number  
+  sub: string  
+  email: string  
+  phone?: string  
+  app_metadata: Record<string, any>  
+  user_metadata: Record<string, any>  
+  role: string  
+}  
+  
+/**  
+ * Cliente de Supabase para Edge Functions  
+ */  
+const supabaseClient = createClient(  
+  Deno.env.get('SUPABASE_URL') ?? '',  
+  Deno.env.get('SUPABASE_ANON_KEY') ?? '',  
+  {  
+    global: {  
+      headers: { Authorization: req.headers.get('Authorization')! },  
+    },  
+  }  
+)  
+  
+/**  
+ * Valida el token JWT de Supabase y extrae el payload  
+ */  
+export async function validateJWT(req: Request): Promise<JWTPayload | null> {  
+  try {  
+    const authHeader = req.headers.get('Authorization')  
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {  
+      return null  
+    }  
+  
+    const token = authHeader.replace('Bearer ', '')  
+      
+    // Verificar el token con Supabase  
+    const { data: { user }, error } = await supabaseClient.auth.getUser(token)  
+      
+    if (error || !user) {  
+      console.error('Error validating token:', error)  
+      return null  
+    }  
+  
+    return {  
+      aud: 'authenticated',  
+      exp: Math.floor(Date.now() / 1000) + 3600, // Approximate  
+      sub: user.id,  
+      email: user.email || '',  
+      phone: user.phone,  
+      app_metadata: user.app_metadata,  
+      user_metadata: user.user_metadata,  
+      role: user.role || 'authenticated'  
+    }  
+  } catch (error) {  
+    console.error('JWT validation error:', error)  
+    return null  
+  }  
+}  
+  
+/**  
+ * Middleware de autenticación para Edge Functions  
+ */  
+export function withAuth(handler: (req: Request, payload: JWTPayload) => Promise<Response>) {  
+  return async (req: Request): Promise<Response> => {  
+    // Manejar CORS preflight  
+    if (req.method === 'OPTIONS') {  
+      return new Response('ok', { headers: corsHeaders })  
+    }  
+  
+    const payload = await validateJWT(req)  
+      
+    if (!payload) {  
+      return new Response(  
+        JSON.stringify({ error: 'Unauthorized' }),  
+        {   
+          status: 401,   
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+        }  
+      )  
+    }  
+  
+    return handler(req, payload)  
+  }  
+}  
+  
+/**  
+ * Verifica si el usuario tiene un rol específico  
+ */  
+export function hasRole(payload: JWTPayload, role: string): boolean {  
+  return payload.app_metadata?.role === role || payload.role === role  
+}  
+  
+/**  
+ * Verifica si el usuario es premium  
+ */  
+export function isPremium(payload: JWTPayload): boolean {  
+  return payload.app_metadata?.is_premium === true ||   
+         payload.user_metadata?.is_premium === true  
+}  
+  
+/**  
+ * Obtiene el ID del usuario autenticado  
+ */  
+export function getUserId(payload: JWTPayload): string {  
+  return payload.sub  
+}  
+  
+/**  
+ * Respuesta de error de autenticación estandarizada  
+ */  
+export function authErrorResponse(message: string = 'Unauthorized', status: number = 401): Response {  
+  return new Response(  
+    JSON.stringify({ error: message }),  
+    {   
+      status,   
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+    }  
+  )  
+}  
+  
+/**  
+ * Verifica si el usuario puede acceder a un recurso específico  
+ */  
+export function canAccessResource(  
+  payload: JWTPayload,   
+  resourceOwnerId: string,   
+  allowAdmin: boolean = false  
+): boolean {  
+  const userId = getUserId(payload)  
+    
+  // El usuario puede acceder a sus propios recursos  
+  if (userId === resourceOwnerId) {  
+    return true  
+  }  
+    
+  // Admin puede acceder a todos los recursos (si está permitido)  
+  if (allowAdmin && hasRole(payload, 'admin')) {  
+    return true  
+  }  
+    
+  return false  
+}  
+  
+/**  
+ * Middleware para verificar propietario de recurso  
+ */  
+export function withResourceOwner(  
+  resourceOwnerId: string,  
+  handler: (req: Request, payload: JWTPayload) => Promise<Response>,  
+  allowAdmin: boolean = false  
+) {  
+  return async (req: Request, payload: JWTPayload): Promise<Response> => {  
+    if (!canAccessResource(payload, resourceOwnerId, allowAdmin)) {  
+      return authErrorResponse('Forbidden: You can only access your own resources', 403)  
+    }  
+      
+    return handler(req, payload)  
+  }  
+}
