@@ -117,22 +117,7 @@ export const RegisterScreen: React.FC = () => {
           keyboardType="email-address"  
           autoCapitalize="none"  
         />  
-            
-        <TextInput  
-          style={[  
-            styles.input,  
-            {  
-              borderColor: theme.colors.border,  
-              borderRadius: theme.borderRadius.md,  
-              backgroundColor: theme.colors.surface,  
-              color: theme.colors.text,  
-            },  
-          ]}  
-          placeholder="Usuario"  
-          placeholderTextColor={theme.colors.textTertiary}  
-          autoCapitalize="none"  
-        />  
-            
+                  
         <TextInput  
           style={[  
             styles.input,  
