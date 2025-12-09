@@ -70,14 +70,17 @@ class AuthService {
           email: userData.email,  
           firstName: userData.firstName,  
           lastName: userData.lastName,  
+          birthDate: new Date().toISOString(), 
+          createdAt: new Date().toISOString(),  
         },  
       ])  
       .select()  
       .single();  
   
     if (insertError) {  
-      throw new Error('Error al guardar datos del usuario');  
-    }  
+      console.error('Supabase insert error:', insertError);  
+      throw new Error(`Error al guardar datos del usuario: ${insertError.message}`);  
+    } 
   
     return newUserData;  
   }  

@@ -52,6 +52,7 @@ export const RegisterScreen: React.FC = () => {
       // Después de registrar, hacer login automáticamente  
       await login(email, password);  
     } catch (error) {  
+      console.error('Registration error:', error);  
       Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
