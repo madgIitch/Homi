@@ -1,4 +1,3 @@
-// App.tsx  
 /**  
  * HomiMatch - App de búsqueda de compañeros de piso  
  * @format  
