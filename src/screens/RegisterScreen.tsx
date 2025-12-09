@@ -28,14 +28,13 @@ export const RegisterScreen: React.FC = () => {
   const { login } = authContext;  
   const theme = useTheme();  
   const [email, setEmail] = useState('');  
-  const [username, setUsername] = useState('');  
   const [password, setPassword] = useState('');  
   const [firstName, setFirstName] = useState('');  
   const [lastName, setLastName] = useState('');  
   const [loading, setLoading] = useState(false);  
   
   const handleRegister = async () => {  
-    if (!email || !username || !password || !firstName || !lastName) {  
+    if (!email  || !password || !firstName || !lastName) {  
       Alert.alert('Error', 'Por favor completa todos los campos');  
       return;  
     }  
@@ -46,7 +45,6 @@ export const RegisterScreen: React.FC = () => {
       // You might want to add register method to AuthContext for consistency  
       await authService.register({  
         email,  
-        username,  
         password,  
         firstName,  
         lastName  
@@ -132,8 +130,6 @@ export const RegisterScreen: React.FC = () => {
           ]}  
           placeholder="Usuario"  
           placeholderTextColor={theme.colors.textTertiary}  
-          value={username}  
-          onChangeText={setUsername}  
           autoCapitalize="none"  
         />  
             
