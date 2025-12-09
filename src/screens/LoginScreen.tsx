@@ -1,11 +1,31 @@
-// screens/LoginScreen.tsx  
-import React, { useState } from 'react';  
+// src/screens/LoginScreen.tsx  
+import React, { useState, useContext } from 'react';  
 import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';  
+import { useNavigation } from '@react-navigation/native';  
+import { StackNavigationProp } from '@react-navigation/stack';  
+import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
-import { colors, typography, spacing, borderRadius } from '../theme';  
-import { authService } from '../services/authService';  
+import { useTheme } from '../theme/ThemeContext';  
+  
+type RootStackParamList = {  
+  Login: undefined;  
+  Register: undefined;  
+  Main: undefined;  
+};  
+  
+type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;  
   
 export const LoginScreen: React.FC = () => {  
+  const navigation = useNavigation<LoginScreenNavigationProp>();  
+  const authContext = useContext(AuthContext);  
+    
+  // Ensure context exists  
+  if (!authContext) {  
+    throw new Error('LoginScreen must be used within AuthProvider');  
+  }  
+    
+  const { login } = authContext;  
+  const theme = useTheme();  
   const [email, setEmail] = useState('');  
   const [password, setPassword] = useState('');  
   const [loading, setLoading] = useState(false);  
@@ -18,47 +38,66 @@ export const LoginScreen: React.FC = () => {
   
     setLoading(true);  
     try {  
-      const user = await authService.login({ email, password });  
-      // Navegar a pantalla principal  
-      navigation.navigate('Main');  
+      await login(email, password);  
+      // La navegación se manejará automáticamente por el AuthContext  
     } catch (error) {  
-      Alert.alert('Error', error.message);  
+      Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
     }  
   };  
   
   return (  
-    <View style={styles.container}>  
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
       <View style={styles.header}>  
-        <Text style={styles.logo}>HomiMatch</Text>  
-        <Text style={styles.subtitle}>Encuentra tu compañero ideal</Text>  
+        <Text style={[styles.logo, { color: theme.colors.primary }]}>HomiMatch</Text>  
+        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
+          Encuentra tu compañero ideal  
+        </Text>  
       </View>  
-        
+          
       <View style={styles.form}>  
         <TextInput  
-          style={styles.input}  
+          style={[  
+            styles.input,  
+            {  
+              borderColor: theme.colors.border,  
+              borderRadius: theme.borderRadius.md,  
+              backgroundColor: theme.colors.surface,  
+              color: theme.colors.text,  
+            },  
+          ]}  
           placeholder="Email"  
+          placeholderTextColor={theme.colors.textTertiary}  
           value={email}  
           onChangeText={setEmail}  
           keyboardType="email-address"  
           autoCapitalize="none"  
         />  
-          
+            
         <TextInput  
-          style={styles.input}  
+          style={[  
+            styles.input,  
+            {  
+              borderColor: theme.colors.border,  
+              borderRadius: theme.borderRadius.md,  
+              backgroundColor: theme.colors.surface,  
+              color: theme.colors.text,  
+            },  
+          ]}  
           placeholder="Contraseña"  
+          placeholderTextColor={theme.colors.textTertiary}  
           value={password}  
           onChangeText={setPassword}  
           secureTextEntry  
         />  
-          
+            
         <Button  
           title="Iniciar Sesión"  
           onPress={handleLogin}  
           loading={loading}  
         />  
-          
+            
         <Button  
           title="¿No tienes cuenta? Regístrate"  
           onPress={() => navigation.navigate('Register')}  
@@ -72,22 +111,20 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({  
   container: {  
     flex: 1,  
-    backgroundColor: colors.background,  
-    padding: spacing.lg,  
+    padding: 24,  
   },  
   header: {  
     alignItems: 'center',  
-    marginTop: spacing.xl * 2,  
-    marginBottom: spacing.xl * 2,  
+    marginTop: 80,  
+    marginBottom: 80,  
   },  
   logo: {  
-    ...typography.h1,  
-    color: colors.primary,  
-    marginBottom: spacing.sm,  
+    fontSize: 32,  
+    fontWeight: 'bold',  
+    marginBottom: 8,  
   },  
   subtitle: {  
-    ...typography.body,  
-    color: colors.textSecondary,  
+    fontSize: 16,  
   },  
   form: {  
     flex: 1,  
@@ -95,11 +132,8 @@ const styles = StyleSheet.create({
   },  
   input: {  
     borderWidth: 1,  
-    borderColor: colors.border,  
-    borderRadius: borderRadius.md,  
-    padding: spacing.md,  
-    marginBottom: spacing.md,  
+    padding: 16,  
+    marginBottom: 16,  
     fontSize: 16,  
-    backgroundColor: colors.surface,  
   },  
 });

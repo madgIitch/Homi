@@ -1,15 +1,41 @@
-// navigation/AppNavigator.tsx  
-import React from 'react';  
+// src/navigation/AppNavigator.tsx  
+import React, { useContext } from 'react';  
+import { View, Text, StyleSheet } from 'react-native';  
 import { NavigationContainer } from '@react-navigation/native';  
 import { createStackNavigator } from '@react-navigation/stack';  
+import { AuthContext } from '../context/AuthContext';  
 import { LoginScreen } from '../screens/LoginScreen';  
 import { RegisterScreen } from '../screens/RegisterScreen';  
 import { MainNavigator } from './MainNavigator';  
+import { useTheme } from '../theme/ThemeContext';  
   
 const Stack = createStackNavigator();  
   
+// Simple loading screen component  
+const LoadingScreen: React.FC = () => {  
+  const theme = useTheme();  
+  return (  
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
+      <Text style={[styles.loadingText, { color: theme.colors.text }]}>  
+        HomiMatch  
+      </Text>  
+    </View>  
+  );  
+};  
+  
 export const AppNavigator: React.FC = () => {  
-  const isAuthenticated = false; // Verificar estado de autenticación  
+  const authContext = useContext(AuthContext);  
+    
+  // Ensure context exists  
+  if (!authContext) {  
+    throw new Error('AppNavigator must be used within AuthProvider');  
+  }  
+    
+  const { isAuthenticated, loading } = authContext;  
+  
+  if (loading) {  
+    return <LoadingScreen />;  
+  }  
   
   return (  
     <NavigationContainer>  
@@ -25,4 +51,16 @@ export const AppNavigator: React.FC = () => {
       </Stack.Navigator>  
     </NavigationContainer>  
   );  
-};
+};  
+  
+const styles = StyleSheet.create({  
+  container: {  
+    flex: 1,  
+    justifyContent: 'center',  
+    alignItems: 'center',  
+  },  
+  loadingText: {  
+    fontSize: 24,  
+    fontWeight: 'bold',  
+  },  
+});

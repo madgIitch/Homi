@@ -1,6 +1,6 @@
 // src/components/ChipGroup.tsx  
 import React from 'react';  
-import { View, TouchableOpacity, Text, StyleSheet, FlatList } from 'react-native';  
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';  
   
 interface ChipOption {  

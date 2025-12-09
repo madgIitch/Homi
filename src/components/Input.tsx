@@ -29,11 +29,12 @@ export const Input: React.FC<InputProps> = ({
           <Text  
             style={[  
               theme.typography.label,  
-              { color: theme.colors.text, flex: 1 }, // Movido a StyleSheet  
+              styles.label,  
+              { color: theme.colors.text },  
             ]}  
           >  
             {label}  
-            {required && <Text style={{ color: theme.colors.error }}> *</Text>}  
+            {required && <Text style={styles.required}> *</Text>}  
           </Text>  
         </View>  
       )}  
@@ -88,6 +89,12 @@ const styles = StyleSheet.create({
   },  
   icon: {  
     marginRight: 8,  
+  },  
+  label: {  
+    flex: 1,  
+  },  
+  required: {  
+    color: '#EF4444',  
   },  
   input: {  
     borderWidth: 1,  

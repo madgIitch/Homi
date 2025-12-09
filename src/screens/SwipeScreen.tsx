@@ -1,6 +1,6 @@
 import React from 'react';  
 import { View, Text, StyleSheet } from 'react-native';  
-import { colors, typography } from '../theme';  
+import { colors, typography, spacing } from '../theme';
   
 export const SwipeScreen: React.FC = () => {  
   return (  

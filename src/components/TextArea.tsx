@@ -26,11 +26,12 @@ export const TextArea: React.FC<TextAreaProps> = ({
         <Text  
           style={[  
             theme.typography.label,  
-            { color: theme.colors.text, marginBottom: theme.spacing.sm },  
+            styles.label,  
+            { color: theme.colors.text },  
           ]}  
         >  
           {label}  
-          {required && <Text style={{ color: theme.colors.error }}> *</Text>}  
+          {required && <Text style={styles.required}> *</Text>}  
         </Text>  
       )}  
       <TextInput  
@@ -58,7 +59,8 @@ export const TextArea: React.FC<TextAreaProps> = ({
           <Text  
             style={[  
               theme.typography.small,  
-              { color: theme.colors.error, flex: 1 },  
+              styles.errorText,  
+              { color: theme.colors.error },  
             ]}  
           >  
             {error}  
@@ -75,11 +77,17 @@ export const TextArea: React.FC<TextAreaProps> = ({
       </View>  
     </View>  
   );  
-}; 
-
+};  
+  
 const styles = StyleSheet.create({  
   container: {  
     marginBottom: 16,  
+  },  
+  label: {  
+    marginBottom: 8,  
+  },  
+  required: {  
+    color: '#EF4444',  
   },  
   textarea: {  
     borderWidth: 1,  
@@ -90,5 +98,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',  
     alignItems: 'center',  
     marginTop: 4,  
+  },  
+  errorText: {  
+    flex: 1,  
   },  
 });
