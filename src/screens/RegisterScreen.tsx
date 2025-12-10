@@ -1,12 +1,13 @@
 // src/screens/RegisterScreen.tsx  
 import React, { useState, useContext } from 'react';  
-import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';  
+import { View, Text, TextInput, StyleSheet, Alert, Platform, TouchableOpacity } from 'react-native';  
 import { useNavigation } from '@react-navigation/native';  
 import { StackNavigationProp } from '@react-navigation/stack';  
 import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
 import { useTheme } from '../theme/ThemeContext';  
 import { authService } from '../services/authService';  
+import DateTimePicker from '@react-native-community/datetimepicker';  
   
 type RootStackParamList = {  
   Login: undefined;  
@@ -31,7 +32,8 @@ export const RegisterScreen: React.FC = () => {
   const [password, setPassword] = useState('');  
   const [firstName, setFirstName] = useState('');  
   const [lastName, setLastName] = useState('');  
-  const [birthDate, setBirthDate] = useState('');  
+  const [birthDate, setBirthDate] = useState<Date | null>(null);  
+  const [showDatePicker, setShowDatePicker] = useState(false);  
   const [loading, setLoading] = useState(false);  
   
   const handleRegister = async () => {  
@@ -47,7 +49,7 @@ export const RegisterScreen: React.FC = () => {
         password,  
         firstName,  
         lastName,  
-        birthDate  
+        birthDate: birthDate.toISOString().split('T')[0] // Formato YYYY-MM-DD  
       });  
       // Después de registrar, hacer login automáticamente  
       await login(email, password);  
@@ -56,6 +58,25 @@ export const RegisterScreen: React.FC = () => {
     } finally {  
       setLoading(false);  
     }  
+  };  
+  
+  const onChangeDate = (event: any, selectedDate?: Date) => {  
+    setShowDatePicker(Platform.OS === 'ios');  
+    if (selectedDate) {  
+      setBirthDate(selectedDate);  
+    }  
+  };  
+  
+  const showDatepicker = () => {  
+    setShowDatePicker(true);  
+  };  
+  
+  const formatDate = (date: Date) => {  
+    return date.toLocaleDateString('es-ES', {  
+      day: '2-digit',  
+      month: '2-digit',  
+      year: 'numeric'  
+    });  
   };  
   
   return (  
@@ -83,7 +104,7 @@ export const RegisterScreen: React.FC = () => {
           value={firstName}  
           onChangeText={setFirstName}  
         />  
-              
+                
         <TextInput  
           style={[  
             styles.input,  
@@ -100,22 +121,37 @@ export const RegisterScreen: React.FC = () => {
           onChangeText={setLastName}  
         />  
   
-        <TextInput  
+        <TouchableOpacity  
           style={[  
             styles.input,  
+            styles.dateInput,  
             {  
               borderColor: theme.colors.border,  
               borderRadius: theme.borderRadius.md,  
               backgroundColor: theme.colors.surface,  
-              color: theme.colors.text,  
             },  
           ]}  
-          placeholder="Fecha de nacimiento (YYYY-MM-DD)"  
-          placeholderTextColor={theme.colors.textTertiary}  
-          value={birthDate}  
-          onChangeText={setBirthDate}  
-        />  
-              
+          onPress={showDatepicker}  
+        >  
+          <Text style={[  
+            styles.dateText,  
+            { color: birthDate ? theme.colors.text : theme.colors.textTertiary }  
+          ]}>  
+            {birthDate ? formatDate(birthDate) : 'Fecha de nacimiento'}  
+          </Text>  
+        </TouchableOpacity>  
+  
+        {showDatePicker && (  
+          <DateTimePicker  
+            testID="dateTimePicker"  
+            value={birthDate || new Date()}  
+            mode="date"  
+            display="default"  
+            onChange={onChangeDate}  
+            maximumDate={new Date()}  
+          />  
+        )}  
+                
         <TextInput  
           style={[  
             styles.input,  
@@ -133,7 +169,7 @@ export const RegisterScreen: React.FC = () => {
           keyboardType="email-address"  
           autoCapitalize="none"  
         />  
-              
+                
         <TextInput  
           style={[  
             styles.input,  
@@ -150,13 +186,13 @@ export const RegisterScreen: React.FC = () => {
           onChangeText={setPassword}  
           secureTextEntry  
         />  
-              
+                
         <Button  
           title="Registrarse"  
           onPress={handleRegister}  
           loading={loading}  
         />  
-              
+                
         <Button  
           title="¿Ya tienes cuenta? Inicia sesión"  
           onPress={() => navigation.navigate('Login')}  
@@ -193,6 +229,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,  
     padding: 16,  
     marginBottom: 16,  
+    fontSize: 16,  
+  },  
+  dateInput: {  
+    justifyContent: 'center',  
+    height: 54,  
+  },  
+  dateText: {  
     fontSize: 16,  
   },  
 });
