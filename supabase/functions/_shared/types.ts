@@ -1,318 +1,210 @@
 // supabase/functions/_shared/types.ts  
   
-/**  
- * Tipos compartidos para las Edge Functions de HomiMatch  
- * Define interfaces para entidades de base de datos y payloads de API  
+/**    
+ * Tipos compartidos para las Edge Functions de HomiMatch    
+ * Define interfaces para entidades de base de datos y payloads de API    
  */  
   
-// ====================  
-// Tipos de Autenticación  
-// ====================  
+// ====================    
+// Tipos de Autenticación    
+// ====================    
   
-export interface JWTPayload {  
-  aud: string  
-  exp: number  
-  sub: string  
-  email: string  
-  phone?: string  
-  app_metadata: Record<string, any>  
-  user_metadata: Record<string, any>  
-  role: string  
+export interface JWTPayload {    
+  aud: string    
+  exp: number    
+  sub: string    
+  email: string    
+  phone?: string    
+  app_metadata: Record<string, any>    
+  user_metadata: Record<string, any>    
+  role: string    
 }  
   
-// ====================  
-// Entidades de Base de Datos  
-// ====================  
+// ====================    
+// Entidades de Base de Datos (actualizadas para coincidir con SQL)    
+// ====================    
   
-export interface User {  
-  id: string  
-  email: string  
-  username: string  
-  created_at: string  
-  updated_at: string  
-  is_premium: boolean  
-  role: 'seeker' | 'landlord' | 'both'  
+export interface User {    
+  id: string    
+  email: string    
+  first_name: string    
+  last_name: string    
+  identity_document?: string    
+  birth_date: string    
+  created_at: string    
 }  
   
-export interface Profile {  
-  id: string  
-  user_id: string  
-  name: string  
-  age?: number  
-  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say'  
-  bio?: string  
-  budget_min?: number  
-  budget_max?: number  
-  schedule?: 'morning' | 'afternoon' | 'night' | 'flexible'  
-  lifestyle_habits: LifestyleHabits  
-  interests: string[]  
-  preferred_zones: string[]  
-  city?: string  
-  university?: string  
-  occupation?: string  
-  created_at: string  
-  updated_at: string  
+export interface Profile {    
+  id: string    
+  display_name?: string    
+  avatar_url?: string    
+  bio?: string    
+  gender?: string    
+  occupation?: string    
+  smoker?: boolean    
+  has_pets?: boolean    
+  social_links?: Record<string, any>    
+  updated_at: string    
 }  
   
-export interface LifestyleHabits {  
-  cleanliness?: 'very_clean' | 'clean' | 'moderate' | 'messy'  
-  smoking?: boolean  
-  pets?: boolean  
-  guests?: 'never' | 'rarely' | 'occasional' | 'frequently'  
-  remote_work?: boolean  
-  noise_level?: 'quiet' | 'moderate' | 'noisy'  
-  party_habits?: 'never' | 'occasionally' | 'regularly'  
+export interface Flat {    
+  id: string    
+  owner_id: string    
+  address: string    
+  city: string    
+  district?: string    
+  total_rooms?: number    
+  common_areas_description?: string    
+  created_at: string    
 }  
   
-export interface Piso {  
-  id: string  
-  owner_id: string  
-  address: string  
-  city: string  
-  neighborhood?: string  
-  total_rooms: number  
-  floor?: number  
-  square_meters?: number  
-  description?: string  
-  amenities: Record<string, any>  
-  created_at: string  
-  updated_at: string  
+export interface Room {    
+  id: string    
+  flat_id: string    
+  owner_id: string    
+  title: string    
+  description?: string    
+  price_per_month: number    
+  size_m2?: number    
+  is_available?: boolean    
+  available_from: string    
+  created_at: string    
 }  
   
-export interface Habitacion {  
-  id: string  
-  piso_id: string  
-  owner_id: string  
-  square_meters?: number  
-  price: number  
-  expenses_included: boolean  
-  available_from: string  
-  available_until?: string  
-  description?: string  
-  photos: string[]  
-  is_available: boolean  
-  room_type: 'single' | 'double' | 'shared'  
-  private_bathroom: boolean  
-  current_roommates: number  
-  created_at: string  
-  updated_at: string  
+export interface RoomInterest {    
+  id: string    
+  user_id: string    
+  room_id: string    
+  message?: string    
+  created_at: string    
 }  
   
-export interface Interes {  
-  id: string  
-  profile_id: string  
-  habitacion_id: string  
-  status: 'pending' | 'accepted' | 'rejected'  
-  created_at: string  
-  updated_at: string  
+export interface Match {    
+  id: string    
+  user_a_id: string    
+  user_b_id: string    
+  status: 'pending' | 'accepted' | 'rejected'    
+  matched_at: string    
 }  
   
-export interface Match {  
-  id: string  
-  seeker_profile_id: string  
-  habitacion_id: string  
-  status: 'pending' | 'accepted' | 'rejected'  
-  created_at: string  
-  updated_at: string  
+// ====================    
+// Entidades adicionales (chats, messages) - sin cambios en SQL    
+// ====================    
+  
+export interface Chat {    
+  id: string    
+  match_id: string    
+  created_at: string    
+  updated_at: string    
 }  
   
-export interface Chat {  
-  id: string  
-  match_id: string  
-  created_at: string  
-  updated_at: string  
+export interface Message {    
+  id: string    
+  chat_id: string    
+  sender_id: string    
+  body: string    
+  created_at: string    
+  read_at?: string    
 }  
   
-export interface Message {  
-  id: string  
-  chat_id: string  
-  sender_id: string  
-  body: string  
-  created_at: string  
-  read_at?: string  
+// ====================    
+// Tipos de API Request/Response (actualizados)    
+// ====================    
+  
+export interface AuthSignupRequest {    
+  email: string    
+  password: string    
+  data: {    
+    first_name: string    
+    last_name: string    
+    birth_date: string    
+    identity_document?: string    
+  }    
 }  
   
-// ====================  
-// Tipos de API Request/Response  
-// ====================  
-  
-export interface AuthSignupRequest {  
-  email: string  
-  password: string  
-  data: {  
-    username: string  
-  }  
+export interface AuthResponse {    
+  access_token: string    
+  token_type: string    
+  expires_in: number    
+  refresh_token: string    
+  user: User    
 }  
   
-export interface AuthResponse {  
-  access_token: string  
-  token_type: string  
-  expires_in: number  
-  refresh_token: string  
-  user: {  
-    id: string  
-    email: string  
-    created_at: string  
-  }  
+export interface ProfileCreateRequest {    
+  display_name?: string    
+  avatar_url?: string    
+  bio?: string    
+  gender?: string    
+  occupation?: string    
+  smoker?: boolean    
+  has_pets?: boolean    
+  social_links?: Record<string, any>    
 }  
   
-export interface ProfileCreateRequest {  
-  user_id: string  
-  name: string  
-  age?: number  
-  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say'  
-  bio?: string  
-  budget_min?: number  
-  budget_max?: number  
-  schedule?: 'morning' | 'afternoon' | 'night' | 'flexible'  
-  lifestyle_habits: LifestyleHabits  
-  interests: string[]  
-  preferred_zones: string[]  
-  city?: string  
-  university?: string  
-  occupation?: string  
+export interface FlatCreateRequest {    
+  address: string    
+  city: string    
+  district?: string    
+  total_rooms?: number    
+  common_areas_description?: string    
 }  
   
-export interface PisoCreateRequest {  
-  owner_id: string  
-  address: string  
-  city: string  
-  neighborhood?: string  
-  total_rooms: number  
-  floor?: number  
-  square_meters?: number  
-  description?: string  
-  amenities?: Record<string, any>  
+export interface RoomCreateRequest {    
+  flat_id: string    
+  title: string    
+  description?: string    
+  price_per_month: number    
+  size_m2?: number    
+  is_available?: boolean    
+  available_from?: string    
 }  
   
-export interface HabitacionCreateRequest {  
-  piso_id: string  
-  owner_id: string  
-  square_meters?: number  
-  price: number  
-  expenses_included?: boolean  
-  available_from: string  
-  available_until?: string  
-  description?: string  
-  photos?: string[]  
-  room_type?: 'single' | 'double' | 'shared'  
-  private_bathroom?: boolean  
-  current_roommates?: number  
+export interface RoomInterestCreateRequest {    
+  room_id: string    
+  message?: string    
 }  
   
-export interface InteresCreateRequest {  
-  profile_id: string  
-  habitacion_id: string  
+export interface MessageCreateRequest {    
+  chat_id: string    
+  body: string    
 }  
   
-export interface MessageCreateRequest {  
-  chat_id: string  
-  body: string  
+// ====================    
+// Tipos de Respuestas de API    
+// ====================    
+  
+export interface ApiResponse<T = any> {    
+  data?: T    
+  error?: string    
+  message?: string    
 }  
   
-// ====================  
-// Tipos de Respuestas de API  
-// ====================  
-  
-export interface ApiResponse<T = any> {  
-  data?: T  
-  error?: string  
-  message?: string  
+export interface PaginatedResponse<T> {    
+  data: T[]    
+  count: number    
+  page: number    
+  per_page: number    
+  total_pages: number    
 }  
   
-export interface PaginatedResponse<T> {  
-  data: T[]  
-  count: number  
-  page: number  
-  per_page: number  
-  total_pages: number  
+// ====================    
+// Tipos de Utilidad (actualizados)    
+// ====================    
+  
+export type DatabaseEntity = User | Profile | Flat | Room | RoomInterest | Match | Chat | Message    
+  
+export type MatchStatus = 'pending' | 'accepted' | 'rejected'    
+  
+// ====================    
+// Tipos para Errores    
+// ====================    
+  
+export interface ApiError {    
+  code: string    
+  message: string    
+  details?: any    
 }  
   
-export interface RecommendationResponse {  
-  recommendations: RoomRecommendation[]  
-}  
-  
-export interface RoomRecommendation {  
-  profile: Profile  
-  compatibility_score: number  
-  match_reasons: string[]  
-}  
-  
-// ====================  
-// Tipos de Filtros y Búsqueda  
-// ====================  
-  
-export interface RoomFilters {  
-  city?: string  
-  price_min?: number  
-  price_max?: number  
-  zones?: string[]  
-  room_type?: 'single' | 'double' | 'shared'  
-  private_bathroom?: boolean  
-  expenses_included?: boolean  
-  available_from?: string  
-  max_roommates?: number  
-}  
-  
-export interface ProfileFilters {  
-  age_min?: number  
-  age_max?: number  
-  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say'  
-  city?: string  
-  university?: string  
-  budget_min?: number  
-  budget_max?: number  
-  preferred_zones?: string[]  
-  interests?: string[]  
-  lifestyle_habits?: Partial<LifestyleHabits>  
-}  
-  
-// ====================  
-// Tipos de Utilidad  
-// ====================  
-  
-export type DatabaseEntity = User | Profile | Piso | Habitacion | Interes | Match | Chat | Message  
-  
-export type UserRole = 'seeker' | 'landlord' | 'both'  
-  
-export type MatchStatus = 'pending' | 'accepted' | 'rejected'  
-  
-export type InterestStatus = 'pending' | 'accepted' | 'rejected'  
-  
-export type RoomType = 'single' | 'double' | 'shared'  
-  
-export type Schedule = 'morning' | 'afternoon' | 'night' | 'flexible'  
-  
-export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say'  
-  
-// ====================  
-// Tipos para Errores  
-// ====================  
-  
-export interface ApiError {  
-  code: string  
-  message: string  
-  details?: any  
-}  
-  
-export interface ValidationError extends ApiError {  
-  field: string  
-}  
-  
-// ====================  
-// Tipos para Estadísticas y Analytics  
-// ====================  
-  
-export interface SwipeStats {  
-  daily_swipes: number  
-  total_swipes: number  
-  daily_limit: number  
-  reset_time: string  
-}  
-  
-export interface MatchStats {  
-  total_matches: number  
-  pending_matches: number  
-  accepted_matches: number  
-  rejected_matches: number  
+export interface ValidationError extends ApiError {    
+  field: string    
 }

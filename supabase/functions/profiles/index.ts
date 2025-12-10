@@ -3,16 +3,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
 import { withAuth, getUserId } from '../_shared/auth.ts'  
-import {   
-  Profile,   
-  ProfileCreateRequest,   
-  ApiResponse,   
-  JWTPayload   
+import {     
+  Profile,     
+  ProfileCreateRequest,     
+  ApiResponse,     
+  JWTPayload     
 } from '../_shared/types.ts'  
   
-/**  
- * Edge Function para gestión de perfiles en HomiMatch  
- * Maneja CRUD operations para perfiles de usuario  
+/**    
+ * Edge Function para gestión de perfiles en HomiMatch    
+ * Maneja CRUD operations para perfiles de usuario    
  */  
   
 // Crear cliente de Supabase  
@@ -21,25 +21,25 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
-/**  
- * Obtener perfil del usuario autenticado  
+/**    
+ * Obtener perfil del usuario autenticado    
  */  
 async function getProfile(userId: string): Promise<Profile | null> {  
   const { data, error } = await supabaseClient  
     .from('profiles')  
     .select('*')  
-    .eq('user_id', userId)  
+    .eq('id', userId) // Cambiado de user_id a id  
     .single()  
-    
+      
   if (error || !data) {  
     return null  
   }  
-    
+      
   return data as Profile  
 }  
   
-/**  
- * Crear nuevo perfil  
+/**    
+ * Crear nuevo perfil    
  */  
 async function createProfile(profileData: ProfileCreateRequest): Promise<Profile> {  
   const { data, error } = await supabaseClient  
@@ -47,66 +47,81 @@ async function createProfile(profileData: ProfileCreateRequest): Promise<Profile
     .insert(profileData)  
     .select()  
     .single()  
-    
+      
   if (error) {  
     throw new Error(`Failed to create profile: ${error.message}`)  
   }  
-    
+      
   return data as Profile  
 }  
   
-/**  
- * Actualizar perfil existente  
+/**    
+ * Actualizar perfil existente    
  */  
 async function updateProfile(userId: string, updates: Partial<Profile>): Promise<Profile> {  
   const { data, error } = await supabaseClient  
     .from('profiles')  
     .update(updates)  
-    .eq('user_id', userId)  
+    .eq('id', userId) // Cambiado de user_id a id  
     .select()  
     .single()  
-    
+      
   if (error) {  
     throw new Error(`Failed to update profile: ${error.message}`)  
   }  
-    
+      
   return data as Profile  
 }  
   
-/**  
- * Validar datos de perfil  
+/**    
+ * Validar datos de perfil    
  */  
 function validateProfileData(data: any): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
-    
-  if (!data.name || typeof data.name !== 'string' || data.name.trim().length < 2) {  
-    errors.push('Name must be at least 2 characters long')  
+      
+  // Validar display_name (antes name)  
+  if (data.display_name && typeof data.display_name !== 'string') {  
+    errors.push('Display name must be a string')  
   }  
-    
-  if (data.age && (typeof data.age !== 'number' || data.age < 18 || data.age > 100)) {  
-    errors.push('Age must be between 18 and 100')  
+      
+  // Validar bio  
+  if (data.bio && typeof data.bio !== 'string') {  
+    errors.push('Bio must be a string')  
   }  
-    
-  if (data.budget_min && data.budget_max && data.budget_min > data.budget_max) {  
-    errors.push('Budget minimum cannot be greater than maximum')  
-  }  
-    
-  if (data.schedule && !['morning', 'afternoon', 'night', 'flexible'].includes(data.schedule)) {  
-    errors.push('Invalid schedule value')  
-  }  
-    
-  if (data.gender && !['male', 'female', 'other', 'prefer_not_to_say'].includes(data.gender)) {  
+      
+  // Validar gender  
+  if (data.gender && !['male', 'female', 'other'].includes(data.gender)) {  
     errors.push('Invalid gender value')  
   }  
-    
+      
+  // Validar occupation  
+  if (data.occupation && typeof data.occupation !== 'string') {  
+    errors.push('Occupation must be a string')  
+  }  
+      
+  // Validar smoker (boolean)  
+  if (data.smoker !== undefined && typeof data.smoker !== 'boolean') {  
+    errors.push('Smoker must be a boolean')  
+  }  
+      
+  // Validar has_pets (boolean)  
+  if (data.has_pets !== undefined && typeof data.has_pets !== 'boolean') {  
+    errors.push('Has pets must be a boolean')  
+  }  
+      
+  // Validar social_links (JSON object)  
+  if (data.social_links && typeof data.social_links !== 'object') {  
+    errors.push('Social links must be a JSON object')  
+  }  
+      
   return {  
     isValid: errors.length === 0,  
     errors  
   }  
 }  
   
-/**  
- * Handler principal con autenticación  
+/**    
+ * Handler principal con autenticación    
  */  
 const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Response> => {  
   const userId = getUserId(payload)  
@@ -117,12 +132,12 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // GET - Obtener perfil del usuario  
     if (method === 'GET') {  
       const profile = await getProfile(userId)  
-        
+          
       if (!profile) {  
         return new Response(  
           JSON.stringify({ error: 'Profile not found' }),  
-          {   
-            status: 404,   
+          {     
+            status: 404,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -131,8 +146,8 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       const response: ApiResponse<Profile> = { data: profile }  
       return new Response(  
         JSON.stringify(response),  
-        {   
-          status: 200,   
+        {     
+          status: 200,     
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -145,25 +160,25 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       if (existingProfile) {  
         return new Response(  
           JSON.stringify({ error: 'Profile already exists' }),  
-          {   
-            status: 409,   
+          {     
+            status: 409,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
   
       const body: ProfileCreateRequest = await req.json()  
-      body.user_id = userId // Forzar el user_id del token  
+      body.id = userId // Cambiado de user_id a id  
   
       const validation = validateProfileData(body)  
       if (!validation.isValid) {  
         return new Response(  
-          JSON.stringify({   
-            error: 'Validation failed',   
-            details: validation.errors   
+          JSON.stringify({     
+            error: 'Validation failed',     
+            details: validation.errors     
           }),  
-          {   
-            status: 400,   
+          {     
+            status: 400,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -171,11 +186,11 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
       const profile = await createProfile(body)  
       const response: ApiResponse<Profile> = { data: profile }  
-        
+          
       return new Response(  
         JSON.stringify(response),  
-        {   
-          status: 201,   
+        {     
+          status: 201,     
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -187,29 +202,28 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       if (!existingProfile) {  
         return new Response(  
           JSON.stringify({ error: 'Profile not found' }),  
-          {   
-            status: 404,   
+          {     
+            status: 404,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
   
       const updates = await req.json()  
-        
-      // No permitir cambiar user_id  
-      delete updates.user_id  
+          
+      // No permitir cambiar id  
       delete updates.id  
-      delete updates.created_at  
+      delete updates.updated_at  
   
       const validation = validateProfileData({ ...existingProfile, ...updates })  
       if (!validation.isValid) {  
         return new Response(  
-          JSON.stringify({   
-            error: 'Validation failed',   
-            details: validation.errors   
+          JSON.stringify({     
+            error: 'Validation failed',     
+            details: validation.errors     
           }),  
-          {   
-            status: 400,   
+          {     
+            status: 400,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -217,11 +231,11 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
       const updatedProfile = await updateProfile(userId, updates)  
       const response: ApiResponse<Profile> = { data: updatedProfile }  
-        
+          
       return new Response(  
         JSON.stringify(response),  
-        {   
-          status: 200,   
+        {     
+          status: 200,     
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -230,8 +244,8 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // Método no permitido  
     return new Response(  
       JSON.stringify({ error: 'Method not allowed' }),  
-      {   
-        status: 405,   
+      {     
+        status: 405,     
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  
@@ -239,12 +253,12 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   } catch (error) {  
     console.error('Profile function error:', error)  
     return new Response(  
-      JSON.stringify({   
+      JSON.stringify({     
         error: 'Internal server error',  
         details: error.message  
       }),  
-      {   
-        status: 500,   
+      {     
+        status: 500,     
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  

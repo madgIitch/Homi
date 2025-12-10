@@ -2,20 +2,20 @@
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
-import { withAuth, getUserId, canAccessResource } from '../_shared/auth.ts'  
-import {   
-  Piso,   
-  Habitacion,   
-  PisoCreateRequest,   
-  HabitacionCreateRequest,  
-  ApiResponse,   
-  JWTPayload,  
-  RoomFilters  
+import { withAuth, getUserId } from '../_shared/auth.ts'  
+import {     
+  Flat,     
+  Room,     
+  FlatCreateRequest,     
+  RoomCreateRequest,    
+  ApiResponse,     
+  JWTPayload,    
+  RoomFilters    
 } from '../_shared/types.ts'  
   
-/**  
- * Edge Function para gestión de pisos y habitaciones en HomiMatch  
- * Maneja CRUD operations para propiedades y listados de habitaciones  
+/**    
+ * Edge Function para gestión de flats y rooms en HomiMatch    
+ * Maneja CRUD operations para propiedades y listados de habitaciones    
  */  
   
 // Crear cliente de Supabase  
@@ -24,215 +24,203 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
-/**  
- * Obtener pisos del usuario autenticado  
+/**    
+ * Obtener flats del usuario autenticado    
  */  
-async function getUserPisos(userId: string): Promise<Piso[]> {  
+async function getUserFlats(userId: string): Promise<Flat[]> {  
   const { data, error } = await supabaseClient  
-    .from('pisos')  
+    .from('flats')  
     .select('*')  
     .eq('owner_id', userId)  
     .order('created_at', { ascending: false })  
-    
+      
   if (error) {  
-    throw new Error(`Failed to fetch pisos: ${error.message}`)  
+    throw new Error(`Failed to fetch flats: ${error.message}`)  
   }  
-    
-  return data as Piso[]  
+      
+  return data as Flat[]  
 }  
   
-/**  
- * Obtener habitaciones del usuario autenticado  
+/**    
+ * Obtener rooms del usuario autenticado    
  */  
-async function getUserHabitaciones(userId: string): Promise<Habitacion[]> {  
+async function getUserRooms(userId: string): Promise<Room[]> {  
   const { data, error } = await supabaseClient  
-    .from('habitaciones')  
+    .from('rooms')  
     .select(`  
       *,  
-      piso:pisos(*)  
+      flat:flats(*)  
     `)  
     .eq('owner_id', userId)  
     .order('created_at', { ascending: false })  
-    
+      
   if (error) {  
-    throw new Error(`Failed to fetch habitaciones: ${error.message}`)  
+    throw new Error(`Failed to fetch rooms: ${error.message}`)  
   }  
-    
-  return data as Habitacion[]  
+      
+  return data as Room[]  
 }  
   
-/**  
- * Crear nuevo piso  
+/**    
+ * Crear nuevo flat    
  */  
-async function createPiso(pisoData: PisoCreateRequest): Promise<Piso> {  
+async function createFlat(flatData: FlatCreateRequest): Promise<Flat> {  
   const { data, error } = await supabaseClient  
-    .from('pisos')  
-    .insert(pisoData)  
+    .from('flats')  
+    .insert(flatData)  
     .select()  
     .single()  
-    
+      
   if (error) {  
-    throw new Error(`Failed to create piso: ${error.message}`)  
+    throw new Error(`Failed to create flat: ${error.message}`)  
   }  
-    
-  return data as Piso  
+      
+  return data as Flat  
 }  
   
-/**  
- * Crear nueva habitación  
+/**    
+ * Crear nuevo room    
  */  
-async function createHabitacion(habitacionData: HabitacionCreateRequest): Promise<Habitacion> {  
+async function createRoom(roomData: RoomCreateRequest): Promise<Room> {  
   const { data, error } = await supabaseClient  
-    .from('habitaciones')  
-    .insert(habitacionData)  
+    .from('rooms')  
+    .insert(roomData)  
     .select(`  
       *,  
-      piso:pisos(*)  
+      flat:flats(*)  
     `)  
     .single()  
-    
+      
   if (error) {  
-    throw new Error(`Failed to create habitacion: ${error.message}`)  
+    throw new Error(`Failed to create room: ${error.message}`)  
   }  
-    
-  return data as Habitacion  
+      
+  return data as Room  
 }  
   
-/**  
- * Actualizar piso existente  
+/**    
+ * Actualizar flat existente    
  */  
-async function updatePiso(pisoId: string, userId: string, updates: Partial<Piso>): Promise<Piso> {  
+async function updateFlat(flatId: string, userId: string, updates: Partial<Flat>): Promise<Flat> {  
   // Verificar que el usuario es el propietario  
-  const { data: existingPiso, error: fetchError } = await supabaseClient  
-    .from('pisos')  
+  const { data: existingFlat, error: fetchError } = await supabaseClient  
+    .from('flats')  
     .select('*')  
-    .eq('id', pisoId)  
+    .eq('id', flatId)  
     .single()  
-    
-  if (fetchError || !existingPiso) {  
-    throw new Error('Piso not found')  
+      
+  if (fetchError || !existingFlat) {  
+    throw new Error('Flat not found')  
   }  
-    
-  if (!canAccessResource({ sub: userId } as JWTPayload, existingPiso.owner_id)) {  
-    throw new Error('Unauthorized: You can only update your own pisos')  
+      
+  if (existingFlat.owner_id !== userId) {  
+    throw new Error('Unauthorized: You can only update your own flats')  
   }  
   
   const { data, error } = await supabaseClient  
-    .from('pisos')  
+    .from('flats')  
     .update(updates)  
-    .eq('id', pisoId)  
+    .eq('id', flatId)  
     .select()  
     .single()  
-    
+      
   if (error) {  
-    throw new Error(`Failed to update piso: ${error.message}`)  
+    throw new Error(`Failed to update flat: ${error.message}`)  
   }  
-    
-  return data as Piso  
+      
+  return data as Flat  
 }  
   
-/**  
- * Actualizar habitación existente  
+/**    
+ * Actualizar room existente    
  */  
-async function updateHabitacion(habitacionId: string, userId: string, updates: Partial<Habitacion>): Promise<Habitacion> {  
+async function updateRoom(roomId: string, userId: string, updates: Partial<Room>): Promise<Room> {  
   // Verificar que el usuario es el propietario  
-  const { data: existingHabitacion, error: fetchError } = await supabaseClient  
-    .from('habitaciones')  
+  const { data: existingRoom, error: fetchError } = await supabaseClient  
+    .from('rooms')  
     .select('*')  
-    .eq('id', habitacionId)  
+    .eq('id', roomId)  
     .single()  
-    
-  if (fetchError || !existingHabitacion) {  
-    throw new Error('Habitacion not found')  
+      
+  if (fetchError || !existingRoom) {  
+    throw new Error('Room not found')  
   }  
-    
-  if (!canAccessResource({ sub: userId } as JWTPayload, existingHabitacion.owner_id)) {  
-    throw new Error('Unauthorized: You can only update your own habitaciones')  
+      
+  if (existingRoom.owner_id !== userId) {  
+    throw new Error('Unauthorized: You can only update your own rooms')  
   }  
   
   const { data, error } = await supabaseClient  
-    .from('habitaciones')  
+    .from('rooms')  
     .update(updates)  
-    .eq('id', habitacionId)  
+    .eq('id', roomId)  
     .select(`  
       *,  
-      piso:pisos(*)  
+      flat:flats(*)  
     `)  
     .single()  
-    
+      
   if (error) {  
-    throw new Error(`Failed to update habitacion: ${error.message}`)  
+    throw new Error(`Failed to update room: ${error.message}`)  
   }  
-    
-  return data as Habitacion  
+      
+  return data as Room  
 }  
   
-/**  
- * Validar datos de piso  
+/**    
+ * Validar datos de flat    
  */  
-function validatePisoData(data: any): { isValid: boolean; errors: string[] } {  
+function validateFlatData(data: any): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
-    
+      
   if (!data.address || typeof data.address !== 'string' || data.address.trim().length < 5) {  
     errors.push('Address must be at least 5 characters long')  
   }  
-    
+      
   if (!data.city || typeof data.city !== 'string' || data.city.trim().length < 2) {  
     errors.push('City is required')  
   }  
-    
+      
   if (data.total_rooms && (typeof data.total_rooms !== 'number' || data.total_rooms < 1 || data.total_rooms > 20)) {  
     errors.push('Total rooms must be between 1 and 20')  
   }  
-    
-  if (data.square_meters && (typeof data.square_meters !== 'number' || data.square_meters < 10)) {  
-    errors.push('Square meters must be at least 10')  
-  }  
-    
+      
   return {  
     isValid: errors.length === 0,  
     errors  
   }  
 }  
   
-/**  
- * Validar datos de habitación  
+/**    
+ * Validar datos de room    
  */  
-function validateHabitacionData(data: any): { isValid: boolean; errors: string[] } {  
+function validateRoomData(data: any): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
-    
-  if (!data.piso_id || typeof data.piso_id !== 'string') {  
-    errors.push('Piso ID is required')  
+      
+  if (!data.flat_id || typeof data.flat_id !== 'string') {  
+    errors.push('Flat ID is required')  
   }  
-    
-  if (!data.price || typeof data.price !== 'number' || data.price < 0) {  
-    errors.push('Price must be a positive number')  
+      
+  if (!data.price_per_month || typeof data.price_per_month !== 'number' || data.price_per_month < 0) {  
+    errors.push('Price per month must be a positive number')  
   }  
-    
+      
   if (!data.available_from) {  
     errors.push('Available from date is required')  
   }  
-    
-  if (data.square_meters && (typeof data.square_meters !== 'number' || data.square_meters < 5)) {  
-    errors.push('Square meters must be at least 5')  
+      
+  if (data.size_m2 && (typeof data.size_m2 !== 'number' || data.size_m2 < 5)) {  
+    errors.push('Size m2 must be at least 5')  
   }  
-    
-  if (data.room_type && !['single', 'double', 'shared'].includes(data.room_type)) {  
-    errors.push('Invalid room type')  
-  }  
-    
-  if (data.current_roommates && (typeof data.current_roommates !== 'number' || data.current_roommates < 0)) {  
-    errors.push('Current roommates must be a non-negative number')  
-  }  
-    
+      
   return {  
     isValid: errors.length === 0,  
     errors  
   }  
 }  
   
-/**  
- * Handler principal con autenticación  
+/**    
+ * Handler principal con autenticación    
  */  
 const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Response> => {  
   const userId = getUserId(payload)  
@@ -241,165 +229,165 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   const pathParts = url.pathname.split('/')  
   
   try {  
-    // GET - Obtener pisos y habitaciones del usuario  
+    // GET - Obtener flats y rooms del usuario  
     if (method === 'GET') {  
-      const type = url.searchParams.get('type') // 'pisos' or 'habitaciones'  
-        
-      if (type === 'pisos') {  
-        const pisos = await getUserPisos(userId)  
-        const response: ApiResponse<Piso[]> = { data: pisos }  
+      const type = url.searchParams.get('type') // 'flats' or 'rooms'  
+          
+      if (type === 'flats') {  
+        const flats = await getUserFlats(userId)  
+        const response: ApiResponse<Flat[]> = { data: flats }  
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 200,   
+          {     
+            status: 200,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
-        
-      if (type === 'habitaciones' || !type) {  
-        const habitaciones = await getUserHabitaciones(userId)  
-        const response: ApiResponse<Habitacion[]> = { data: habitaciones }  
+          
+      if (type === 'rooms' || !type) {  
+        const rooms = await getUserRooms(userId)  
+        const response: ApiResponse<Room[]> = { data: rooms }  
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 200,   
+          {     
+            status: 200,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
     }  
   
-    // POST - Crear nuevo piso o habitación  
+    // POST - Crear nuevo flat o room  
     if (method === 'POST') {  
       const body = await req.json()  
-      const type = url.searchParams.get('type') // 'piso' or 'habitacion'  
-        
-      if (type === 'piso') {  
-        const pisoData: PisoCreateRequest = {  
+      const type = url.searchParams.get('type') // 'flat' or 'room'  
+          
+      if (type === 'flat') {  
+        const flatData: FlatCreateRequest = {  
           ...body,  
           owner_id: userId // Forzar el owner_id del token  
         }  
   
-        const validation = validatePisoData(pisoData)  
+        const validation = validateFlatData(flatData)  
         if (!validation.isValid) {  
           return new Response(  
-            JSON.stringify({   
-              error: 'Validation failed',   
-              details: validation.errors   
+            JSON.stringify({     
+              error: 'Validation failed',     
+              details: validation.errors     
             }),  
-            {   
-              status: 400,   
+            {     
+              status: 400,     
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
             }  
           )  
         }  
   
-        const piso = await createPiso(pisoData)  
-        const response: ApiResponse<Piso> = { data: piso }  
-          
+        const flat = await createFlat(flatData)  
+        const response: ApiResponse<Flat> = { data: flat }  
+            
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 201,   
+          {     
+            status: 201,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
-        
-      if (type === 'habitacion') {  
-        const habitacionData: HabitacionCreateRequest = {  
+          
+      if (type === 'room') {  
+        const roomData: RoomCreateRequest = {  
           ...body,  
           owner_id: userId // Forzar el owner_id del token  
         }  
   
-        const validation = validateHabitacionData(habitacionData)  
+        const validation = validateRoomData(roomData)  
         if (!validation.isValid) {  
           return new Response(  
-            JSON.stringify({   
-              error: 'Validation failed',   
-              details: validation.errors   
+            JSON.stringify({     
+              error: 'Validation failed',     
+              details: validation.errors     
             }),  
-            {   
-              status: 400,   
+            {     
+              status: 400,     
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
             }  
           )  
         }  
   
-        const habitacion = await createHabitacion(habitacionData)  
-        const response: ApiResponse<Habitacion> = { data: habitacion }  
-          
+        const room = await createRoom(roomData)  
+        const response: ApiResponse<Room> = { data: room }  
+            
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 201,   
+          {     
+            status: 201,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
     }  
   
-    // PATCH - Actualizar piso o habitación existente  
+    // PATCH - Actualizar flat o room existente  
     if (method === 'PATCH') {  
       const resourceId = pathParts[pathParts.length - 1]  
-      const type = url.searchParams.get('type') // 'piso' or 'habitacion'  
+      const type = url.searchParams.get('type') // 'flat' or 'room'  
       const updates = await req.json()  
-        
+          
       // No permitir cambiar owner_id  
       delete updates.owner_id  
       delete updates.id  
       delete updates.created_at  
-        
-      if (type === 'piso') {  
-        const validation = validatePisoData(updates)  
+          
+      if (type === 'flat') {  
+        const validation = validateFlatData(updates)  
         if (!validation.isValid) {  
           return new Response(  
-            JSON.stringify({   
-              error: 'Validation failed',   
-              details: validation.errors   
+            JSON.stringify({     
+              error: 'Validation failed',     
+              details: validation.errors     
             }),  
-            {   
-              status: 400,   
+            {     
+              status: 400,     
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
             }  
           )  
         }  
   
-        const updatedPiso = await updatePiso(resourceId, userId, updates)  
-        const response: ApiResponse<Piso> = { data: updatedPiso }  
-          
+        const updatedFlat = await updateFlat(resourceId, userId, updates)  
+        const response: ApiResponse<Flat> = { data: updatedFlat }  
+            
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 200,   
+          {     
+            status: 200,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
-        
-      if (type === 'habitacion') {  
-        const validation = validateHabitacionData(updates)  
+          
+      if (type === 'room') {  
+        const validation = validateRoomData(updates)  
         if (!validation.isValid) {  
           return new Response(  
-            JSON.stringify({   
-              error: 'Validation failed',   
-              details: validation.errors   
+            JSON.stringify({     
+              error: 'Validation failed',     
+              details: validation.errors     
             }),  
-            {   
-              status: 400,   
+            {     
+              status: 400,     
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
             }  
           )  
         }  
   
-        const updatedHabitacion = await updateHabitacion(resourceId, userId, updates)  
-        const response: ApiResponse<Habitacion> = { data: updatedHabitacion }  
-          
+        const updatedRoom = await updateRoom(resourceId, userId, updates)  
+        const response: ApiResponse<Room> = { data: updatedRoom }  
+            
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 200,   
+          {     
+            status: 200,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -409,8 +397,8 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // Método no permitido  
     return new Response(  
       JSON.stringify({ error: 'Method not allowed' }),  
-      {   
-        status: 405,   
+      {     
+        status: 405,     
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  
@@ -418,12 +406,12 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   } catch (error) {  
     console.error('Rooms function error:', error)  
     return new Response(  
-      JSON.stringify({   
+      JSON.stringify({     
         error: 'Internal server error',  
         details: error.message  
       }),  
-      {   
-        status: 500,   
+      {     
+        status: 500,     
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  

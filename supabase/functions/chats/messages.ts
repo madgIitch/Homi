@@ -1,19 +1,19 @@
-// supabase/functions/chat/index.ts  
+// supabase/functions/chats/messages.ts  
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
-import { withAuth, getUserId, canAccessResource } from '../_shared/auth.ts'  
-import {   
-  Chat,   
-  Message,   
-  ApiResponse,   
-  JWTPayload,  
-  MessageCreateRequest  
+import { withAuth, getUserId } from '../_shared/auth.ts'  
+import {     
+  Chat,     
+  Message,     
+  ApiResponse,     
+  JWTPayload,    
+  MessageCreateRequest    
 } from '../_shared/types.ts'  
   
-/**  
- * Edge Function para gestión de chats en HomiMatch  
- * Maneja operaciones CRUD para chats y sus mensajes  
+/**    
+ * Edge Function para gestión de chats en HomiMatch    
+ * Maneja operaciones CRUD para chats y sus mensajes    
  */  
   
 // Crear cliente de Supabase  
@@ -22,25 +22,8 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
-/**  
- * Obtener perfil del usuario autenticado  
- */  
-async function getUserProfile(userId: string): Promise<string | null> {  
-  const { data, error } = await supabaseClient  
-    .from('profiles')  
-    .select('id')  
-    .eq('user_id', userId)  
-    .single()  
-    
-  if (error || !data) {  
-    return null  
-  }  
-    
-  return data.id  
-}  
-  
-/**  
- * Obtener chats del usuario (a través de matches)  
+/**    
+ * Obtener chats del usuario (a través de matches)    
  */  
 async function getUserChats(userId: string): Promise<Chat[]> {  
   const { data, error } = await supabaseClient  
@@ -49,22 +32,22 @@ async function getUserChats(userId: string): Promise<Chat[]> {
       *,  
       match:matches(  
         *,  
-        seeker_profile:profiles!matches_seeker_profile_id_fkey(*),  
-        habitacion:habitaciones(*, piso:pisos(*), owner:profiles!habitaciones_owner_id_fkey(*))  
+        user_a:profiles!matches_user_a_id_fkey(*),  
+        user_b:profiles!matches_user_b_id_fkey(*)  
       )  
     `)  
-    .or(`match.seeker_profile.user_id.eq.${userId},match.habitacion.owner_id.eq.${userId}`)  
+    .or(`match.user_a_id.eq.${userId},match.user_b_id.eq.${userId}`)  
     .order('created_at', { ascending: false })  
-    
+      
   if (error) {  
     throw new Error(`Failed to fetch chats: ${error.message}`)  
   }  
-    
+      
   return data as Chat[]  
 }  
   
-/**  
- * Obtener chat específico por match_id  
+/**    
+ * Obtener chat específico por match_id    
  */  
 async function getChatByMatchId(matchId: string, userId: string): Promise<Chat | null> {  
   const { data, error } = await supabaseClient  
@@ -73,31 +56,31 @@ async function getChatByMatchId(matchId: string, userId: string): Promise<Chat |
       *,  
       match:matches(  
         *,  
-        seeker_profile:profiles!matches_seeker_profile_id_fkey(*),  
-        habitacion:habitaciones(*, owner:profiles!habitaciones_owner_id_fkey(*))  
+        user_a:profiles!matches_user_a_id_fkey(*),  
+        user_b:profiles!matches_user_b_id_fkey(*)  
       )  
     `)  
     .eq('match_id', matchId)  
     .single()  
-    
+      
   if (error || !data) {  
     return null  
   }  
-    
+      
   // Verificar que el usuario es parte del match  
   const match = data.match as any  
-  const seekerUserId = match.seeker_profile.user_id  
-  const roomOwnerId = match.habitacion.owner_id  
-    
-  if (userId !== seekerUserId && userId !== roomOwnerId) {  
+  const userAId = match.user_a_id  
+  const userBId = match.user_b_id  
+      
+  if (userId !== userAId && userId !== userBId) {  
     throw new Error('Unauthorized: You can only access chats you participate in')  
   }  
-    
+      
   return data as Chat  
 }  
   
-/**  
- * Crear nuevo chat (cuando se crea un match)  
+/**    
+ * Crear nuevo chat (cuando se crea un match)    
  */  
 async function createChat(matchId: string): Promise<Chat> {  
   const { data, error } = await supabaseClient  
@@ -107,21 +90,21 @@ async function createChat(matchId: string): Promise<Chat> {
       *,  
       match:matches(  
         *,  
-        seeker_profile:profiles!matches_seeker_profile_id_fkey(*),  
-        habitacion:habitaciones(*, owner:profiles!habitaciones_owner_id_fkey(*))  
+        user_a:profiles!matches_user_a_id_fkey(*),  
+        user_b:profiles!matches_user_b_id_fkey(*)  
       )  
     `)  
     .single()  
-    
+      
   if (error) {  
     throw new Error(`Failed to create chat: ${error.message}`)  
   }  
-    
-  return data as Chat[]  
+      
+  return data as Chat  
 }  
   
-/**  
- * Obtener mensajes de un chat  
+/**    
+ * Obtener mensajes de un chat    
  */  
 async function getChatMessages(chatId: string, userId: string): Promise<Message[]> {  
   // Primero verificar que el usuario tiene acceso al chat  
@@ -131,26 +114,26 @@ async function getChatMessages(chatId: string, userId: string): Promise<Message[
       *,  
       match:matches(  
         *,  
-        seeker_profile:profiles!matches_seeker_profile_id_fkey(*),  
-        habitacion:habitaciones(*)  
+        user_a:profiles!matches_user_a_id_fkey(*),  
+        user_b:profiles!matches_user_b_id_fkey(*)  
       )  
     `)  
     .eq('id', chatId)  
     .single()  
-    
+      
   if (chatError || !chat) {  
     throw new Error('Chat not found')  
   }  
-    
+      
   // Verificar acceso  
   const match = chat.match as any  
-  const seekerUserId = match.seeker_profile.user_id  
-  const roomOwnerId = match.habitacion.owner_id  
-    
-  if (userId !== seekerUserId && userId !== roomOwnerId) {  
+  const userAId = match.user_a_id  
+  const userBId = match.user_b_id  
+      
+  if (userId !== userAId && userId !== userBId) {  
     throw new Error('Unauthorized: You can only access chats you participate in')  
   }  
-    
+      
   // Obtener mensajes  
   const { data, error } = await supabaseClient  
     .from('messages')  
@@ -160,16 +143,16 @@ async function getChatMessages(chatId: string, userId: string): Promise<Message[
     `)  
     .eq('chat_id', chatId)  
     .order('created_at', { ascending: true })  
-    
+      
   if (error) {  
     throw new Error(`Failed to fetch messages: ${error.message}`)  
   }  
-    
+      
   return data as Message[]  
 }  
   
-/**  
- * Enviar mensaje en un chat  
+/**    
+ * Enviar mensaje en un chat    
  */  
 async function sendMessage(chatId: string, senderId: string, body: string): Promise<Message> {  
   const { data, error } = await supabaseClient  
@@ -184,22 +167,22 @@ async function sendMessage(chatId: string, senderId: string, body: string): Prom
       sender:profiles!messages_sender_id_fkey(*)  
     `)  
     .single()  
-    
+      
   if (error) {  
     throw new Error(`Failed to send message: ${error.message}`)  
   }  
-    
+      
   // Actualizar timestamp del chat  
   await supabaseClient  
     .from('chats')  
     .update({ updated_at: new Date().toISOString() })  
     .eq('id', chatId)  
-    
-  return data as Message[]  
+      
+  return data as Message  
 }  
   
-/**  
- * Marcar mensajes como leídos  
+/**    
+ * Marcar mensajes como leídos    
  */  
 async function markMessagesAsRead(chatId: string, userId: string): Promise<void> {  
   await supabaseClient  
@@ -210,28 +193,28 @@ async function markMessagesAsRead(chatId: string, userId: string): Promise<void>
     .is('read_at', null)  
 }  
   
-/**  
- * Validar datos de mensaje  
+/**    
+ * Validar datos de mensaje    
  */  
 function validateMessageData(data: any): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
-    
+      
   if (!data.body || typeof data.body !== 'string' || data.body.trim().length === 0) {  
     errors.push('Message body is required and cannot be empty')  
   }  
-    
+      
   if (data.body && data.body.length > 1000) {  
     errors.push('Message body cannot exceed 1000 characters')  
   }  
-    
+      
   return {  
     isValid: errors.length === 0,  
     errors  
   }  
 }  
   
-/**  
- * Handler principal con autenticación  
+/**    
+ * Handler principal con autenticación    
  */  
 const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Response> => {  
   const userId = getUserId(payload)  
@@ -244,15 +227,15 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     if (method === 'GET') {  
       const chatId = url.searchParams.get('chat_id')  
       const matchId = url.searchParams.get('match_id')  
-        
+          
       if (chatId) {  
         // Obtener mensajes de un chat específico  
         const messages = await getChatMessages(chatId, userId)  
         const response: ApiResponse<Message[]> = { data: messages }  
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 200,   
+          {     
+            status: 200,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -262,8 +245,8 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
         if (!chat) {  
           return new Response(  
             JSON.stringify({ error: 'Chat not found' }),  
-            {   
-              status: 404,   
+            {     
+              status: 404,     
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
             }  
           )  
@@ -271,8 +254,8 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
         const response: ApiResponse<Chat> = { data: chat }  
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 200,   
+          {     
+            status: 200,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -282,8 +265,8 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
         const response: ApiResponse<Chat[]> = { data: chats }  
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 200,   
+          {     
+            status: 200,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -294,14 +277,14 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     if (method === 'POST') {  
       const body = await req.json()  
       const type = url.searchParams.get('type') // 'chat' or 'message'  
-        
+          
       if (type === 'chat') {  
         // Crear nuevo chat (generalmente llamado desde matches/index.ts)  
         if (!body.match_id) {  
           return new Response(  
             JSON.stringify({ error: 'match_id is required' }),  
-            {   
-              status: 400,   
+            {     
+              status: 400,     
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
             }  
           )  
@@ -309,38 +292,27 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
         const chat = await createChat(body.match_id)  
         const response: ApiResponse<Chat> = { data: chat }  
-          
+            
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 201,   
+          {     
+            status: 201,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
-        
+          
       if (type === 'message') {  
         // Enviar mensaje  
-        const profileId = await getUserProfile(userId)  
-        if (!profileId) {  
-          return new Response(  
-            JSON.stringify({ error: 'Profile not found' }),  
-            {   
-              status: 404,   
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
-            }  
-          )  
-        }  
-  
         const validation = validateMessageData(body)  
         if (!validation.isValid) {  
           return new Response(  
-            JSON.stringify({   
-              error: 'Validation failed',   
-              details: validation.errors   
+            JSON.stringify({     
+              error: 'Validation failed',     
+              details: validation.errors     
             }),  
-            {   
-              status: 400,   
+            {     
+              status: 400,     
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
             }  
           )  
@@ -348,14 +320,14 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
         // Verificar acceso al chat  
         await getChatMessages(body.chat_id, userId)  
-          
-        const message = await sendMessage(body.chat_id, profileId, body.body)  
+            
+        const message = await sendMessage(body.chat_id, userId, body.body)  
         const response: ApiResponse<Message> = { data: message }  
-          
+            
         return new Response(  
           JSON.stringify(response),  
-          {   
-            status: 201,   
+          {     
+            status: 201,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -365,23 +337,23 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // PATCH - Marcar mensajes como leídos  
     if (method === 'PATCH') {  
       const chatId = url.searchParams.get('chat_id')  
-        
+          
       if (!chatId) {  
         return new Response(  
           JSON.stringify({ error: 'chat_id parameter is required' }),  
-          {   
-            status: 400,   
+          {     
+            status: 400,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
       }  
   
       await markMessagesAsRead(chatId, userId)  
-        
+          
       return new Response(  
         JSON.stringify({ message: 'Messages marked as read' }),  
-        {   
-          status: 200,   
+        {     
+          status: 200,     
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -390,14 +362,14 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // DELETE - Eliminar chat (opcional)  
     if (method === 'DELETE') {  
       const chatId = pathParts[pathParts.length - 1]  
-        
+          
       // Verificar acceso y eliminar chat  
       const chat = await getChatByMatchId(chatId, userId)  
       if (!chat) {  
         return new Response(  
           JSON.stringify({ error: 'Chat not found' }),  
-          {   
-            status: 404,   
+          {     
+            status: 404,     
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
           }  
         )  
@@ -408,16 +380,16 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
         .from('messages')  
         .delete()  
         .eq('chat_id', chatId)  
-        
+          
       await supabaseClient  
         .from('chats')  
         .delete()  
         .eq('id', chatId)  
-        
+          
       return new Response(  
         JSON.stringify({ message: 'Chat deleted successfully' }),  
-        {   
-          status: 200,   
+        {     
+          status: 200,     
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -426,8 +398,8 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // Método no permitido  
     return new Response(  
       JSON.stringify({ error: 'Method not allowed' }),  
-      {   
-        status: 405,   
+      {     
+        status: 405,     
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  
@@ -435,12 +407,12 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   } catch (error) {  
     console.error('Chat function error:', error)  
     return new Response(  
-      JSON.stringify({   
+      JSON.stringify({     
         error: 'Internal server error',  
         details: error.message  
       }),  
-      {   
-        status: 500,   
+      {     
+        status: 500,     
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  
