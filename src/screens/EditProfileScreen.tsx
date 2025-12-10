@@ -50,7 +50,7 @@ export const EditProfileScreen: React.FC = () => {
   const [campoEstudio, setCampoEstudio] = useState('');  
   const [intereses, setIntereses] = useState<string[]>([]);  
   const [estiloVida, setEstiloVida] = useState<string[]>([]);  
-  const [situacionVivienda, setSituacionVivienda] = useState('busco_piso');  
+  const [situacionVivienda, _setSituacionVivienda] = useState('busco_piso');  
   const [zonas, setZonas] = useState<string[]>([]);  
   const [numCompaneros, setNumCompaneros] = useState('');  
   const [presupuestoMin, setPresupuestoMin] = useState('');  
@@ -62,7 +62,7 @@ export const EditProfileScreen: React.FC = () => {
       // Lógica para guardar el perfil  
       // Integración con entidades PROFILE, HABITACION, PISO [12-cite-0](#12-cite-0)   
       Alert.alert('Éxito', 'Perfil actualizado correctamente');  
-    } catch (error) {  
+    } catch {  
       Alert.alert('Error', 'No se pudo actualizar el perfil');  
     } finally {  
       setLoading(false);  
