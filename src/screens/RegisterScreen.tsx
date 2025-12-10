@@ -28,13 +28,14 @@ export const RegisterScreen: React.FC = () => {
   const { login } = authContext;  
   const theme = useTheme();  
   const [email, setEmail] = useState('');  
+  const [username, setUsername] = useState('');  
   const [password, setPassword] = useState('');  
   const [firstName, setFirstName] = useState('');  
   const [lastName, setLastName] = useState('');  
   const [loading, setLoading] = useState(false);  
   
   const handleRegister = async () => {  
-    if (!email  || !password || !firstName || !lastName) {  
+    if (!email || !username || !password || !firstName || !lastName) {  
       Alert.alert('Error', 'Por favor completa todos los campos');  
       return;  
     }  
@@ -45,6 +46,7 @@ export const RegisterScreen: React.FC = () => {
       // You might want to add register method to AuthContext for consistency  
       await authService.register({  
         email,  
+        username,  
         password,  
         firstName,  
         lastName  
@@ -52,7 +54,6 @@ export const RegisterScreen: React.FC = () => {
       // Después de registrar, hacer login automáticamente  
       await login(email, password);  
     } catch (error) {  
-      console.error('Registration error:', error);  
       Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
@@ -118,7 +119,24 @@ export const RegisterScreen: React.FC = () => {
           keyboardType="email-address"  
           autoCapitalize="none"  
         />  
-                  
+            
+        <TextInput  
+          style={[  
+            styles.input,  
+            {  
+              borderColor: theme.colors.border,  
+              borderRadius: theme.borderRadius.md,  
+              backgroundColor: theme.colors.surface,  
+              color: theme.colors.text,  
+            },  
+          ]}  
+          placeholder="Usuario"  
+          placeholderTextColor={theme.colors.textTertiary}  
+          value={username}  
+          onChangeText={setUsername}  
+          autoCapitalize="none"  
+        />  
+            
         <TextInput  
           style={[  
             styles.input,  
