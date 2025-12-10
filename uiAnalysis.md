@@ -624,3 +624,82 @@ src/
 ├── types/              # Definiciones TypeScript  
 ├── utils/              # Utilidades  
 └── assets/             # Imágenes, fuentes, etc.
+
+
+## 12. SQL en supabase desplegado
+
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.flats (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL,
+  address text NOT NULL,
+  city text NOT NULL,
+  district text,
+  total_rooms integer,
+  common_areas_description text,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT flats_pkey PRIMARY KEY (id),
+  CONSTRAINT flats_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.matches (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_a_id uuid NOT NULL,
+  user_b_id uuid NOT NULL,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text])),
+  matched_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT matches_pkey PRIMARY KEY (id),
+  CONSTRAINT matches_user_a_id_fkey FOREIGN KEY (user_a_id) REFERENCES public.users(id),
+  CONSTRAINT matches_user_b_id_fkey FOREIGN KEY (user_b_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.profiles (
+  id uuid NOT NULL,
+  display_name text,
+  avatar_url text,
+  bio text,
+  gender text,
+  occupation text,
+  smoker boolean DEFAULT false,
+  has_pets boolean DEFAULT false,
+  social_links jsonb,
+  updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES public.users(id)
+);
+CREATE TABLE public.room_interests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  room_id uuid NOT NULL,
+  message text,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT room_interests_pkey PRIMARY KEY (id),
+  CONSTRAINT room_interests_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT room_interests_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id)
+);
+CREATE TABLE public.rooms (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  flat_id uuid NOT NULL,
+  owner_id uuid NOT NULL,
+  title text NOT NULL,
+  description text,
+  price_per_month numeric NOT NULL,
+  size_m2 numeric,
+  is_available boolean DEFAULT true,
+  available_from date DEFAULT CURRENT_DATE,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT rooms_pkey PRIMARY KEY (id),
+  CONSTRAINT rooms_flat_id_fkey FOREIGN KEY (flat_id) REFERENCES public.flats(id),
+  CONSTRAINT rooms_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.users (
+  id uuid NOT NULL,
+  email text NOT NULL UNIQUE,
+  first_name text NOT NULL,
+  last_name text NOT NULL,
+  identity_document text UNIQUE,
+  birth_date date NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
