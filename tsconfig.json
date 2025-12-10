@@ -11,7 +11,9 @@
     "noEmit": true,  
     "strict": true,  
     "target": "esnext",  
-    "resolveJsonModule": true  
+    "resolveJsonModule": true,
+    "typeRoots": ["./node_modules/@types", "./src/types"]  
+
   },  
   "include": [  
     "src/**/*",  
