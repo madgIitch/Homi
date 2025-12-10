@@ -6,7 +6,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
 import { useTheme } from '../theme/ThemeContext';  
-import { authService } from '../services/authService';
+import { authService } from '../services/authService';  
   
 type RootStackParamList = {  
   Login: undefined;  
@@ -28,28 +28,26 @@ export const RegisterScreen: React.FC = () => {
   const { login } = authContext;  
   const theme = useTheme();  
   const [email, setEmail] = useState('');  
-  const [username, setUsername] = useState('');  
   const [password, setPassword] = useState('');  
   const [firstName, setFirstName] = useState('');  
   const [lastName, setLastName] = useState('');  
+  const [birthDate, setBirthDate] = useState('');  
   const [loading, setLoading] = useState(false);  
   
   const handleRegister = async () => {  
-    if (!email || !username || !password || !firstName || !lastName) {  
+    if (!email || !password || !firstName || !lastName || !birthDate) {  
       Alert.alert('Error', 'Por favor completa todos los campos');  
       return;  
     }  
   
     setLoading(true);  
     try {  
-      // Note: Using authService directly since register is not in AuthContext  
-      // You might want to add register method to AuthContext for consistency  
       await authService.register({  
         email,  
-        username,  
         password,  
         firstName,  
-        lastName  
+        lastName,  
+        birthDate  
       });  
       // Después de registrar, hacer login automáticamente  
       await login(email, password);  
@@ -68,7 +66,7 @@ export const RegisterScreen: React.FC = () => {
           Crea tu cuenta  
         </Text>  
       </View>  
-          
+            
       <View style={styles.form}>  
         <TextInput  
           style={[  
@@ -85,7 +83,7 @@ export const RegisterScreen: React.FC = () => {
           value={firstName}  
           onChangeText={setFirstName}  
         />  
-            
+              
         <TextInput  
           style={[  
             styles.input,  
@@ -101,7 +99,23 @@ export const RegisterScreen: React.FC = () => {
           value={lastName}  
           onChangeText={setLastName}  
         />  
-            
+  
+        <TextInput  
+          style={[  
+            styles.input,  
+            {  
+              borderColor: theme.colors.border,  
+              borderRadius: theme.borderRadius.md,  
+              backgroundColor: theme.colors.surface,  
+              color: theme.colors.text,  
+            },  
+          ]}  
+          placeholder="Fecha de nacimiento (YYYY-MM-DD)"  
+          placeholderTextColor={theme.colors.textTertiary}  
+          value={birthDate}  
+          onChangeText={setBirthDate}  
+        />  
+              
         <TextInput  
           style={[  
             styles.input,  
@@ -119,24 +133,7 @@ export const RegisterScreen: React.FC = () => {
           keyboardType="email-address"  
           autoCapitalize="none"  
         />  
-            
-        <TextInput  
-          style={[  
-            styles.input,  
-            {  
-              borderColor: theme.colors.border,  
-              borderRadius: theme.borderRadius.md,  
-              backgroundColor: theme.colors.surface,  
-              color: theme.colors.text,  
-            },  
-          ]}  
-          placeholder="Usuario"  
-          placeholderTextColor={theme.colors.textTertiary}  
-          value={username}  
-          onChangeText={setUsername}  
-          autoCapitalize="none"  
-        />  
-            
+              
         <TextInput  
           style={[  
             styles.input,  
@@ -153,13 +150,13 @@ export const RegisterScreen: React.FC = () => {
           onChangeText={setPassword}  
           secureTextEntry  
         />  
-            
+              
         <Button  
           title="Registrarse"  
           onPress={handleRegister}  
           loading={loading}  
         />  
-            
+              
         <Button  
           title="¿Ya tienes cuenta? Inicia sesión"  
           onPress={() => navigation.navigate('Login')}  

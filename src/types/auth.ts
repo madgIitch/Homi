@@ -2,10 +2,11 @@
 export interface User {  
   id: string;  
   email: string;  
-  username: string;  
-  premiumStatus: boolean;  
-  createdAt: string;  
-  updatedAt: string;  
+  first_name: string;  
+  last_name: string;  
+  identity_document?: string;  
+  birth_date: string;  
+  created_at: string;  
 }  
   
 export interface LoginRequest {  
@@ -15,8 +16,8 @@ export interface LoginRequest {
   
 export interface RegisterRequest {  
   email: string;  
-  username: string;  
   password: string;  
   firstName: string;  
   lastName: string;  
+  birthDate: string;  
 }
