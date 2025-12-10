@@ -1,7 +1,7 @@
 // supabase/functions/rooms/index.ts  
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
-import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
+import { corsHeaders } from '../_shared/cors.ts'  
 import { withAuth, getUserId } from '../_shared/auth.ts'  
 import {     
   Flat,     
@@ -10,7 +10,6 @@ import {
   RoomCreateRequest,    
   ApiResponse,     
   JWTPayload,    
-  RoomFilters    
 } from '../_shared/types.ts'  
   
 /**    

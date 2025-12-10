@@ -1,7 +1,7 @@
 // supabase/functions/profiles/index.ts  
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
-import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
+import { corsHeaders } from '../_shared/cors.ts'  
 import { withAuth, getUserId } from '../_shared/auth.ts'  
 import {     
   Profile,     
@@ -125,7 +125,6 @@ function validateProfileData(data: any): { isValid: boolean; errors: string[] } 
  */  
 const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Response> => {  
   const userId = getUserId(payload)  
-  const url = new URL(req.url)  
   const method = req.method  
   
   try {  

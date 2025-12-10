@@ -1,14 +1,13 @@
 // supabase/functions/chats/messages.ts  
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
-import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
+import { corsHeaders } from '../_shared/cors.ts'  
 import { withAuth, getUserId } from '../_shared/auth.ts'  
 import {     
   Chat,     
   Message,     
   ApiResponse,     
   JWTPayload,    
-  MessageCreateRequest    
 } from '../_shared/types.ts'  
   
 /**    

@@ -1,13 +1,12 @@
 // supabase/functions/rooms/search.ts  
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
-import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
+import { corsHeaders } from '../_shared/cors.ts'  
 import { withAuth } from '../_shared/auth.ts'  
 import {     
   Room,     
   RoomFilters,     
-  PaginatedResponse,     
-  ApiResponse,    
+  PaginatedResponse,  
   JWTPayload     
 } from '../_shared/types.ts'  
   
@@ -89,7 +88,7 @@ function sortByRelevance(rooms: Room[], filters: RoomFilters): Room[] {
 /**    
  * Handler principal con autenticación opcional    
  */  
-const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Response> => {  
+const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Response> => {
   try {  
     // Validar método HTTP  
     if (req.method !== 'POST') {  

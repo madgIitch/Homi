@@ -1,8 +1,11 @@
 // supabase/functions/_shared/auth.ts  
   
+/// <reference types="https://deno.land/x/deno@v1.36.3/lib/deno.ns.d.ts" />  
+/// <reference types="https://esm.sh/@supabase/supabase-js@2" />  
+  
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders } from './cors.ts'  
-import { JWTPayload } from './types.ts' // Importar desde types.ts  
+import { JWTPayload } from './types.ts'
   
 /**    
  * Cliente de Supabase para Edge Functions    

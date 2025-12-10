@@ -2,8 +2,7 @@
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
-import { validateJWT } from '../_shared/auth.ts'  
-import { AuthSignupRequest, AuthResponse, User, Profile } from '../_shared/types.ts'  
+import { AuthSignupRequest, AuthResponse } from '../_shared/types.ts' 
   
 /**    
  * Edge Function para registro de usuarios en HomiMatch    

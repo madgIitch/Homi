@@ -1,7 +1,7 @@
 // supabase/functions/matches/interests.ts  
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
-import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
+import { corsHeaders } from '../_shared/cors.ts'  
 import { withAuth, getUserId } from '../_shared/auth.ts'  
 import {     
   Match,     
