@@ -15,11 +15,11 @@ class AuthService {
       headers: { 'Content-Type': 'application/json' },  
       body: JSON.stringify(credentials),  
     });  
-          
+            
     if (!response.ok) {  
       throw new Error('Credenciales inválidas');  
     }  
-          
+            
     const data = await response.json();  
     return {  
       user: data.user,  
@@ -38,17 +38,17 @@ class AuthService {
         birth_date: userData.birthDate  
       }  
     };  
-  
+    
     const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth/register`, {  
       method: 'POST',  
       headers: { 'Content-Type': 'application/json' },  
       body: JSON.stringify(registerData),  
     });  
-          
+            
     if (!response.ok) {  
       throw new Error('Error en el registro');  
     }  
-          
+            
     const data = await response.json();  
     return {  
       user: data.user,  
