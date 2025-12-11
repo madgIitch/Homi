@@ -37,28 +37,44 @@ export const RegisterScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);  
   
   const handleRegister = async () => {  
+    console.log('🔄 Iniciando registro');  
+    console.log('📝 Datos del formulario:', {  
+      email,  
+      password: password ? '***' : 'vacío',  
+      firstName,  
+      lastName,  
+      birthDate: birthDate?.toISOString().split('T')[0]  
+    });  
+    
     if (!email || !password || !firstName || !lastName || !birthDate) {  
+      console.log('❌ Validación fallida: campos incompletos');  
       Alert.alert('Error', 'Por favor completa todos los campos');  
       return;  
     }  
-  
+    
     setLoading(true);  
     try {  
-      await authService.register({  
+      console.log('📤 Enviando solicitud de registro...');  
+      const result = await authService.register({  
         email,  
         password,  
         firstName,  
         lastName,  
-        birthDate: birthDate.toISOString().split('T')[0] // Formato YYYY-MM-DD  
+        birthDate: birthDate.toISOString().split('T')[0]  
       });  
+      console.log('✅ Registro exitoso:', result);  
+        
       // Después de registrar, hacer login automáticamente  
+      console.log('🔐 Iniciando login automático...');  
       await login(email, password);  
+      console.log('✅ Login automático exitoso');  
     } catch (error) {  
+      console.error('❌ Error en registro:', error);  
       Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
     }  
-  };  
+  }; 
   
   const onChangeDate = (event: any, selectedDate?: Date) => {  
     setShowDatePicker(Platform.OS === 'ios');  

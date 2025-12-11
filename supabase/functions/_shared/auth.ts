@@ -138,11 +138,11 @@ export function withResourceOwner(
   handler: (req: Request, payload: JWTPayload) => Promise<Response>,  
   allowAdmin: boolean = false  
 ) {  
-  return async (req: Request, payload: JWTPayload): Promise<Response> => {  
+  return async (req: Request, payload: JWTPayload): Promise<Response> => {
     if (!canAccessResource(payload, resourceOwnerId, allowAdmin)) {  
       return authErrorResponse('Forbidden: You can only access your own resources', 403)  
     }  
-        
+          
     return handler(req, payload)  
   }  
 }

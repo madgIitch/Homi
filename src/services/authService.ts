@@ -28,6 +28,14 @@ class AuthService {
   }  
   
   async register(userData: RegisterRequest): Promise<AuthResponse> {  
+    console.log('🔧 AuthService.register() llamado con:', {  
+      email: userData.email,  
+      password: userData.password ? '***' : 'vacío',  
+      firstName: userData.firstName,  
+      lastName: userData.lastName,  
+      birthDate: userData.birthDate  
+    });  
+    
     // Adaptar al nuevo formato que espera el backend  
     const registerData = {  
       email: userData.email,  
@@ -38,23 +46,46 @@ class AuthService {
         birth_date: userData.birthDate  
       }  
     };  
-    
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth/register`, {  
-      method: 'POST',  
-      headers: { 'Content-Type': 'application/json' },  
-      body: JSON.stringify(registerData),  
+      
+    console.log('📦 Datos transformados para backend:', {  
+      ...registerData,  
+      password: registerData.password ? '***' : 'vacío'  
     });  
-            
-    if (!response.ok) {  
-      throw new Error('Error en el registro');  
+      
+    const url = `${API_CONFIG.FUNCTIONS_URL}/auth/register`;  
+    console.log('🌐 URL de la petición:', url);  
+      
+    try {  
+      const response = await fetch(url, {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },  
+        body: JSON.stringify(registerData),  
+      });  
+        
+      console.log('📥 Respuesta recibida:', {  
+        status: response.status,  
+        statusText: response.statusText,  
+        ok: response.ok  
+      });  
+        
+      if (!response.ok) {  
+        const errorText = await response.text();  
+        console.error('❌ Error de la API:', errorText);  
+        throw new Error('Error en el registro');  
+      }  
+        
+      const data = await response.json();  
+      console.log('✅ Datos de respuesta:', data);  
+        
+      return {  
+        user: data.user,  
+        token: data.access_token  
+      };  
+    } catch (error) {  
+      console.error('❌ Error en fetch:', error);  
+      throw error;  
     }  
-            
-    const data = await response.json();  
-    return {  
-      user: data.user,  
-      token: data.access_token  
-    };  
-  }  
+  } 
   
   async logout(): Promise<void> {  
     await AsyncStorage.removeItem('authToken');  

@@ -27,7 +27,12 @@ async function handler(req: Request): Promise<Response> {
   
     // Parsear y validar request body  
     const body: AuthSignupRequest = await req.json()  
-        
+    console.log('📥 Register Edge Function - Request body:', {  
+      email: body.email,  
+      password: body.password ? '***' : 'vacío',  
+      data: body.data  
+    });         
+
     if (!body.email || !body.password || !body.data?.first_name || !body.data?.last_name || !body.data?.birth_date) {  
       return new Response(  
         JSON.stringify({     
@@ -97,7 +102,13 @@ async function handler(req: Request): Promise<Response> {
         first_name: body.data.first_name,  
         last_name: body.data.last_name  
       }  
-    })  
+    }) 
+    
+    console.log('🔐 Auth creation result:', {  
+      success: !authError,  
+      userId: authData?.user?.id,  
+      error: authError?.message  
+    }); 
   
     if (authError || !authData.user) {  
       console.error('Auth error:', authError)  
@@ -123,7 +134,13 @@ async function handler(req: Request): Promise<Response> {
         last_name: body.data.last_name,  
         identity_document: body.data.identity_document,  
         birth_date: body.data.birth_date  
-      })  
+      }) 
+      
+      
+      console.log('💾 Users table insert result:', {  
+        success: !userError,  
+        error: userError?.message  
+      });
   
     if (userError) {  
       console.error('User table error:', userError)  

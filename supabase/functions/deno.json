@@ -1,6 +1,6 @@
 {  
   "compilerOptions": {  
-    "allowJs": true,  
+    "jsx": "react-jsx",  
     "lib": ["deno.window"],  
     "strict": true  
   },  
@@ -9,9 +9,7 @@
       "tags": ["recommended"]  
     }  
   },  
-  "fmt": {  
-    "files": {  
-      "include": ["src/", "supabase/"]  
-    }  
+  "tasks": {  
+    "cache": "deno cache --reload **/*.ts"  
   }  
 }
