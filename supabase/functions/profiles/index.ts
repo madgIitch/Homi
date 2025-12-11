@@ -21,6 +21,18 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
+interface ProfileValidationData {  
+  id?: string  
+  display_name?: string  
+  avatar_url?: string  
+  bio?: string  
+  gender?: string  
+  occupation?: string  
+  smoker?: boolean  
+  has_pets?: boolean  
+  social_links?: Record<string, unknown>  
+}  
+
 /**    
  * Obtener perfil del usuario autenticado    
  */  
@@ -76,7 +88,7 @@ async function updateProfile(userId: string, updates: Partial<Profile>): Promise
 /**    
  * Validar datos de perfil    
  */  
-function validateProfileData(data: any): { isValid: boolean; errors: string[] } {  
+function validateProfileData(data: ProfileValidationData): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
       
   // Validar display_name (antes name)  
@@ -251,17 +263,18 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
   } catch (error) {  
     console.error('Profile function error:', error)  
+    const errorMessage = error instanceof Error ? error.message : String(error)  
     return new Response(  
-      JSON.stringify({     
-        error: 'Internal server error',  
-        details: error.message  
+      JSON.stringify({   
+        error: 'Internal server error',   
+        details: errorMessage   
       }),  
-      {     
-        status: 500,     
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+      {   
+        status: 500,   
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }   
       }  
     )  
-  }  
+  } 
 })  
   
 // Exportar handler para Deno  

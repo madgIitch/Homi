@@ -21,6 +21,19 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
+interface MatchWithProfiles {  
+  id: string  
+  user_a_id: string  
+  user_b_id: string  
+  status: string  
+  user_a: { id: string; user_id: string }  
+  user_b: { id: string; user_id: string }  
+}  
+  
+interface MessageValidationData {  
+  body?: string  
+}
+
 /**    
  * Obtener chats del usuario (a través de matches)    
  */  
@@ -67,7 +80,7 @@ async function getChatByMatchId(matchId: string, userId: string): Promise<Chat |
   }  
       
   // Verificar que el usuario es parte del match  
-  const match = data.match as any  
+  const match = data.match as MatchWithProfiles    
   const userAId = match.user_a_id  
   const userBId = match.user_b_id  
       
@@ -125,7 +138,7 @@ async function getChatMessages(chatId: string, userId: string): Promise<Message[
   }  
       
   // Verificar acceso  
-  const match = chat.match as any  
+  const match = chat.match as MatchWithProfiles    
   const userAId = match.user_a_id  
   const userBId = match.user_b_id  
       
@@ -195,7 +208,7 @@ async function markMessagesAsRead(chatId: string, userId: string): Promise<void>
 /**    
  * Validar datos de mensaje    
  */  
-function validateMessageData(data: any): { isValid: boolean; errors: string[] } {  
+function validateMessageData(data: MessageValidationData): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
       
   if (!data.body || typeof data.body !== 'string' || data.body.trim().length === 0) {  
@@ -403,19 +416,20 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       }  
     )  
   
-  } catch (error) {  
+  }  catch (error) {  
     console.error('Chat function error:', error)  
+    const errorMessage = error instanceof Error ? error.message : String(error)  
     return new Response(  
-      JSON.stringify({     
-        error: 'Internal server error',  
-        details: error.message  
+      JSON.stringify({   
+        error: 'Internal server error',   
+        details: errorMessage   
       }),  
-      {     
-        status: 500,     
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+      {   
+        status: 500,   
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }   
       }  
     )  
-  }  
+  } 
 })  
   
 // Exportar handler para Deno  

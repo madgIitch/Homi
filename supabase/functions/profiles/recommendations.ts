@@ -196,17 +196,18 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
   } catch (error) {  
     console.error('Profile recommendations function error:', error)  
+    const errorMessage = error instanceof Error ? error.message : String(error)  
     return new Response(  
-      JSON.stringify({     
-        error: 'Internal server error',  
-        details: error.message  
+      JSON.stringify({   
+        error: 'Internal server error',   
+        details: errorMessage   
       }),  
-      {     
-        status: 500,     
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+      {   
+        status: 500,   
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }   
       }  
     )  
-  }  
+  } 
 })  
   
 // Exportar handler para Deno  

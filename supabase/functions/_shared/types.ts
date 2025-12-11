@@ -9,16 +9,16 @@
 // Tipos de Autenticación    
 // ====================    
   
-export interface JWTPayload {    
-  aud: string    
-  exp: number    
-  sub: string    
-  email: string    
-  phone?: string    
-  app_metadata: Record<string, any>    
-  user_metadata: Record<string, any>    
-  role: string    
-}  
+export interface JWTPayload {  
+  aud: string  
+  exp: number  
+  sub: string  
+  email: string  
+  phone?: string  
+  app_metadata: Record<string, unknown>  
+  user_metadata: Record<string, unknown>  
+  role: string  
+} 
   
 // ====================    
 // Entidades de Base de Datos (actualizadas para coincidir con SQL)    
@@ -43,7 +43,7 @@ export interface Profile {
   occupation?: string    
   smoker?: boolean    
   has_pets?: boolean    
-  social_links?: Record<string, any>    
+  social_links?: Record<string, unknown>    
   updated_at: string    
 }  
   
@@ -130,16 +130,17 @@ export interface AuthResponse {
   user: User    
 }  
   
-export interface ProfileCreateRequest {    
-  display_name?: string    
-  avatar_url?: string    
-  bio?: string    
-  gender?: string    
-  occupation?: string    
-  smoker?: boolean    
-  has_pets?: boolean    
-  social_links?: Record<string, any>    
-}  
+export interface ProfileCreateRequest {  
+  id: string  // Añadir esta línea  
+  display_name?: string  
+  avatar_url?: string  
+  bio?: string  
+  gender?: string  
+  occupation?: string  
+  smoker?: boolean  
+  has_pets?: boolean  
+  social_links?: Record<string, unknown>  
+}
   
 export interface FlatCreateRequest {    
   address: string    
@@ -160,7 +161,8 @@ export interface RoomCreateRequest {
 }  
   
 export interface RoomInterestCreateRequest {    
-  room_id: string    
+  room_id: string   
+  user_id: string  // Añadir esta línea  
   message?: string    
 }  
   
@@ -173,7 +175,7 @@ export interface MessageCreateRequest {
 // Tipos de Respuestas de API    
 // ====================    
   
-export interface ApiResponse<T = any> {    
+export interface ApiResponse<T = unknown> {    
   data?: T    
   error?: string    
   message?: string    
@@ -202,9 +204,27 @@ export type MatchStatus = 'pending' | 'accepted' | 'rejected'
 export interface ApiError {    
   code: string    
   message: string    
-  details?: any    
+  details?: unknown    
 }  
   
 export interface ValidationError extends ApiError {    
   field: string    
+}
+
+export interface RoomRecommendation {  
+  profile: Profile  
+  compatibility_score: number  
+  match_reasons: string[]  
+}  
+  
+export interface RecommendationResponse {  
+  recommendations: RoomRecommendation[]  
+}
+
+
+export interface RoomFilters {  
+  city?: string  
+  price_min?: number  
+  price_max?: number  
+  available_from?: string  
 }

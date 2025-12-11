@@ -133,6 +133,7 @@ export function canAccessResource(
 /**    
  * Middleware para verificar propietario de recurso    
  */  
+// deno-lint-ignore require-await
 export function withResourceOwner(  
   resourceOwnerId: string,  
   handler: (req: Request, payload: JWTPayload) => Promise<Response>,  
@@ -143,6 +144,6 @@ export function withResourceOwner(
       return authErrorResponse('Forbidden: You can only access your own resources', 403)  
     }  
           
-    return handler(req, payload)  
+    return await handler(req, payload)  
   }  
 }

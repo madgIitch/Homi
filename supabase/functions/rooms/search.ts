@@ -3,16 +3,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders } from '../_shared/cors.ts'  
 import { withAuth } from '../_shared/auth.ts'  
-import {     
-  Room,     
-  RoomFilters,     
-  PaginatedResponse,  
-  JWTPayload     
+import {       
+  Room,       
+  RoomFilters,       
+  PaginatedResponse,    
+  JWTPayload       
 } from '../_shared/types.ts'  
   
-/**    
- * Edge Function para búsqueda de rooms en HomiMatch    
- * Permite buscar rooms disponibles con filtros básicos    
+/**      
+ * Edge Function para búsqueda de rooms en HomiMatch      
+ * Permite buscar rooms disponibles con filtros básicos      
  */  
   
 // Crear cliente de Supabase  
@@ -21,8 +21,8 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
-/**    
- * Construye query dinámica basada en filtros    
+/**      
+ * Construye query dinámica basada en filtros      
  */  
 function buildSearchQuery(filters: RoomFilters) {  
   let query = supabaseClient  
@@ -54,8 +54,8 @@ function buildSearchQuery(filters: RoomFilters) {
   return query  
 }  
   
-/**    
- * Ordena resultados por relevancia    
+/**      
+ * Ordena resultados por relevancia      
  */  
 function sortByRelevance(rooms: Room[], filters: RoomFilters): Room[] {  
   return rooms.sort((a, b) => {  
@@ -85,17 +85,17 @@ function sortByRelevance(rooms: Room[], filters: RoomFilters): Room[] {
   })  
 }  
   
-/**    
- * Handler principal con autenticación opcional    
+/**      
+ * Handler principal con autenticación opcional      
  */  
-const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Response> => {
+const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Response> => {  
   try {  
     // Validar método HTTP  
     if (req.method !== 'POST') {  
       return new Response(  
         JSON.stringify({ error: 'Method not allowed' }),  
-        {     
-          status: 405,     
+        {       
+          status: 405,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -110,12 +110,12 @@ const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Res
     // Validar filtros  
     if (filters.price_min && filters.price_max && filters.price_min > filters.price_max) {  
       return new Response(  
-        JSON.stringify({     
+        JSON.stringify({       
           error: 'Validation failed',  
           details: 'price_min cannot be greater than price_max'  
         }),  
-        {     
-          status: 400,     
+        {       
+          status: 400,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -125,15 +125,36 @@ const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Res
     let query = buildSearchQuery(filters)  
   
     // Obtener conteo total para paginación  
-    const { count, error: countError } = await query  
-    .select('*', { count: 'exact', head: true })  
+    let countQuery = supabaseClient  
+      .from('rooms')  
+      .select('*', { count: 'exact', head: true })  
+      .eq('is_available', true)  
+  
+    // Aplicar mismos filtros que en buildSearchQuery  
+    if (filters.city) {  
+      countQuery = countQuery.eq('flat.city', filters.city)  
+    }  
+  
+    if (filters.price_min) {  
+      countQuery = countQuery.gte('price_per_month', filters.price_min)  
+    }  
+  
+    if (filters.price_max) {  
+      countQuery = countQuery.lte('price_per_month', filters.price_max)  
+    }  
+  
+    if (filters.available_from) {  
+      countQuery = countQuery.lte('available_from', filters.available_from)  
+    }  
+  
+    const { count, error: countError } = await countQuery  
   
     if (countError) {  
       console.error('Count error:', countError)  
       return new Response(  
         JSON.stringify({ error: 'Failed to count results' }),  
-        {     
-          status: 500,     
+        {       
+          status: 500,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -151,8 +172,8 @@ const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Res
       console.error('Search error:', roomsError)  
       return new Response(  
         JSON.stringify({ error: 'Failed to search rooms' }),  
-        {     
-          status: 500,     
+        {       
+          status: 500,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -173,22 +194,23 @@ const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Res
   
     return new Response(  
       JSON.stringify(response),  
-      {     
-        status: 200,     
+      {       
+        status: 200,       
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  
   
   } catch (error) {  
     console.error('Room search function error:', error)  
+    const errorMessage = error instanceof Error ? error.message : String(error)  
     return new Response(  
       JSON.stringify({     
-        error: 'Internal server error',  
-        details: error.message  
+        error: 'Internal server error',     
+        details: errorMessage     
       }),  
       {     
         status: 500,     
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }     
       }  
     )  
   }  

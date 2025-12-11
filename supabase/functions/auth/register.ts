@@ -2,11 +2,11 @@
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
-import { AuthSignupRequest, AuthResponse } from '../_shared/types.ts' 
+import { AuthSignupRequest, AuthResponse } from '../_shared/types.ts'  
   
-/**    
- * Edge Function para registro de usuarios en HomiMatch    
- * Crea usuario en Supabase Auth y registros en tablas users/profiles    
+/**      
+ * Edge Function para registro de usuarios en HomiMatch      
+ * Crea usuario en Supabase Auth y registros en tablas users/profiles      
  */  
 async function handler(req: Request): Promise<Response> {  
   // Manejar CORS preflight  
@@ -18,8 +18,8 @@ async function handler(req: Request): Promise<Response> {
     if (req.method !== 'POST') {  
       return new Response(  
         JSON.stringify({ error: 'Method not allowed' }),  
-        {     
-          status: 405,     
+        {       
+          status: 405,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -31,16 +31,16 @@ async function handler(req: Request): Promise<Response> {
       email: body.email,  
       password: body.password ? '***' : 'vacío',  
       data: body.data  
-    });         
-
+    });           
+  
     if (!body.email || !body.password || !body.data?.first_name || !body.data?.last_name || !body.data?.birth_date) {  
       return new Response(  
-        JSON.stringify({     
+        JSON.stringify({       
           error: 'Missing required fields',  
           details: 'email, password, first_name, last_name, and birth_date are required'  
         }),  
-        {     
-          status: 400,     
+        {       
+          status: 400,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -51,8 +51,8 @@ async function handler(req: Request): Promise<Response> {
     if (!emailRegex.test(body.email)) {  
       return new Response(  
         JSON.stringify({ error: 'Invalid email format' }),  
-        {     
-          status: 400,     
+        {       
+          status: 400,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -62,8 +62,8 @@ async function handler(req: Request): Promise<Response> {
     if (body.password.length < 6) {  
       return new Response(  
         JSON.stringify({ error: 'Password must be at least 6 characters' }),  
-        {     
-          status: 400,     
+        {       
+          status: 400,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -74,8 +74,8 @@ async function handler(req: Request): Promise<Response> {
     if (!birthDateRegex.test(body.data.birth_date)) {  
       return new Response(  
         JSON.stringify({ error: 'Invalid birth_date format. Use YYYY-MM-DD' }),  
-        {     
-          status: 400,     
+        {       
+          status: 400,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -102,23 +102,23 @@ async function handler(req: Request): Promise<Response> {
         first_name: body.data.first_name,  
         last_name: body.data.last_name  
       }  
-    }) 
-    
+    })  
+      
     console.log('🔐 Auth creation result:', {  
       success: !authError,  
       userId: authData?.user?.id,  
       error: authError?.message  
-    }); 
+    });  
   
     if (authError || !authData.user) {  
       console.error('Auth error:', authError)  
       return new Response(  
-        JSON.stringify({     
+        JSON.stringify({       
           error: 'Failed to create user',  
           details: authError?.message  
         }),  
-        {     
-          status: 400,     
+        {       
+          status: 400,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -134,26 +134,26 @@ async function handler(req: Request): Promise<Response> {
         last_name: body.data.last_name,  
         identity_document: body.data.identity_document,  
         birth_date: body.data.birth_date  
-      }) 
-      
-      
+      })  
+        
+        
       console.log('💾 Users table insert result:', {  
         success: !userError,  
         error: userError?.message  
-      });
+      });  
   
     if (userError) {  
       console.error('User table error:', userError)  
       // Intentar rollback: eliminar usuario de Auth  
       await supabaseClient.auth.admin.deleteUser(authData.user.id)  
-          
+            
       return new Response(  
-        JSON.stringify({     
+        JSON.stringify({       
           error: 'Failed to create user record',  
           details: userError.message  
         }),  
-        {     
-          status: 500,     
+        {       
+          status: 500,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -178,15 +178,21 @@ async function handler(req: Request): Promise<Response> {
       password: body.password  
     })  
   
-    if (sessionError || !sessionData.properties?.access_token) {  
+    // Añadir type assertion para las propiedades  
+    const properties = sessionData?.properties as {  
+      access_token?: string;  
+      refresh_token?: string;  
+    } | undefined  
+  
+    if (sessionError || !properties?.access_token) {  
       console.error('Session generation error:', sessionError)  
       return new Response(  
-        JSON.stringify({     
+        JSON.stringify({       
           error: 'User created but failed to generate session',  
           user_id: authData.user.id  
         }),  
-        {     
-          status: 500,     
+        {       
+          status: 500,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
@@ -194,10 +200,10 @@ async function handler(req: Request): Promise<Response> {
   
     // 5. Construir respuesta exitosa  
     const response: AuthResponse = {  
-      access_token: sessionData.properties.access_token,  
+      access_token: properties.access_token,  
       token_type: 'bearer',  
       expires_in: 3600,  
-      refresh_token: sessionData.properties.refresh_token || '',  
+      refresh_token: properties.refresh_token || '',  
       user: {  
         id: authData.user.id,  
         email: authData.user.email!,  
@@ -211,21 +217,22 @@ async function handler(req: Request): Promise<Response> {
   
     return new Response(  
       JSON.stringify(response),  
-      {     
-        status: 201,     
+      {       
+        status: 201,       
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  
   
   } catch (error) {  
     console.error('Register function error:', error)  
+    const errorMessage = error instanceof Error ? error.message : String(error)  
     return new Response(  
-      JSON.stringify({     
+      JSON.stringify({       
         error: 'Internal server error',  
-        details: error.message  
+        details: errorMessage  
       }),  
-      {     
-        status: 500,     
+      {       
+        status: 500,       
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
       }  
     )  

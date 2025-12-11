@@ -21,6 +21,11 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
+interface InterestValidationData {  
+  room_id: string  
+  message?: string  
+} 
+
 /**    
  * Obtener intereses del usuario (likes que ha dado)    
  */  
@@ -114,7 +119,7 @@ async function checkExistingInterest(userId: string, roomId: string): Promise<bo
 /**    
  * Validar datos de interés    
  */  
-function validateInterestData(data: any): { isValid: boolean; errors: string[] } {  
+function validateInterestData(data: InterestValidationData): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
       
   if (!data.room_id || typeof data.room_id !== 'string') {  
@@ -262,17 +267,18 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
   } catch (error) {  
     console.error('Interests function error:', error)  
+    const errorMessage = error instanceof Error ? error.message : String(error)  
     return new Response(  
-      JSON.stringify({     
-        error: 'Internal server error',  
-        details: error.message  
+      JSON.stringify({   
+        error: 'Internal server error',   
+        details: errorMessage   
       }),  
-      {     
-        status: 500,     
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+      {   
+        status: 500,   
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }   
       }  
     )  
-  }  
+  } 
 })  
   
 // Exportar handler para Deno  

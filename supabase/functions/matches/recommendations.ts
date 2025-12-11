@@ -20,6 +20,12 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''  
 )  
   
+interface MatchValidationData {  
+  user_a_id: string  
+  user_b_id: string  
+  status?: 'pending' | 'accepted' | 'rejected'  
+} 
+
 /**    
  * Obtener matches del usuario (como user_a o como user_b)    
  */  
@@ -112,7 +118,7 @@ async function updateMatch(matchId: string, userId: string, updates: Partial<Mat
 /**    
  * Validar datos de match    
  */  
-function validateMatchData(data: any): { isValid: boolean; errors: string[] } {  
+function validateMatchData(data: MatchValidationData): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
       
   if (!data.user_a_id || typeof data.user_a_id !== 'string') {  
@@ -269,17 +275,18 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
   
   } catch (error) {  
     console.error('Matches function error:', error)  
+    const errorMessage = error instanceof Error ? error.message : String(error)  
     return new Response(  
-      JSON.stringify({     
-        error: 'Internal server error',  
-        details: error.message  
+      JSON.stringify({   
+        error: 'Internal server error',   
+        details: errorMessage   
       }),  
-      {     
-        status: 500,     
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+      {   
+        status: 500,   
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }   
       }  
     )  
-  }  
+  }
 })  
   
 // Exportar handler para Deno  
