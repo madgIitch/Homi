@@ -85,6 +85,7 @@ async function handler(req: Request): Promise<Response> {
     const supabaseClient = createClient(  
       Deno.env.get('SUPABASE_URL') ?? '',  
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',  
+      
       {  
         auth: {  
           autoRefreshToken: false,  
@@ -118,23 +119,28 @@ async function handler(req: Request): Promise<Response> {
           details: authError?.message  
         }),  
         {       
-          status: 400,       
+          status: 500,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
         }  
       )  
     }  
   
     // 2. Crear registro en tabla users  
-    const { error: userError } = await supabaseClient  
-      .from('users')  
-      .insert({  
-        id: authData.user.id,  
-        email: body.email,  
-        first_name: body.data.first_name,  
-        last_name: body.data.last_name,  
-        identity_document: body.data.identity_document,  
-        birth_date: body.data.birth_date  
-      })  
+    const { error: userError } = await supabaseClient
+      .from('users')
+      .upsert(
+        {
+          id: authData.user.id,
+          email: body.email,
+          first_name: body.data.first_name,
+          last_name: body.data.last_name,
+          identity_document: body.data.identity_document,
+          birth_date: body.data.birth_date
+        },
+        {
+          onConflict: 'id'   // clave primaria
+        }
+      )  
         
         
       console.log('💾 Users table insert result:', {  
@@ -172,56 +178,64 @@ async function handler(req: Request): Promise<Response> {
     }  
   
     // 4. Generar tokens para respuesta  
-    const { data: sessionData, error: sessionError } = await supabaseClient.auth.admin.generateLink({  
-      type: 'signup',  
-      email: body.email,  
-      password: body.password  
-    })  
-  
-    // Añadir type assertion para las propiedades  
-    const properties = sessionData?.properties as {  
-      access_token?: string;  
-      refresh_token?: string;  
-    } | undefined  
-  
-    if (sessionError || !properties?.access_token) {  
-      console.error('Session generation error:', sessionError)  
-      return new Response(  
-        JSON.stringify({       
-          error: 'User created but failed to generate session',  
-          user_id: authData.user.id  
-        }),  
-        {       
-          status: 500,       
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
-        }  
-      )  
-    }  
-  
-    // 5. Construir respuesta exitosa  
-    const response: AuthResponse = {  
-      access_token: properties.access_token,  
-      token_type: 'bearer',  
-      expires_in: 3600,  
-      refresh_token: properties.refresh_token || '',  
-      user: {  
-        id: authData.user.id,  
-        email: authData.user.email!,  
-        first_name: body.data.first_name,  
-        last_name: body.data.last_name,  
-        identity_document: body.data.identity_document,  
-        birth_date: body.data.birth_date,  
-        created_at: authData.user.created_at  
-      }  
-    }  
-  
-    return new Response(  
-      JSON.stringify(response),  
-      {       
-        status: 201,       
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
-      }  
-    )  
+    // 4. Generar sesión iniciando sesión con email y password
+const anonClient = createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+)
+
+const { data: signInData, error: signInError } = await anonClient.auth.signInWithPassword({
+  email: body.email,
+  password: body.password
+})
+
+if (signInError || !signInData.session || !signInData.user) {
+  console.error('Session generation error:', signInError)
+  return new Response(
+    JSON.stringify({
+      error: 'User created but failed to generate session',
+      user_id: authData.user.id
+    }),
+    {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    }
+  )
+}
+
+const { session, user } = signInData
+
+const response: AuthResponse = {
+  access_token: session.access_token,
+  token_type: 'bearer',
+  // si session.expires_in no viene, puedes forzar 3600
+  expires_in: (session as any).expires_in ?? 3600,
+  refresh_token: session.refresh_token ?? '',
+  user: {
+    id: user.id,
+    email: user.email!,
+    first_name: body.data.first_name,
+    last_name: body.data.last_name,
+    identity_document: body.data.identity_document,
+    birth_date: body.data.birth_date,
+    created_at: user.created_at
+  }
+}
+
+return new Response(
+  JSON.stringify(response),
+  {
+    status: 201,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  }
+)
+ 
   
   } catch (error) {  
     console.error('Register function error:', error)  
