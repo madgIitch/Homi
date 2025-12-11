@@ -1,4 +1,4 @@
-// supabase/functions/auth/register.ts  
+// supabase/functions/auth/index.ts  
   
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
