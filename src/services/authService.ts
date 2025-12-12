@@ -146,7 +146,18 @@ class AuthService {
   
   // Registro por fases  
   async registerPhase1(data: Phase1Data): Promise<TempRegistration> {  
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-register-phase1`, {  
+  console.log('🔧 registerPhase1 called with:', {  
+    email: data.email,  
+    hasPassword: !!data.password,  
+    isGoogleUser: data.isGoogleUser  
+  });  
+  
+  const url = `${API_CONFIG.FUNCTIONS_URL}/auth-register-phase1`;  
+  console.log('🌐 Fetch URL:', url);  
+  console.log('🔧 API_CONFIG.FUNCTIONS_URL:', API_CONFIG.FUNCTIONS_URL);  
+  
+  try {  
+    const response = await fetch(url, {  
       method: 'POST',  
       headers: defaultHeaders,  
       body: JSON.stringify({  
@@ -155,20 +166,42 @@ class AuthService {
         is_google_user: data.isGoogleUser  
       }),  
     });  
-    
+  
+    console.log('📥 Response received:', {  
+      status: response.status,  
+      statusText: response.statusText,  
+      ok: response.ok,  
+      url: response.url  
+    });  
+  
     if (!response.ok) {  
       const errorText = await response.text();  
-      console.error('❌ Error en fase 1 del registro:', errorText);  
+      console.error('❌ Error response body:', errorText);  
       throw new Error('Error en fase 1 del registro');  
-    }   
-    
+    }  
+  
     const result = await response.json();  
+    console.log('✅ Phase1 response:', result);  
+  
     return {  
       tempToken: result.temp_token,  
       email: result.email,  
       isGoogleUser: data.isGoogleUser || false  
     };  
-  }  
+    } catch (error) {  
+      console.error('❌ registerPhase1 error:', error);  
+      const errorMessage = error instanceof Error ? error.message : String(error);  
+      const errorStack = error instanceof Error ? error.stack : 'No stack available';  
+      const errorName = error instanceof Error ? error.name : 'Unknown';  
+        
+      console.error('❌ Error details:', {  
+        message: errorMessage,  
+        stack: errorStack,  
+        name: errorName  
+      });  
+      throw error;  
+    }  
+} 
     
   async registerPhase2(tempToken: string, data: Phase2Data): Promise<void> {  
     const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-register-phase2`, {  

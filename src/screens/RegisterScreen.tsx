@@ -36,32 +36,46 @@ export const RegisterScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);  
   
   const handlePhase1 = async (data: Phase1Data) => {  
+    console.log('📍 RegisterScreen: handlePhase1 called');  
+    console.log('📍 RegisterScreen: authService available:', !!authService);  
+    console.log('📍 RegisterScreen: registerPhase1 method available:', typeof authService.registerPhase1);  
+      
     setLoading(true);  
     try {  
       if (data.isGoogleUser) {  
-        // Flujo de Google OAuth  
+        console.log('📍 RegisterScreen: Google flow detected');  
         const result = await authService.loginWithGoogle();  
         setTempRegistration({  
           tempToken: 'google_' + result.user.id,  
           email: result.user.email,  
           isGoogleUser: true,  
         });  
-        // Saltar al paso 3 para usuarios de Google  
         setCurrentPhase(3);  
       } else {  
-        // Flujo normal de email/contraseña  
+        console.log('📍 RegisterScreen: Email flow detected, calling registerPhase1');  
         const tempReg = await authService.registerPhase1(data);  
+        console.log('📍 RegisterScreen: registerPhase1 completed:', tempReg);  
         setTempRegistration(tempReg);  
         setCurrentPhase(2);  
       }  
     } catch (error) {  
       console.error('❌ Error en fase 1:', error);  
-      Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
+      const errorMessage = error instanceof Error ? error.message : String(error);  
+      const errorStack = error instanceof Error ? error.stack : 'No stack available';  
+        
+      console.error('❌ Full error details:', {  
+        message: errorMessage,  
+        stack: errorStack,  
+        name: error instanceof Error ? error.name : 'Unknown'  
+      });  
+        
+      Alert.alert('Error', errorMessage);  
     } finally {  
       setLoading(false);  
     }  
-  };  
-  
+  };
+
+
   const handlePhase2 = async (data: Phase2Data) => {  
     if (!tempRegistration) {  
       Alert.alert('Error', 'Registro temporal no encontrado');  

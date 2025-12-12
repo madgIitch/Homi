@@ -1,5 +1,5 @@
 // src/screens/register/Phase1Email.tsx  
-import React, { useState } from 'react';  
+import React, { useState, useEffect } from 'react';  
 import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';  
 import { Button } from '../../components/Button';  
 import { GoogleSignInButton } from '../../components/GoogleSignInButton';  
@@ -23,16 +23,68 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
   const [email, setEmail] = useState('');  
   const [password, setPassword] = useState('');  
   
+  // Log component mount  
+  useEffect(() => {  
+    console.log('📍 Phase1Email: Component mounted');  
+    console.log('📍 Phase1Email: Props received:', {  
+      hasNext: typeof onNext,  
+      hasGoogleSignIn: typeof onGoogleSignIn,  
+      hasGoToLogin: typeof onGoToLogin,  
+      loading  
+    });  
+  }, [loading, onGoToLogin, onGoogleSignIn, onNext]); // Added all dependencies  
+  
   const handleNext = () => {  
+    console.log('📍 Phase1Email: handleNext called');  
+    console.log('📍 Phase1Email: Form data:', {  
+      email: email || 'empty',  
+      password: password ? '***' : 'empty'  
+    });  
+  
     if (!email) {  
+      console.log('❌ Phase1Email: Validation failed - empty email');  
       Alert.alert('Error', 'Por favor ingresa tu email');  
       return;  
     }  
     if (!password) {  
+      console.log('❌ Phase1Email: Validation failed - empty password');  
       Alert.alert('Error', 'Por favor ingresa tu contraseña');  
       return;  
     }  
-    onNext({ email, password });  
+  
+    const phaseData: Phase1Data = { email, password };  
+    console.log('✅ Phase1Email: Validation passed, calling onNext with:', {  
+      email: phaseData.email,  
+      password: '***'  
+    });  
+  
+    try {  
+      onNext(phaseData);  
+      console.log('✅ Phase1Email: onNext callback executed successfully');  
+    } catch (error) {  
+      console.error('❌ Phase1Email: Error in onNext callback:', error);  
+      console.error('❌ Error en fase 1:', error);  
+    }  
+  };  
+  
+  const handleEmailChange = (text: string) => {  
+    console.log('📝 Phase1Email: Email changed:', text || 'empty');  
+    setEmail(text);  
+  };  
+  
+  const handlePasswordChange = (text: string) => {  
+    console.log('📝 Phase1Email: Password changed:', text ? '***' : 'empty');  
+    setPassword(text);  
+  };  
+  
+  const handleGoogleSignIn = () => {  
+    console.log('📍 Phase1Email: Google Sign-In button pressed');  
+    onGoogleSignIn();  
+  };  
+  
+  const handleGoToLogin = () => {  
+    console.log('📍 Phase1Email: Go to Login button pressed');  
+    onGoToLogin();  
   };  
   
   return (  
@@ -56,7 +108,7 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
         placeholder="Email"  
         placeholderTextColor={theme.colors.textTertiary}  
         value={email}  
-        onChangeText={setEmail}  
+        onChangeText={handleEmailChange}  
         keyboardType="email-address"  
         autoCapitalize="none"  
       />  
@@ -73,15 +125,15 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
         placeholder="Contraseña"  
         placeholderTextColor={theme.colors.textTertiary}  
         value={password}  
-        onChangeText={setPassword}  
+        onChangeText={handlePasswordChange}  
         secureTextEntry  
       />  
   
-      <GoogleSignInButton onPress={onGoogleSignIn} loading={loading} />  
-      <Button   
-        title="¿Ya tienes cuenta? Inicia sesión"   
-        onPress={onGoToLogin}   
-        variant="secondary"   
+      <GoogleSignInButton onPress={handleGoogleSignIn} loading={loading} />  
+      <Button  
+        title="¿Ya tienes cuenta? Inicia sesión"  
+        onPress={handleGoToLogin}  
+        variant="secondary"  
       />  
       <Button title="Continuar" onPress={handleNext} loading={loading} />  
     </View>  
