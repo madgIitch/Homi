@@ -15,24 +15,24 @@ const defaultHeaders = {
 };
 
 class AuthService {
-  async login(credentials: LoginRequest): Promise<AuthResponse> {
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth/login`, {
-      method: 'POST',
-      headers: defaultHeaders,
-      body: JSON.stringify(credentials),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Error login API:', errorText);
-      throw new Error('Credenciales inválidas');
-    }
-
-    const data = await response.json();
-    return {
-      user: data.user,
-      token: data.access_token || data.token,
-    };
+  async login(credentials: LoginRequest): Promise<AuthResponse> {  
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-login`, {  
+      method: 'POST',  
+      headers: defaultHeaders,  
+      body: JSON.stringify(credentials),  
+    });  
+    
+    if (!response.ok) {  
+      const errorText = await response.text();  
+      console.error('❌ Error login API:', errorText);  
+      throw new Error('Credenciales inválidas');  
+    }  
+    
+    const data = await response.json();  
+    return {  
+      user: data.user,  
+      token: data.access_token || data.token,  
+    };  
   }
 
   async register(userData: RegisterRequest): Promise<AuthResponse> {
