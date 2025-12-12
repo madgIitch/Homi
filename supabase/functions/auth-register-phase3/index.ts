@@ -90,13 +90,18 @@ async function handler(req: Request): Promise<Response> {
       // Crear registro en tabla users  
       const { error: userError } = await supabaseClient  
         .from('users')  
-        .insert({  
-          id: authData.user.id,  
-          email: tempData.email,  
-          first_name: tempData.first_name,  
-          last_name: tempData.last_name,  
-          birth_date: body.birth_date  
-        })  
+        .upsert(  
+            {  
+            id: authData.user.id,  
+            email: tempData.email,  
+            first_name: tempData.first_name,  
+            last_name: tempData.last_name,  
+            birth_date: body.birth_date
+            },  
+            {  
+            onConflict: 'id'  // Maneja duplicados  
+            }  
+        )
   
       if (userError) {  
         console.error('User table error:', userError)  

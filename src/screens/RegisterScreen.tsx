@@ -6,7 +6,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
 import { useTheme } from '../theme/ThemeContext';  
-import { authService } from '../services/authService';  
+import { authService } from '../services/authService';
 import { Phase1Email } from './register/Phase1Email';  
 import { Phase2Name } from './register/Phase2Name';  
 import { Phase3BirthDate } from './register/Phase3BirthDate';  
