@@ -11,6 +11,11 @@ import {
 import { ThemeProvider } from './src/theme/ThemeContext';  
 import { AuthProvider } from './src/context/AuthContext';  
 import { AppNavigator } from './src/navigation/AppNavigator';  
+import { configureGoogleSignIn } from './src/config/google';  
+
+  
+// Ejecutar configuración al iniciar  
+configureGoogleSignIn();  
   
 function App() {  
   const isDarkMode = useColorScheme() === 'dark';  
