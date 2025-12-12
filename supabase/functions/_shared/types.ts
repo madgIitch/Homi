@@ -228,3 +228,27 @@ export interface RoomFilters {
   price_max?: number  
   available_from?: string  
 }
+
+// Tipos para registro por fases  
+export interface Phase1Request {  
+  email: string  
+  password?: string // opcional si usa Google  
+  is_google_user?: boolean  
+}  
+  
+export interface Phase2Request {  
+  temp_token: string  
+  first_name: string  
+  last_name: string  
+}  
+  
+export interface Phase3Request {  
+  temp_token: string  
+  birth_date: string  
+}  
+  
+export interface TempRegistrationResponse {  
+  temp_token: string  
+  email: string  
+  expires_at: string  
+}

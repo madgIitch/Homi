@@ -138,9 +138,10 @@ export const RegisterScreen: React.FC = () => {
           <Phase1Email  
             onNext={handlePhase1}  
             onGoogleSignIn={handleGoogleSignIn}  
+            onGoToLogin={() => navigation.navigate('Login')}  
             loading={loading}  
           />  
-        )}  
+        )}
         {currentPhase === 2 && (  
           <Phase2Name  
             onNext={handlePhase2}  

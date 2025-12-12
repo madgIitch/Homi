@@ -146,93 +146,70 @@ class AuthService {
   
   // Registro por fases  
   async registerPhase1(data: Phase1Data): Promise<TempRegistration> {  
-    console.log('🔧 Fase 1 - Guardando email y temporal');  
-      
-    // Generar token temporal único  
-    const tempToken = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;  
-      
-    // Guardar datos temporales en AsyncStorage  
-    const tempData: TempRegistration = {  
-      tempToken,  
-      email: data.email,  
-      isGoogleUser: data.isGoogleUser || false,  
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-register-phase1`, {  
+      method: 'POST',  
+      headers: defaultHeaders,  
+      body: JSON.stringify({  
+        email: data.email,  
+        password: data.password,  
+        is_google_user: data.isGoogleUser  
+      }),  
+    });  
+    
+    if (!response.ok) {  
+      const errorText = await response.text();  
+      console.error('❌ Error en fase 1 del registro:', errorText);  
+      throw new Error('Error en fase 1 del registro');  
+    }   
+    
+    const result = await response.json();  
+    return {  
+      tempToken: result.temp_token,  
+      email: result.email,  
+      isGoogleUser: data.isGoogleUser || false  
     };  
-      
-    await AsyncStorage.setItem('tempRegistration', JSON.stringify(tempData));  
-      
-    return tempData;  
   }  
-  
+    
   async registerPhase2(tempToken: string, data: Phase2Data): Promise<void> {  
-    console.log('🔧 Fase 2 - Guardando nombre');  
-      
-    // Recuperar datos temporales  
-    const tempJson = await AsyncStorage.getItem('tempRegistration');  
-    if (!tempJson) {  
-      throw new Error('Registro temporal no encontrado');  
-    }  
-      
-    const tempData: TempRegistration = JSON.parse(tempJson);  
-      
-    if (tempData.tempToken !== tempToken) {  
-      throw new Error('Token temporal inválido');  
-    }  
-      
-    // Actualizar datos temporales con nombre  
-    const updatedData = {  
-      ...tempData,  
-      firstName: data.firstName,  
-      lastName: data.lastName,  
-    };  
-      
-    await AsyncStorage.setItem('tempRegistration', JSON.stringify(updatedData));  
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-register-phase2`, {  
+      method: 'POST',  
+      headers: defaultHeaders,  
+      body: JSON.stringify({  
+        temp_token: tempToken,  
+        first_name: data.firstName,  
+        last_name: data.lastName  
+      }),  
+    });  
+    
+    if (!response.ok) {  
+      const errorText = await response.text();  
+      console.error('❌ Error en fase 2 del registro:', errorText);  
+      throw new Error('Error en fase 2 del registro');  
+    } 
   }  
-  
+    
   async registerPhase3(tempToken: string, data: Phase3Data): Promise<AuthResponse> {  
-    console.log('🔧 Fase 3 - Completando registro');  
-      
-    // Recuperar todos los datos  
-    const tempJson = await AsyncStorage.getItem('tempRegistration');  
-    if (!tempJson) {  
-      throw new Error('Registro temporal no encontrado');  
-    }  
-      
-    const tempData: any = JSON.parse(tempJson);  
-      
-    if (tempData.tempToken !== tempToken) {  
-      throw new Error('Token temporal inválido');  
-    }  
-      
-    if (tempData.isGoogleUser) {  
-      // Para usuarios de Google, ya están autenticados  
-      // Solo necesitamos actualizar su perfil con la fecha de nacimiento  
-      const result = await this.loginWithGoogle();  
-        
-      // Aquí podrías llamar a una Edge Function para actualizar birth_date  
-      // await this.updateProfile({ birth_date: data.birthDate });  
-        
-      // Limpiar datos temporales  
-      await AsyncStorage.removeItem('tempRegistration');  
-        
-      return result;  
-    } else {  
-      // Registro normal con email/contraseña  
-      const registerData: RegisterRequest = {  
-        email: tempData.email,  
-        password: tempData.password,  
-        firstName: tempData.firstName,  
-        lastName: tempData.lastName,  
-        birthDate: data.birthDate,  
-      };  
-        
-      const result = await this.register(registerData);  
-        
-      // Limpiar datos temporales  
-      await AsyncStorage.removeItem('tempRegistration');  
-        
-      return result;  
-    }  
-  }  
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-register-phase3`, {  
+      method: 'POST',  
+      headers: defaultHeaders,  
+      body: JSON.stringify({  
+        temp_token: tempToken,  
+        birth_date: data.birthDate  
+      }),  
+    });  
+    
+    if (!response.ok) {  
+      const errorText = await response.text();  
+      console.error('❌ Error en fase 3 del registro:', errorText);  
+      throw new Error('Error en fase 3 del registro');  
+    } 
+    
+    const result = await response.json();  
+    return {  
+      user: result.user,  
+      token: result.access_token  
+    };  
+  }
   
   // Limpiar registro temporal (útil si el usuario abandona el proceso)  
   async clearTempRegistration(): Promise<void> {  
