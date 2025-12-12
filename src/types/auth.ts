@@ -1,4 +1,4 @@
-// types/auth.ts  
+// src/types/auth.ts  
 export interface User {  
   id: string;  
   email: string;  
@@ -20,4 +20,26 @@ export interface RegisterRequest {
   firstName: string;  
   lastName: string;  
   birthDate: string;  
+}  
+  
+// Nuevos tipos para registro por fases  
+export interface Phase1Data {  
+  email: string;  
+  password?: string; // opcional si usa Google  
+  isGoogleUser?: boolean;  
+}  
+  
+export interface Phase2Data {  
+  firstName: string;  
+  lastName: string;  
+}  
+  
+export interface Phase3Data {  
+  birthDate: string;  
+}  
+  
+export interface TempRegistration {  
+  tempToken: string;  
+  email: string;  
+  isGoogleUser: boolean;  
 }

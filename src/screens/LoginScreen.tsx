@@ -6,7 +6,10 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
 import { useTheme } from '../theme/ThemeContext';  
+import { authService } from '../services/authService';  
+import { GoogleSignInButton } from '../components/GoogleSignInButton';  
   
+
 type RootStackParamList = {  
   Login: undefined;  
   Register: undefined;  
@@ -18,13 +21,13 @@ type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'
 export const LoginScreen: React.FC = () => {  
   const navigation = useNavigation<LoginScreenNavigationProp>();  
   const authContext = useContext(AuthContext);  
-    
+      
   // Ensure context exists  
   if (!authContext) {  
     throw new Error('LoginScreen must be used within AuthProvider');  
   }  
-    
-  const { login } = authContext;  
+      
+  const { login, loginWithSession } = authContext;  
   const theme = useTheme();  
   const [email, setEmail] = useState('');  
   const [password, setPassword] = useState('');  
@@ -35,7 +38,7 @@ export const LoginScreen: React.FC = () => {
       Alert.alert('Error', 'Por favor completa todos los campos');  
       return;  
     }  
-  
+    
     setLoading(true);  
     try {  
       await login(email, password);  
@@ -47,6 +50,20 @@ export const LoginScreen: React.FC = () => {
     }  
   };  
   
+  const handleGoogleSignIn = async () => {  
+    setLoading(true);  
+    try {  
+      const result = await authService.loginWithGoogle();  
+      await loginWithSession(result.user, result.token);  
+      // La navegación se manejará automáticamente por el AuthContext  
+    } catch (error) {  
+      console.error('❌ Error en login con Google:', error);  
+      Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
+    } finally {  
+      setLoading(false);  
+    }  
+  };  
+    
   return (  
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
       <View style={styles.header}>  
@@ -55,7 +72,7 @@ export const LoginScreen: React.FC = () => {
           Encuentra tu compañero ideal  
         </Text>  
       </View>  
-          
+            
       <View style={styles.form}>  
         <TextInput  
           style={[  
@@ -74,7 +91,7 @@ export const LoginScreen: React.FC = () => {
           keyboardType="email-address"  
           autoCapitalize="none"  
         />  
-            
+              
         <TextInput  
           style={[  
             styles.input,  
@@ -91,17 +108,22 @@ export const LoginScreen: React.FC = () => {
           onChangeText={setPassword}  
           secureTextEntry  
         />  
-            
+  
         <Button  
           title="Iniciar Sesión"  
           onPress={handleLogin}  
           loading={loading}  
         />  
-            
+  
+        <GoogleSignInButton  
+          onPress={handleGoogleSignIn}  
+          loading={loading}  
+        />  
+              
         <Button  
           title="¿No tienes cuenta? Regístrate"  
           onPress={() => navigation.navigate('Register')}  
-          variant="secondary"  
+          variant="tertiary"  
         />  
       </View>  
     </View>  
