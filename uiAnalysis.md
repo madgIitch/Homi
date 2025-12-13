@@ -692,13 +692,25 @@ CREATE TABLE public.rooms (
   CONSTRAINT rooms_flat_id_fkey FOREIGN KEY (flat_id) REFERENCES public.flats(id),
   CONSTRAINT rooms_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
 );
+CREATE TABLE public.temp_registrations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  temp_token text NOT NULL UNIQUE,
+  email text NOT NULL,
+  password text,
+  is_google_user boolean DEFAULT false,
+  first_name text,
+  last_name text,
+  expires_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT temp_registrations_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.users (
   id uuid NOT NULL,
   email text NOT NULL UNIQUE,
-  first_name text NOT NULL,
-  last_name text NOT NULL,
+  first_name text,
+  last_name text,
   identity_document text UNIQUE,
-  birth_date date NOT NULL,
+  birth_date date,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT users_pkey PRIMARY KEY (id),
   CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)

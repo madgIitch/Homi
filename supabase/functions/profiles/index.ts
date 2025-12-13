@@ -31,7 +31,22 @@ interface ProfileValidationData {
   smoker?: boolean  
   has_pets?: boolean  
   social_links?: Record<string, unknown>  
-}  
+    
+  // Nuevos campos para Sprint 2  
+  university?: string  
+  field_of_study?: string  
+  interests?: string[]  
+  lifestyle_preferences?: {  
+    schedule?: string  
+    cleaning?: string  
+    guests?: string  
+  }  
+  housing_situation?: 'seeking' | 'offering'  
+  preferred_zones?: string[]  
+  budget_min?: number  
+  budget_max?: number  
+  num_roommates_wanted?: number  
+} 
 
 /**    
  * Obtener perfil del usuario autenticado    
@@ -125,6 +140,51 @@ function validateProfileData(data: ProfileValidationData): { isValid: boolean; e
   if (data.social_links && typeof data.social_links !== 'object') {  
     errors.push('Social links must be a JSON object')  
   }  
+
+  // Validar university  
+  if (data.university && typeof data.university !== 'string') {  
+    errors.push('University must be a string')  
+  }  
+    
+  // Validar field_of_study  
+  if (data.field_of_study && typeof data.field_of_study !== 'string') {  
+    errors.push('Field of study must be a string')  
+  }  
+    
+  // Validar interests (array)  
+  if (data.interests && !Array.isArray(data.interests)) {  
+    errors.push('Interests must be an array')  
+  } else if (data.interests && !data.interests.every(item => typeof item === 'string')) {  
+    errors.push('All interests must be strings')  
+  }  
+    
+  // Validar lifestyle_preferences (object)  
+  if (data.lifestyle_preferences && typeof data.lifestyle_preferences !== 'object') {  
+    errors.push('Lifestyle preferences must be an object')  
+  }  
+    
+  // Validar housing_situation  
+  if (data.housing_situation && !['seeking', 'offering'].includes(data.housing_situation)) {  
+    errors.push('Housing situation must be "seeking" or "offering"')  
+  }  
+    
+  // Validar preferred_zones (array)  
+  if (data.preferred_zones && !Array.isArray(data.preferred_zones)) {  
+    errors.push('Preferred zones must be an array')  
+  }  
+    
+  // Validar budget_min y budget_max (numbers)  
+  if (data.budget_min !== undefined && typeof data.budget_min !== 'number') {  
+    errors.push('Budget min must be a number')  
+  }  
+  if (data.budget_max !== undefined && typeof data.budget_max !== 'number') {  
+    errors.push('Budget max must be a number')  
+  }  
+    
+  // Validar num_roommates_wanted (integer)  
+  if (data.num_roommates_wanted !== undefined && typeof data.num_roommates_wanted !== 'number') {  
+    errors.push('Number of roommates wanted must be a number')  
+  }
       
   return {  
     isValid: errors.length === 0,  

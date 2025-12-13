@@ -34,18 +34,33 @@ export interface User {
   created_at: string    
 }  
   
-export interface Profile {    
-  id: string    
-  display_name?: string    
-  avatar_url?: string    
-  bio?: string    
-  gender?: string    
-  occupation?: string    
-  smoker?: boolean    
-  has_pets?: boolean    
-  social_links?: Record<string, unknown>    
-  updated_at: string    
-}  
+export interface Profile {      
+  id: string      
+  display_name?: string      
+  avatar_url?: string      
+  bio?: string      
+  gender?: string      
+  occupation?: string      
+  smoker?: boolean      
+  has_pets?: boolean      
+  social_links?: Record<string, unknown>      
+  updated_at: string  
+    
+  // Campos adicionales para Sprint 2  
+  university?: string  
+  field_of_study?: string  
+  interests?: string[]  
+  lifestyle_preferences?: {  
+    schedule?: string  
+    cleaning?: string  
+    guests?: string  
+  }  
+  housing_situation?: 'seeking' | 'offering'  
+  preferred_zones?: string[]  
+  budget_min?: number  
+  budget_max?: number  
+  num_roommates_wanted?: number  
+}
   
 export interface Flat {    
   id: string    
@@ -130,16 +145,31 @@ export interface AuthResponse {
   user: User    
 }  
   
-export interface ProfileCreateRequest {  
-  id: string  // Añadir esta línea  
-  display_name?: string  
-  avatar_url?: string  
-  bio?: string  
-  gender?: string  
-  occupation?: string  
-  smoker?: boolean  
-  has_pets?: boolean  
+export interface ProfileCreateRequest {    
+  id: string  
+  display_name?: string    
+  avatar_url?: string    
+  bio?: string    
+  gender?: string    
+  occupation?: string    
+  smoker?: boolean    
+  has_pets?: boolean    
   social_links?: Record<string, unknown>  
+    
+  // Campos adicionales para Sprint 2  
+  university?: string  
+  field_of_study?: string  
+  interests?: string[]  
+  lifestyle_preferences?: {  
+    schedule?: string  
+    cleaning?: string  
+    guests?: string  
+  }  
+  housing_situation?: 'seeking' | 'offering'  
+  preferred_zones?: string[]  
+  budget_min?: number  
+  budget_max?: number  
+  num_roommates_wanted?: number  
 }
   
 export interface FlatCreateRequest {    
