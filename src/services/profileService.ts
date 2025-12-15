@@ -1,93 +1,108 @@
-// src/services/profileService.ts  
-  
-import { Profile, ProfileCreateRequest } from '../types/profile';  
-import { API_CONFIG } from '../config/api';  
+// src/services/profileService.ts    
+    
+import { Profile, ProfileCreateRequest } from '../types/profile';    
+import { API_CONFIG } from '../config/api';    
 import AsyncStorage from '@react-native-async-storage/async-storage';  
-  
-interface ProfileResponse {  
-  data: Profile;  
-}  
-  
-class ProfileService {  
-  private async getAuthHeaders(): Promise<Record<string, string>> {  
-    const token = await AsyncStorage.getItem('authToken');  
-    return {  
-      'Content-Type': 'application/json',  
-      ...(token && { Authorization: `Bearer ${token}` }),  
-    };  
-  }  
-  
-  async getProfile(): Promise<Profile | null> {  
-    const headers = await this.getAuthHeaders();  
+import { authService } from './authService';    
     
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {  
-      method: 'GET',  
-      headers,  
-    });  
+interface ProfileResponse {    
+  data: Profile;    
+}    
     
-    if (!response.ok) {  
-      // Add these logs to see the actual error  
-      console.error('HTTP Status:', response.status);  
-      console.error('HTTP Status Text:', response.statusText);  
-        
-      if (response.status === 404) {  
-        return null;  
-      }  
-      throw new Error(`Error al obtener el perfil (${response.status})`);  
-    }  
+class ProfileService {    
+  private async getAuthHeaders(): Promise<Record<string, string>> {    
+    const token = await AsyncStorage.getItem('authToken');    
+    console.log('Token exists:', !!token);    
+    console.log('Token first 20 chars:', token?.substring(0, 20));    
+  
+    return {    
+      'Content-Type': 'application/json',    
+      ...(token && { Authorization: `Bearer ${token}` }),    
+    };    
+  }    
     
-    const data: ProfileResponse = await response.json();  
-    return data.data;  
-  } 
-  
-  async createProfile(profileData: ProfileCreateRequest): Promise<Profile> {  
-    const headers = await this.getAuthHeaders();  
-  
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {  
-      method: 'POST',  
-      headers,  
-      body: JSON.stringify(profileData),  
-    });  
-  
-    if (!response.ok) {  
-      const error = await response.json();  
-      throw new Error(error.error || 'Error al crear el perfil');  
-    }  
-  
-    const data: ProfileResponse = await response.json();  
-    return data.data;  
-  }  
-  
-  async updateProfile(updates: Partial<ProfileCreateRequest>): Promise<Profile> {  
-    const headers = await this.getAuthHeaders();  
-  
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {  
-      method: 'PATCH',  
-      headers,  
-      body: JSON.stringify(updates),  
-    });  
-  
-    if (!response.ok) {  
-      const error = await response.json();  
-      throw new Error(error.error || 'Error al actualizar el perfil');  
-    }  
-  
-    const data: ProfileResponse = await response.json();  
-    return data.data;  
-  }  
-  
-  async createOrUpdateProfile(  
-    profileData: ProfileCreateRequest  
-  ): Promise<Profile> {  
-    const existingProfile = await this.getProfile();  
-  
-    if (existingProfile) {  
-      return this.updateProfile(profileData);  
-    } else {  
-      return this.createProfile(profileData);  
-    }  
-  }  
-}  
-  
-// 👈 ESTA línea es clave  
+  async getProfile(): Promise<Profile | null> {    
+    let headers = await this.getAuthHeaders();    
+      
+    let response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
+      method: 'GET',    
+      headers,    
+    });    
+      
+    // Si el token expiró (401), intenta refresh    
+    if (response.status === 401) {    
+      console.log('Attempting token refresh...');  
+      const newToken = await authService.refreshToken();    
+      console.log('Refresh result:', newToken ? 'success' : 'failed');  
+    
+      if (newToken) {    
+        headers = await this.getAuthHeaders();    
+        response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
+          method: 'GET',    
+          headers,    
+        });    
+      }    
+    }    
+      
+    if (!response.ok) {    
+      if (response.status === 404) {    
+        return null;    
+      }    
+      throw new Error(`Error al obtener el perfil (${response.status})`);    
+    }    
+      
+    const data: ProfileResponse = await response.json();    
+    return data.data;    
+  }   
+    
+  async createProfile(profileData: ProfileCreateRequest): Promise<Profile> {    
+    const headers = await this.getAuthHeaders();    
+    
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
+      method: 'POST',    
+      headers,    
+      body: JSON.stringify(profileData),    
+    });    
+    
+    if (!response.ok) {    
+      const error = await response.json();    
+      throw new Error(error.error || 'Error al crear el perfil');    
+    }    
+    
+    const data: ProfileResponse = await response.json();    
+    return data.data;    
+  }    
+    
+  async updateProfile(updates: Partial<ProfileCreateRequest>): Promise<Profile> {    
+    const headers = await this.getAuthHeaders();    
+    
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
+      method: 'PATCH',    
+      headers,    
+      body: JSON.stringify(updates),    
+    });    
+    
+    if (!response.ok) {    
+      const error = await response.json();    
+      throw new Error(error.error || 'Error al actualizar el perfil');    
+    }    
+    
+    const data: ProfileResponse = await response.json();    
+    return data.data;    
+  }    
+    
+  async createOrUpdateProfile(    
+    profileData: ProfileCreateRequest    
+  ): Promise<Profile> {    
+    const existingProfile = await this.getProfile();    
+    
+    if (existingProfile) {    
+      return this.updateProfile(profileData);    
+    } else {    
+      return this.createProfile(profileData);    
+    }    
+  }    
+}    
+    
+// 👈 ESTA línea es clave    
 export const profileService = new ProfileService();
