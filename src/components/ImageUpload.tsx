@@ -14,10 +14,8 @@ import {
   ImageLibraryOptions,
   Asset,
 } from 'react-native-image-picker';
-import { API_CONFIG } from '../config/api';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(API_CONFIG.SUPABASE_URL, API_CONFIG.SUPABASE_ANON_KEY);
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabaseClient } from '../services/authService';
 
 interface ImageUploadProps {
   onImageUploaded: (url: string) => void;
@@ -32,85 +30,93 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
 
   const pickImage = async () => {
     const options: ImageLibraryOptions = {
-      mediaType: 'photo',   // solo fotos
-      quality: 0.7,
+      mediaType: 'photo',
       selectionLimit: 1,
+      quality: 0.7,
     };
 
-    setUploading(true);
-
-    try {
-      const result = await launchImageLibrary(options);
-
-      if (result.didCancel) {
+    launchImageLibrary(options, async (response) => {
+      if (response.didCancel) {
         return;
       }
 
-      if (result.errorCode) {
-        Alert.alert('Error', result.errorMessage || 'No se pudo abrir la galería');
+      if (response.errorCode) {
+        console.error('ImagePicker error:', response.errorMessage);
+        Alert.alert('Error', 'No se pudo abrir la galería');
         return;
       }
 
-      const asset: Asset | undefined = result.assets && result.assets[0];
-
-      if (!asset || !asset.uri) {
-        Alert.alert('Error', 'No se ha podido obtener la imagen seleccionada');
+      const asset: Asset | undefined = response.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert('Error', 'No se pudo leer la imagen seleccionada');
         return;
       }
 
       await uploadImage(asset.uri);
-    } catch (error) {
-      console.error('Image picker error:', error);
-      Alert.alert('Error', 'No se pudo seleccionar la imagen');
-    } finally {
-      setUploading(false);
-    }
+    });
   };
 
   const uploadImage = async (uri: string) => {
     setUploading(true);
 
     try {
-      // Obtener sesión del usuario autenticado
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
+      // 1. Obtener token de auth (tu sistema principal)
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        console.error('No hay authToken en AsyncStorage');
         throw new Error('Usuario no autenticado');
       }
 
+      // 2. Obtener usuario desde Supabase usando ese token
+      const { data: userData, error: userError } =
+        await supabaseClient.auth.getUser(token);
+
+      if (userError || !userData?.user) {
+        console.error('Error getUser:', userError);
+        throw new Error('No se pudo obtener el usuario');
+      }
+
+      const userId = userData.user.id;
+
+      // 3. Descargar la imagen local y convertirla en blob
       const response = await fetch(uri);
       const blob = await response.blob();
       const fileName = `avatar-${Date.now()}.jpg`;
 
-      // Ruta segura con ID de usuario: userId/avatar-123.jpg
-      const filePath = `${session.user.id}/${fileName}`;
+      // Carpeta por usuario
+      const filePath = `${userId}/${fileName}`;
 
-      const { error } = await supabase.storage
+      const { error: uploadError } = await supabaseClient.storage
         .from('avatars')
         .upload(filePath, blob, {
           contentType: 'image/jpeg',
           upsert: true,
         });
 
-      if (error) throw error;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw uploadError;
+      }
 
       const {
         data: { publicUrl },
-      } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      } = supabaseClient.storage.from('avatars').getPublicUrl(filePath);
 
       onImageUploaded(publicUrl);
     } catch (error) {
-      Alert.alert('Error', 'No se pudo subir la imagen');
       console.error('Upload error:', error);
+      Alert.alert('Error', 'No se pudo subir la imagen');
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <TouchableOpacity onPress={pickImage} disabled={uploading} style={styles.container}>
+    <TouchableOpacity
+      onPress={pickImage}
+      disabled={uploading}
+      style={styles.container}
+    >
       <View style={styles.avatarContainer}>
         {uploading ? (
           <ActivityIndicator size="small" color="#6B46C1" />

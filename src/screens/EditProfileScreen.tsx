@@ -7,11 +7,9 @@ import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';        
 import { ChipGroup } from '../components/ChipGroup';        
 import { FormSection } from '../components/FormSection';        
-import { ImageUpload } from '../components/ImageUpload';
-import { API_CONFIG } from '../config/api';        
-import { createClient } from '@supabase/supabase-js';        
-  
-const supabase = createClient(API_CONFIG.SUPABASE_URL, API_CONFIG.SUPABASE_ANON_KEY);        
+import { ImageUpload } from '../components/ImageUpload';      
+import { profileService } from '../services/profileService';
+ 
   
 const INTERESES_OPTIONS = [        
   { id: 'deportes', label: 'Deportes' },        
@@ -66,93 +64,90 @@ export const EditProfileScreen: React.FC = () => {
     loadProfile();        
   }, []);        
         
-  const loadProfile = async () => {        
-    try {  
-    const { data: { session } } = await supabase.auth.getSession();  
-    if (!session) {  
-      console.error('No hay sesión activa');  
-      return;  
-    }  
-      
-    const response = await fetch(`${API_CONFIG.SUPABASE_URL}/functions/v1/profiles`, {  
-      headers: {  
-        'Authorization': `Bearer ${session.access_token}`,  
-      },  
-    });        
-          
-      if (response.ok) {        
-        const { data } = await response.json();        
-        if (data) {        
-          setNombre(data.display_name || '');        
-          setBiografia(data.bio || '');        
-          setOcupacion(data.occupation || '');        
-          setUniversidad(data.university || '');        
-          setCampoEstudio(data.field_of_study || '');        
-          setIntereses(data.interests || []);        
-          setEstiloVida(data.lifestyle_preferences ? Object.values(data.lifestyle_preferences) : []);        
-          setSituacionVivienda(data.housing_situation === 'seeking' ? 'busco_piso' : 'tengo_piso');        
-          setZonas(data.preferred_zones || []);        
-          setNumCompaneros(data.num_roommates_wanted?.toString() || '');        
-          setPresupuestoMin(data.budget_min?.toString() || '');        
-          setPresupuestoMax(data.budget_max?.toString() || '');        
-          setAvatarUrl(data.avatar_url || '');        
-        }        
-      }        
-    } catch (error) {        
-      console.error('Error cargando perfil:', error);        
-    }        
-  };        
-      
-  const handleSave = async () => {    
-    setLoading(true);    
-    try {    
-      const { data: { session } } = await supabase.auth.getSession();    
-      if (!session) {    
-        Alert.alert('Error', 'No hay sesión activa');    
-        return;    
-      }    
-          
-      const profileData = {          
-        display_name: nombre,          
-        bio: biografia,          
-        occupation: ocupacion,          
-        university: universidad,          
-        field_of_study: campoEstudio,          
-        interests: intereses,          
-        lifestyle_preferences: {          
-          schedule: estiloVida.find(id => id.includes('horario')),          
-          cleaning: estiloVida.find(id => id.includes('ordenado')),          
-          guests: estiloVida.find(id => id.includes('invitados'))          
-        },          
-        housing_situation: situacionVivienda === 'busco_piso' ? 'seeking' : 'offering',          
-        preferred_zones: zonas,          
-        budget_min: parseInt(presupuestoMin, 10) || undefined,          
-        budget_max: parseInt(presupuestoMax, 10) || undefined,          
-        num_roommates_wanted: parseInt(numCompaneros, 10) || undefined,          
-        avatar_url: avatarUrl          
-      };    
-          
-      const response = await fetch(`${API_CONFIG.SUPABASE_URL}/functions/v1/profiles`, {    
-        method: 'PATCH',    
-        headers: {    
-          'Authorization': `Bearer ${session.access_token}`,    
-          'Content-Type': 'application/json',    
-        },    
-        body: JSON.stringify(profileData)    
-      });    
-          
-      if (response.ok) {    
-        Alert.alert('Éxito', 'Perfil actualizado correctamente');    
-      } else {  
-        Alert.alert('Error', 'No se pudo actualizar el perfil');  
-      }  
-    } catch (error) {    
-      console.error('Error al guardar perfil:', error);    
-      Alert.alert('Error', 'No se pudo actualizar el perfil');    
-    } finally {    
-      setLoading(false);    
-    }    
+  const loadProfile = async () => {
+    try {
+      const data = await profileService.getProfile();
+
+      if (!data) {
+        // No hay perfil aún, pantalla vacía
+        return;
+      }
+
+      setNombre(data.display_name || '');
+      setApellidos(data.last_name || '');
+      setUsername(data.username || '');
+      setEdad(data.age ? String(data.age) : '');
+      setBiografia(data.bio || '');
+      setOcupacion(data.occupation || '');
+      setUniversidad(data.university || '');
+      setCampoEstudio(data.field_of_study || '');
+      setIntereses(data.interests || []);
+      setEstiloVida(
+        data.lifestyle_preferences
+          ? Object.values(data.lifestyle_preferences)
+          : []
+      );
+      setSituacionVivienda(
+        data.housing_situation === 'seeking' ? 'busco_piso' : 'tengo_piso'
+      );
+      setZonas(data.preferred_zones || []);
+      setNumCompaneros(
+        data.num_roommates_wanted != null
+          ? String(data.num_roommates_wanted)
+          : ''
+      );
+      setPresupuestoMin(
+        data.budget_min != null ? String(data.budget_min) : ''
+      );
+      setPresupuestoMax(
+        data.budget_max != null ? String(data.budget_max) : ''
+      );
+      setAvatarUrl(data.avatar_url || '');
+    } catch (error) {
+      console.error('Error cargando perfil:', error);
+    }
   };       
+      
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const profileData = {
+        display_name: nombre,
+        last_name: apellidos || undefined,
+        username: username,
+        age: edad ? parseInt(edad, 10) : undefined,
+        bio: biografia || undefined,
+        occupation: ocupacion || undefined,
+        university: universidad || undefined,
+        field_of_study: campoEstudio || undefined,
+        intereses,
+        lifestyle_preferences: {
+          schedule: estiloVida.find((id) => id.includes('horario')),
+          cleaning: estiloVida.find((id) => id.includes('ordenado')),
+          guests: estiloVida.find((id) => id.includes('invitados')),
+        },
+        housing_situation:
+          situacionVivienda === 'busco_piso' ? 'seeking' : 'offering',
+        preferred_zones: zonas,
+        budget_min: presupuestoMin ? parseInt(presupuestoMin, 10) : undefined,
+        budget_max: presupuestoMax ? parseInt(presupuestoMax, 10) : undefined,
+        num_roommates_wanted: numCompaneros
+          ? parseInt(numCompaneros, 10)
+          : undefined,
+        avatar_url: avatarUrl || undefined,
+      };
+
+      await profileService.updateProfile(profileData);
+
+      Alert.alert('Éxito', 'Perfil actualizado correctamente');
+    } catch (error) {
+      console.error('Error al guardar perfil:', error);
+      Alert.alert('Error', 'No se pudo actualizar el perfil');
+    } finally {
+      setLoading(false);
+    }
+  };
+      
           
   return (        
     <View style={styles.container}>        

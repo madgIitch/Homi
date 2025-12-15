@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';  
 import { createClient } from '@supabase/supabase-js';  
   
-const supabaseClient = createClient(  
+export const supabaseClient = createClient(  
   API_CONFIG.SUPABASE_URL,  
   API_CONFIG.SUPABASE_ANON_KEY  
 );  
