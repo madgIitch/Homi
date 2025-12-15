@@ -1,108 +1,149 @@
-// src/services/profileService.ts    
-    
-import { Profile, ProfileCreateRequest } from '../types/profile';    
-import { API_CONFIG } from '../config/api';    
-import AsyncStorage from '@react-native-async-storage/async-storage';  
-import { authService } from './authService';    
-    
-interface ProfileResponse {    
-  data: Profile;    
-}    
-    
-class ProfileService {    
-  private async getAuthHeaders(): Promise<Record<string, string>> {    
-    const token = await AsyncStorage.getItem('authToken');    
-    console.log('Token exists:', !!token);    
-    console.log('Token first 20 chars:', token?.substring(0, 20));    
-  
-    return {    
-      'Content-Type': 'application/json',    
-      ...(token && { Authorization: `Bearer ${token}` }),    
-    };    
-  }    
-    
-  async getProfile(): Promise<Profile | null> {    
-    let headers = await this.getAuthHeaders();    
-      
-    let response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
-      method: 'GET',    
-      headers,    
-    });    
-      
-    // Si el token expiró (401), intenta refresh    
-    if (response.status === 401) {    
-      console.log('Attempting token refresh...');  
-      const newToken = await authService.refreshToken();    
-      console.log('Refresh result:', newToken ? 'success' : 'failed');  
-    
-      if (newToken) {    
-        headers = await this.getAuthHeaders();    
-        response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
-          method: 'GET',    
-          headers,    
-        });    
-      }    
-    }    
-      
-    if (!response.ok) {    
-      if (response.status === 404) {    
-        return null;    
-      }    
-      throw new Error(`Error al obtener el perfil (${response.status})`);    
-    }    
-      
-    const data: ProfileResponse = await response.json();    
-    return data.data;    
-  }   
-    
-  async createProfile(profileData: ProfileCreateRequest): Promise<Profile> {    
-    const headers = await this.getAuthHeaders();    
-    
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
-      method: 'POST',    
-      headers,    
-      body: JSON.stringify(profileData),    
-    });    
-    
-    if (!response.ok) {    
-      const error = await response.json();    
-      throw new Error(error.error || 'Error al crear el perfil');    
-    }    
-    
-    const data: ProfileResponse = await response.json();    
-    return data.data;    
-  }    
-    
-  async updateProfile(updates: Partial<ProfileCreateRequest>): Promise<Profile> {    
-    const headers = await this.getAuthHeaders();    
-    
-    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {    
-      method: 'PATCH',    
-      headers,    
-      body: JSON.stringify(updates),    
-    });    
-    
-    if (!response.ok) {    
-      const error = await response.json();    
-      throw new Error(error.error || 'Error al actualizar el perfil');    
-    }    
-    
-    const data: ProfileResponse = await response.json();    
-    return data.data;    
-  }    
-    
-  async createOrUpdateProfile(    
-    profileData: ProfileCreateRequest    
-  ): Promise<Profile> {    
-    const existingProfile = await this.getProfile();    
-    
-    if (existingProfile) {    
-      return this.updateProfile(profileData);    
-    } else {    
-      return this.createProfile(profileData);    
-    }    
-  }    
-}    
-    
-// 👈 ESTA línea es clave    
+// src/services/profileService.ts
+
+import { Profile, ProfileCreateRequest } from '../types/profile';
+import { API_CONFIG } from '../config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authService } from './authService';
+
+interface ProfileResponse {
+  data: Profile;
+}
+
+class ProfileService {
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    const token = await AsyncStorage.getItem('authToken');
+    console.log('[ProfileService.getAuthHeaders] Token exists:', !!token);
+    console.log(
+      '[ProfileService.getAuthHeaders] Token first 20 chars:',
+      token?.substring(0, 20)
+    );
+
+    return {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    };
+  }
+
+  async getProfile(): Promise<Profile | null> {
+    console.log('[ProfileService.getProfile] Fetching profile...');
+    let headers = await this.getAuthHeaders();
+
+    let response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
+      method: 'GET',
+      headers,
+    });
+
+    console.log('[ProfileService.getProfile] Initial response:', {
+      status: response.status,
+      ok: response.ok,
+    });
+
+    // Si el token expiró (401), intenta refresh
+    if (response.status === 401) {
+      console.log('[ProfileService.getProfile] 401 received. Attempting token refresh...');
+      const newToken = await authService.refreshToken();
+      console.log(
+        '[ProfileService.getProfile] Refresh result:',
+        newToken ? 'success' : 'failed'
+      );
+
+      if (newToken) {
+        headers = await this.getAuthHeaders();
+        response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
+          method: 'GET',
+          headers,
+        });
+        console.log('[ProfileService.getProfile] Retried response:', {
+          status: response.status,
+          ok: response.ok,
+        });
+      }
+    }
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log('[ProfileService.getProfile] Perfil no encontrado (404)');
+        return null;
+      }
+      console.error(
+        '[ProfileService.getProfile] Error al obtener el perfil:',
+        response.status
+      );
+      throw new Error(`Error al obtener el perfil (${response.status})`);
+    }
+
+    const data: ProfileResponse = await response.json();
+    console.log('[ProfileService.getProfile] Perfil cargado correctamente');
+    return data.data;
+  }
+
+  async createProfile(profileData: ProfileCreateRequest): Promise<Profile> {
+    console.log('[ProfileService.createProfile] Creating profile...');
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(profileData),
+    });
+
+    console.log('[ProfileService.createProfile] Response:', {
+      status: response.status,
+      ok: response.ok,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error(
+        '[ProfileService.createProfile] Error:',
+        error?.error || error
+      );
+      throw new Error(error.error || 'Error al crear el perfil');
+    }
+
+    const data: ProfileResponse = await response.json();
+    return data.data;
+  }
+
+  async updateProfile(updates: Partial<ProfileCreateRequest>): Promise<Profile> {
+    console.log('[ProfileService.updateProfile] Updating profile...');
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(updates),
+    });
+
+    console.log('[ProfileService.updateProfile] Response:', {
+      status: response.status,
+      ok: response.ok,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error(
+        '[ProfileService.updateProfile] Error:',
+        error?.error || error
+      );
+      throw new Error(error.error || 'Error al actualizar el perfil');
+    }
+
+    const data: ProfileResponse = await response.json();
+    return data.data;
+  }
+
+  async createOrUpdateProfile(
+    profileData: ProfileCreateRequest
+  ): Promise<Profile> {
+    const existingProfile = await this.getProfile();
+
+    if (existingProfile) {
+      return this.updateProfile(profileData);
+    } else {
+      return this.createProfile(profileData);
+    }
+  }
+}
+
 export const profileService = new ProfileService();

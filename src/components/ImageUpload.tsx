@@ -1,202 +1,118 @@
-// src/components/ImageUpload.tsx  
-import React, { useState } from 'react';  
-import {  
-  View,  
-  TouchableOpacity,  
-  Image,  
-  Alert,  
-  ActivityIndicator,  
-  Text,  
-  StyleSheet,  
-  Platform,  
-  PermissionsAndroid,  
-} from 'react-native';  
-import {  
-  launchImageLibrary,  
-  ImageLibraryOptions,  
-} from 'react-native-image-picker';  
-import AsyncStorage from '@react-native-async-storage/async-storage';  
-import { supabaseClient } from '../services/authService';  
-  
-interface ImageUploadProps {  
-  onImageUploaded: (url: string) => void;  
-  currentImage?: string;  
-}  
-  
-export const ImageUpload: React.FC<ImageUploadProps> = ({  
-  onImageUploaded,  
-  currentImage,  
-}) => {  
-  const [uploading, setUploading] = useState(false);  
-  
-  const requestStoragePermission = async () => {  
-    if (Platform.OS === 'android') {  
-      const granted = await PermissionsAndroid.request(  
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,  
-        {  
-          title: 'Permiso de Almacenamiento',  
-          message: 'La app necesita acceso a tus fotos para seleccionar un avatar',  
-          buttonNeutral: 'Después',  
-          buttonNegative: 'Cancelar',  
-          buttonPositive: 'OK',  
-        }  
-      );  
-      return granted === PermissionsAndroid.RESULTS.GRANTED;  
-    }  
-    return true;  
-  };  
-  
-  const pickImage = async () => {  
-    console.log('pickImage called');  
-      
-    // Request permission before launching image library  
-    const hasPermission = await requestStoragePermission();  
-    if (!hasPermission) {  
-      Alert.alert('Error', 'Se necesita permiso para acceder a las fotos');  
-      return;  
-    }  
-  
-    const options: ImageLibraryOptions = {  
-      mediaType: 'photo',  
-      selectionLimit: 1,  
-      quality: 0.7,  
-      includeExtra: true,  
-      presentationStyle: 'fullScreen',  
-    };  
-  
-    launchImageLibrary(options, (response) => {  
-      console.log('ImagePicker response:', response);  
-        
-      if (response.didCancel) {  
-        console.log('User cancelled image picker');  
-        return;  
-      }  
-  
-      if (response.errorCode) {  
-        console.error('ImagePicker error:', response.errorMessage);  
-        console.error('Error code:', response.errorCode);  
-        Alert.alert('Error', `No se pudo abrir la galería: ${response.errorMessage}`);  
-        return;  
-      }  
-  
-      const asset = response.assets?.[0];  
-      if (!asset?.uri) {  
-        console.error('No asset URI found:', response.assets);  
-        Alert.alert('Error', 'No se pudo leer la imagen seleccionada');  
-        return;  
-      }  
-  
-      console.log('Selected image:', asset.uri);  
-      uploadImage(asset.uri);  
-    });  
-  };  
-  
-  const uploadImage = async (uri: string) => {  
-    setUploading(true);  
-  
-    try {  
-      // 1. Obtener token de auth (tu sistema principal)  
-      const token = await AsyncStorage.getItem('authToken');  
-      if (!token) {  
-        console.error('No hay authToken en AsyncStorage');  
-        throw new Error('Usuario no autenticado');  
-      }  
-  
-      // 2. Obtener usuario desde Supabase usando ese token  
-      const { data: userData, error: userError } =  
-        await supabaseClient.auth.getUser(token);  
-  
-      if (userError || !userData?.user) {  
-        console.error('Error getUser:', userError);  
-        throw new Error('No se pudo obtener el usuario');  
-      }  
-  
-      const userId = userData.user.id;  
-  
-      // 3. Descargar la imagen local y convertirla en blob  
-      const response = await fetch(uri);  
-      const blob = await response.blob();  
-      const fileName = `avatar-${Date.now()}.jpg`;  
-  
-      // Carpeta por usuario  
-      const filePath = `${userId}/${fileName}`;  
-  
-      const { error: uploadError } = await supabaseClient.storage  
-        .from('avatars')  
-        .upload(filePath, blob, {  
-          contentType: 'image/jpeg',  
-          upsert: true,  
-        });  
-  
-      if (uploadError) {  
-        console.error('Upload error:', uploadError);  
-        throw uploadError;  
-      }  
-  
-      const {  
-        data: { publicUrl },  
-      } = supabaseClient.storage.from('avatars').getPublicUrl(filePath);  
-  
-      onImageUploaded(publicUrl);  
-    } catch (error) {  
-      console.error('Upload error:', error);  
-      Alert.alert('Error', 'No se pudo subir la imagen');  
-    } finally {  
-      setUploading(false);  
-    }  
-  };  
-  
-  return (  
-    <TouchableOpacity  
-      onPress={pickImage}  
-      disabled={uploading}  
-      style={styles.container}  
-    >  
-      <View style={styles.avatarContainer}>  
-        {uploading ? (  
-          <ActivityIndicator size="small" color="#6B46C1" />  
-        ) : currentImage ? (  
-          <Image source={{ uri: currentImage }} style={styles.avatar} />  
-        ) : (  
-          <View style={styles.placeholder}>  
-            <Text style={styles.placeholderText}>Añadir foto</Text>  
-          </View>  
-        )}  
-      </View>  
-    </TouchableOpacity>  
-  );  
-};  
-  
-const styles = StyleSheet.create({  
-  container: {  
-    alignItems: 'center',  
-    marginBottom: 16,  
-  },  
-  avatarContainer: {  
-    width: 96,  
-    height: 96,  
-    borderRadius: 48,  
-    backgroundColor: '#F3F4F6',  
-    alignItems: 'center',  
-    justifyContent: 'center',  
-    overflow: 'hidden',  
-  },  
-  avatar: {  
-    width: 96,  
-    height: 96,  
-    borderRadius: 48,  
-  },  
-  placeholder: {  
-    width: 96,  
-    height: 96,  
-    borderRadius: 48,  
-    backgroundColor: '#EDE9FE',  
-    alignItems: 'center',  
-    justifyContent: 'center',  
-  },  
-  placeholderText: {  
-    color: '#6B46C1',  
-    fontSize: 12,  
-    textAlign: 'center',  
-  },  
-});
+// src/components/ImageUpload.tsx
+import React, { useState } from 'react';
+import { View, Button, Image, ActivityIndicator, Alert } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_CONFIG } from '../config/api';
+
+export const ImageUpload: React.FC = () => {
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const pickImage = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+    });
+
+    if (result.didCancel || !result.assets || result.assets.length === 0) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset.uri) return;
+
+    setImageUri(asset.uri);
+    await uploadToBackend(asset.uri, asset.fileName, asset.type);
+  };
+
+  const uploadToBackend = async (
+    uri: string,
+    fileName?: string,
+    mimeType?: string
+  ) => {
+    try {
+      setUploading(true);
+
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'No se encontró el token de autenticación');
+        return;
+      }
+
+      const name = fileName || `avatar-${Date.now()}.jpg`;
+      const type = mimeType || 'image/jpeg';
+
+      const formData = new FormData();
+      formData.append('avatar', {
+        uri,
+        name,
+        type,
+      } as any);
+
+      console.log('[ImageUpload] Uploading avatar to backend...');
+      console.log('[ImageUpload] URI:', uri);
+      console.log('[ImageUpload] filename:', name);
+      console.log('[ImageUpload] mimeType:', type);
+
+      const response = await fetch(
+        `${API_CONFIG.FUNCTIONS_URL}/upload-avatar`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            // NO pongas Content-Type manualmente, lo gestiona RN
+          },
+          body: formData,
+        }
+      );
+
+      const text = await response.text();
+      console.log('[ImageUpload] Backend raw response:', text);
+
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error('[ImageUpload] Error parsing JSON:', e);
+        Alert.alert('Error', 'Respuesta inválida del servidor');
+        return;
+      }
+
+      if (!response.ok) {
+        console.error('[ImageUpload] Upload failed:', data);
+        Alert.alert('Error', data.error || 'Error al subir el avatar');
+        return;
+      }
+
+      console.log(
+        '[ImageUpload] Upload success. New avatar URL:',
+        data.avatarUrl
+      );
+      Alert.alert('OK', 'Avatar actualizado correctamente');
+      // Aquí ya podrías actualizar el contexto global de usuario con data.avatarUrl
+    } catch (error) {
+      console.error('[ImageUpload] Unexpected error:', error);
+      Alert.alert('Error', 'Error inesperado al subir el avatar');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <View>
+      {imageUri && (
+        <Image
+          source={{ uri: imageUri }}
+          style={{ width: 100, height: 100, borderRadius: 50 }}
+        />
+      )}
+
+      {uploading ? (
+        <ActivityIndicator />
+      ) : (
+        <Button title="Cambiar avatar" onPress={pickImage} />
+      )}
+    </View>
+  );
+};
