@@ -120,13 +120,11 @@ class ProfileService {
       ok: response.ok,
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(
-        '[ProfileService.updateProfile] Error:',
-        error?.error || error
-      );
-      throw new Error(error.error || 'Error al actualizar el perfil');
+    if (!response.ok) {  
+      const error = await response.json();  
+      console.error('[ProfileService.updateProfile] Full error:', error);  
+      // This will show the validation details array  
+      throw new Error(error.error || 'Error al actualizar el perfil');  
     }
 
     const data: ProfileResponse = await response.json();

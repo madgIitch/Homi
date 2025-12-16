@@ -136,29 +136,26 @@ export const EditProfileScreen: React.FC = () => {
       const housingSituation: HousingSituation =
         situacionVivienda === 'busco_piso' ? 'seeking' : 'offering';
 
-      const profileData: Partial<ProfileCreateRequest> = {
-        display_name: nombre,
-        last_name: apellidos || undefined,
-        age: edad ? parseInt(edad, 10) : undefined,
-        bio: biografia || undefined,
-        occupation: ocupacion || undefined,
-        university: universidad || undefined,
-        field_of_study: campoEstudio || undefined,
-        interests: intereses,
-        lifestyle_preferences: {
-          schedule: estiloVida.find((id) => id.includes('horario')),
-          cleaning: estiloVida.find((id) => id.includes('ordenado')),
-          guests: estiloVida.find((id) => id.includes('invitados')),
-        },
-        housing_situation: housingSituation,
-        preferred_zones: zonas,
-        budget_min: presupuestoMin ? parseInt(presupuestoMin, 10) : undefined,
-        budget_max: presupuestoMax ? parseInt(presupuestoMax, 10) : undefined,
-        num_roommates_wanted: numCompaneros
-          ? parseInt(numCompaneros, 10)
-          : undefined,
-        avatar_url: avatarUrl || undefined,
-      };
+      const profileData: Partial<ProfileCreateRequest> = {  
+        display_name: nombre,  
+        // Remove: last_name, age  
+        bio: biografia || undefined,  
+        occupation: ocupacion || undefined,  
+        university: universidad || undefined,  
+        field_of_study: campoEstudio || undefined,  
+        interests: intereses,  
+        lifestyle_preferences: {  
+          schedule: estiloVida.find((id) => id.includes('horario')),  
+          cleaning: estiloVida.find((id) => id.includes('ordenado')),  
+          guests: estiloVida.find((id) => id.includes('invitados')),  
+        },  
+        housing_situation: housingSituation,  
+        preferred_zones: zonas,  
+        budget_min: presupuestoMin ? parseInt(presupuestoMin, 10) : undefined,  
+        budget_max: presupuestoMax ? parseInt(presupuestoMax, 10) : undefined,  
+        num_roommates_wanted: numCompaneros ? parseInt(numCompaneros, 10) : undefined,  
+        avatar_url: avatarUrl || undefined,  
+      }
 
       await profileService.updateProfile(profileData);
 
