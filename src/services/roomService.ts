@@ -53,6 +53,25 @@ class RoomService {
     const data: FlatResponse = await response.json();  
     return data.data;  
   }  
+
+  async getFlatsByOwner(ownerId: string): Promise<Flat[]> {  
+    const headers = await this.getAuthHeaders();  
+      
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/rooms?type=flats&owner_id=${ownerId}`,
+      {  
+        method: 'GET',  
+        headers,  
+      }  
+    );  
+
+    if (!response.ok) {  
+      throw new Error('Error al obtener los pisos');  
+    }  
+
+    const data: FlatResponse = await response.json();  
+    return data.data;  
+  }  
   
   async createFlat(flatData: FlatCreateRequest): Promise<Flat> {  
     const headers = await this.getAuthHeaders();  
@@ -104,6 +123,25 @@ class RoomService {
       throw new Error('Error al obtener las habitaciones');  
     }  
   
+    const data: RoomResponse = await response.json();  
+    return data.data;  
+  }  
+
+  async getRoomsByOwner(ownerId: string): Promise<Room[]> {  
+    const headers = await this.getAuthHeaders();  
+      
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/rooms?type=rooms&owner_id=${ownerId}`,
+      {  
+        method: 'GET',  
+        headers,  
+      }  
+    );  
+
+    if (!response.ok) {  
+      throw new Error('Error al obtener las habitaciones');  
+    }  
+
     const data: RoomResponse = await response.json();  
     return data.data;  
   }  

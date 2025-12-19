@@ -294,9 +294,11 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // GET - Obtener flats y rooms del usuario  
     if (method === 'GET') {  
       const type = url.searchParams.get('type') // 'flats' or 'rooms'  
+      const ownerIdParam = url.searchParams.get('owner_id')?.trim()
+      const targetOwnerId = ownerIdParam || userId
             
       if (type === 'flats') {  
-        const flats = await getUserFlats(userId)  
+        const flats = await getUserFlats(targetOwnerId)  
         const response: ApiResponse<Flat[]> = { data: flats }  
         return new Response(  
           JSON.stringify(response),  
@@ -308,7 +310,7 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       }  
             
       if (type === 'rooms' || !type) {  
-        const rooms = await getUserRooms(userId)  
+        const rooms = await getUserRooms(targetOwnerId)  
         const response: ApiResponse<Room[]> = { data: rooms }  
         return new Response(  
           JSON.stringify(response),  

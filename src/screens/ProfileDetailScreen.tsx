@@ -1,5 +1,5 @@
 // src/screens/ProfileDetailScreen.tsx
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,19 +12,41 @@ import {
   Dimensions,
   Modal,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { API_CONFIG } from '../config/api';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
+import { roomService } from '../services/roomService';
+import { roomExtrasService } from '../services/roomExtrasService';
 import { AuthContext } from '../context/AuthContext';
 import type { Profile, ProfilePhoto } from '../types/profile';
+import type { Flat, Room, RoomExtras } from '../types/room';
 
 interface ProfileDetailScreenProps {
   userId?: string;
 }
+
+const roomTypeLabel = new Map([
+  ['individual', 'Individual'],
+  ['doble', 'Doble'],
+]);
+
+const commonAreaLabel = new Map([
+  ['salon', 'Salon'],
+  ['cocina', 'Cocina'],
+  ['comedor', 'Comedor'],
+  ['bano_compartido', 'Bano compartido'],
+  ['terraza', 'Terraza'],
+  ['patio', 'Patio'],
+  ['lavadero', 'Lavadero'],
+  ['pasillo', 'Pasillo'],
+  ['recibidor', 'Recibidor'],
+  ['trastero', 'Trastero'],
+  ['estudio', 'Sala de estudio'],
+]);
 
 export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   userId,
@@ -36,6 +58,11 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'perfil' | 'piso'>('perfil');
+  const [flats, setFlats] = useState<Flat[]>([]);
+  const [flatRooms, setFlatRooms] = useState<Room[]>([]);
+  const [flatExtras, setFlatExtras] = useState<Record<string, RoomExtras | null>>({});
+  const [flatLoading, setFlatLoading] = useState(false);
 
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
@@ -88,6 +115,48 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       console.error('Error cargando fotos:', error);
     }
   };
+
+  const loadFlatData = useCallback(async () => {
+    if (!profile?.id || profile.housing_situation !== 'offering') {
+      setActiveTab('perfil');
+      setFlats([]);
+      setFlatRooms([]);
+      setFlatExtras({});
+      return;
+    }
+
+    try {
+      setFlatLoading(true);
+      const [flatsData, roomsData] = await Promise.all([
+        roomService.getFlatsByOwner(profile.id),
+        roomService.getRoomsByOwner(profile.id),
+      ]);
+      setFlats(flatsData);
+      setFlatRooms(roomsData);
+      const extras = await roomExtrasService.getExtrasForRooms(
+        roomsData.map((room) => room.id)
+      );
+      const extrasMap = Object.fromEntries(
+        extras.map((extra) => [extra.room_id, extra])
+      );
+      setFlatExtras(extrasMap);
+    } catch (error) {
+      console.error('Error cargando piso:', error);
+    } finally {
+      setFlatLoading(false);
+    }
+  }, [profile?.id, profile?.housing_situation]);
+
+  useEffect(() => {
+    void loadFlatData();
+  }, [loadFlatData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTab !== 'piso') return;
+      void loadFlatData();
+    }, [activeTab, loadFlatData])
+  );
 
   if (loading) {
     return (
@@ -175,6 +244,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const aboutBadges = [housingBadge].filter(
     (badge): badge is string => Boolean(badge)
   );
+  const shouldShowFlatTab = profile.housing_situation === 'offering';
 
   const carouselWidth = Dimensions.get('window').width - 40;
   const resolvedAvatarUrl =
@@ -217,6 +287,45 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {shouldShowFlatTab && (
+          <View style={styles.tabsContainer}>
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                activeTab === 'perfil' && styles.tabButtonActive,
+              ]}
+              onPress={() => setActiveTab('perfil')}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === 'perfil' && styles.tabTextActive,
+                ]}
+              >
+                Perfil
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                activeTab === 'piso' && styles.tabButtonActive,
+              ]}
+              onPress={() => setActiveTab('piso')}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === 'piso' && styles.tabTextActive,
+                ]}
+              >
+                Piso
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {activeTab === 'perfil' && (
+          <>
         {carouselPhotos.length > 0 && (
           <View style={styles.carouselContainer}>
             <FlatList
@@ -481,6 +590,200 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             <Text style={styles.ctaText}>Enviar mensaje</Text>
           </TouchableOpacity>
         )}
+          </>
+        )}
+
+        {activeTab === 'piso' && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="home" size={20} color="#111827" />
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                Piso
+              </Text>
+            </View>
+            {flatLoading ? (
+              <Text style={styles.mutedText}>Cargando piso...</Text>
+            ) : flats.length === 0 ? (
+              <Text style={styles.mutedText}>No hay piso publicado.</Text>
+            ) : (
+              <View style={styles.flatList}>
+                {flats.map((flat) => {
+                  const roomsForFlat = flatRooms.filter(
+                    (room) => room.flat_id === flat.id
+                  );
+                  const commonAreas = roomsForFlat.filter(
+                    (room) => flatExtras[room.id]?.category === 'area_comun'
+                  );
+                  const bedrooms = roomsForFlat.filter(
+                    (room) => flatExtras[room.id]?.category !== 'area_comun'
+                  );
+                  const rules = flat.rules
+                    ? flat.rules
+                        .split('\n')
+                        .map((item) => item.trim())
+                        .filter(Boolean)
+                    : [];
+                  const services = flat.services ?? [];
+
+                  return (
+                    <View key={flat.id} style={styles.flatCard}>
+                      <Text style={styles.flatTitle}>{flat.address}</Text>
+                      <Text style={styles.flatMeta}>
+                        {flat.city}
+                        {flat.district ? ` - ${flat.district}` : ''}
+                      </Text>
+
+                      {rules.length > 0 && (
+                        <View style={styles.flatSection}>
+                          <Text style={styles.flatSectionTitle}>Reglas</Text>
+                          <View style={styles.listContainer}>
+                            {rules.map((rule) => (
+                              <Text key={rule} style={styles.listItem}>
+                                - {rule}
+                              </Text>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {services.length > 0 && (
+                        <View style={styles.flatSection}>
+                          <Text style={styles.flatSectionTitle}>Servicios</Text>
+                          <View style={styles.listContainer}>
+                            {services.map((service) => (
+                              <Text key={service.name} style={styles.listItem}>
+                                - {service.name}
+                                {service.price != null ? ` (${service.price} EUR)` : ''}
+                              </Text>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {bedrooms.length > 0 && (
+                        <View style={styles.flatSection}>
+                          <Text style={styles.flatSectionTitle}>Habitaciones</Text>
+                          <View style={styles.roomList}>
+                            {bedrooms.map((room) => {
+                              const extras = flatExtras[room.id];
+                              const photo = extras?.photos?.[0]?.signedUrl ?? '';
+                              const typeLabel = extras?.room_type
+                                ? roomTypeLabel.get(extras.room_type) ?? extras.room_type
+                                : '';
+                              const statusLabel =
+                                room.is_available === true
+                                  ? 'Disponible'
+                                  : room.is_available === false
+                                  ? 'Ocupada'
+                                  : 'Sin estado';
+                              return (
+                                <TouchableOpacity
+                                  key={room.id}
+                                  style={styles.roomCard}
+                                  onPress={() =>
+                                    navigation.navigate('RoomDetail', {
+                                      room,
+                                      extras,
+                                      flat,
+                                    })
+                                  }
+                                >
+                                  {photo ? (
+                                    <Image
+                                      source={{ uri: photo }}
+                                      style={styles.roomPhoto}
+                                    />
+                                  ) : (
+                                    <View style={styles.roomPhotoPlaceholder}>
+                                      <Ionicons
+                                        name="image-outline"
+                                        size={20}
+                                        color="#9CA3AF"
+                                      />
+                                    </View>
+                                  )}
+                                  <View style={styles.roomInfo}>
+                                    <Text style={styles.roomTitle}>{room.title}</Text>
+                                    {room.price_per_month != null ? (
+                                      <Text style={styles.roomMeta}>
+                                        {room.price_per_month} EUR/mes
+                                      </Text>
+                                    ) : null}
+                                    {typeLabel ? (
+                                      <Text style={styles.roomMeta}>
+                                        Tipo: {typeLabel}
+                                      </Text>
+                                    ) : null}
+                                    <Text style={styles.roomMeta}>{statusLabel}</Text>
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      )}
+
+                      {commonAreas.length > 0 && (
+                        <View style={styles.flatSection}>
+                          <Text style={styles.flatSectionTitle}>Zonas comunes</Text>
+                          <View style={styles.roomList}>
+                            {commonAreas.map((room) => {
+                              const extras = flatExtras[room.id];
+                              const photo = extras?.photos?.[0]?.signedUrl ?? '';
+                              const typeLabel =
+                                extras?.common_area_type === 'otros'
+                                  ? extras?.common_area_custom
+                                  : extras?.common_area_type
+                                  ? commonAreaLabel.get(extras.common_area_type) ??
+                                    extras.common_area_type
+                                  : '';
+                              return (
+                                <TouchableOpacity
+                                  key={room.id}
+                                  style={styles.roomCard}
+                                  onPress={() =>
+                                    navigation.navigate('RoomDetail', {
+                                      room,
+                                      extras,
+                                      flat,
+                                    })
+                                  }
+                                >
+                                  {photo ? (
+                                    <Image
+                                      source={{ uri: photo }}
+                                      style={styles.roomPhoto}
+                                    />
+                                  ) : (
+                                    <View style={styles.roomPhotoPlaceholder}>
+                                      <Ionicons
+                                        name="image-outline"
+                                        size={20}
+                                        color="#9CA3AF"
+                                      />
+                                    </View>
+                                  )}
+                                  <View style={styles.roomInfo}>
+                                    <Text style={styles.roomTitle}>{room.title}</Text>
+                                    {typeLabel ? (
+                                      <Text style={styles.roomMeta}>
+                                        Tipo: {typeLabel}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {!isOwnProfile && (
@@ -579,6 +882,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
   },
+  tabsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  tabButtonActive: {
+    borderColor: '#7C3AED',
+    backgroundColor: '#F5F3FF',
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  tabTextActive: {
+    color: '#7C3AED',
+  },
   carouselContainer: {
     marginBottom: 24,
   },
@@ -667,6 +996,86 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+  },
+  mutedText: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  flatList: {
+    gap: 16,
+  },
+  flatCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  flatTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  flatMeta: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  flatSection: {
+    marginTop: 16,
+  },
+  flatSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  listContainer: {
+    gap: 6,
+  },
+  listItem: {
+    fontSize: 12,
+    color: '#374151',
+  },
+  roomList: {
+    gap: 10,
+  },
+  roomCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  roomPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  roomPhotoPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roomInfo: {
+    flex: 1,
+  },
+  roomTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  roomMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#6B7280',
   },
   manageCard: {
     borderRadius: 16,
