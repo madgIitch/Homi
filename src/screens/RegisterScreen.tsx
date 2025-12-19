@@ -103,7 +103,7 @@ export const RegisterScreen: React.FC = () => {
     setLoading(true);  
     try {  
       const result = await authService.registerPhase3(tempRegistration.tempToken, data);  
-      await loginWithSession(result.user, result.token);  
+      await loginWithSession(result.user, result.token, result.refreshToken);  
       // Navegación automática manejada por AuthContext  
     } catch (error) {  
       console.error('❌ Error en fase 3:', error);  

@@ -15,7 +15,15 @@ import { createClient } from '@supabase/supabase-js';
 
 export const supabaseClient = createClient(
   API_CONFIG.SUPABASE_URL,
-  API_CONFIG.SUPABASE_ANON_KEY
+  API_CONFIG.SUPABASE_ANON_KEY,
+  {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  }
 );
 
 // Logs de diagnóstico de configuración Supabase
@@ -60,6 +68,7 @@ const mapSupabaseUserToAppUser = (supabaseUser: any): User => {
 interface AuthResponse {
   user: User;
   token: string;
+  refreshToken?: string | null;
 }
 
 const defaultHeaders = {
@@ -68,7 +77,47 @@ const defaultHeaders = {
   Authorization: `Bearer ${API_CONFIG.SUPABASE_ANON_KEY}`,
 };
 
+const AUTH_REFRESH_TOKEN_KEY = 'authRefreshToken';
+
 class AuthService {
+  async persistSession(
+    accessToken: string,
+    refreshToken?: string | null
+  ): Promise<void> {
+    if (!refreshToken) {
+      await AsyncStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
+      return;
+    }
+
+    const { data, error } = await supabaseClient.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error || !data.session) {
+      console.log('[AuthService.persistSession] setSession failed:', error?.message);
+      await AsyncStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
+      return;
+    }
+
+    await AsyncStorage.setItem('authToken', data.session.access_token);
+    await AsyncStorage.setItem(
+      AUTH_REFRESH_TOKEN_KEY,
+      data.session.refresh_token
+    );
+  }
+
+  async bootstrapSession(): Promise<void> {
+    const refreshToken = await AsyncStorage.getItem(AUTH_REFRESH_TOKEN_KEY);
+    const accessToken = await AsyncStorage.getItem('authToken');
+
+    if (!refreshToken || !accessToken) {
+      return;
+    }
+
+    await this.persistSession(accessToken, refreshToken);
+  }
+
   async login(credentials: LoginRequest): Promise<AuthResponse> {
     console.log('[AuthService.login] called with email:', credentials.email);
 
@@ -94,6 +143,7 @@ class AuthService {
     return {
       user: data.user,
       token: data.access_token || data.token,
+      refreshToken: data.refresh_token ?? data.refreshToken ?? null,
     };
   }
 
@@ -125,6 +175,7 @@ class AuthService {
     return {
       user: mapSupabaseUserToAppUser(data.user),
       token: data.session.access_token,
+      refreshToken: data.session.refresh_token,
     };
   }
 
@@ -176,18 +227,21 @@ class AuthService {
     return {
       user: data.user,
       token: data.access_token,
+      refreshToken: data.refresh_token ?? data.refreshToken ?? null,
     };
   }
 
   async logout(): Promise<void> {
     console.log('[AuthService.logout] Removing authToken from storage');
     await AsyncStorage.removeItem('authToken');
+    await AsyncStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
   }
 
   async refreshToken(): Promise<string | null> {
     console.log('[AuthService.refreshToken] Attempting refreshSession');
 
     try {
+      await this.bootstrapSession();
       const { data, error } = await supabaseClient.auth.refreshSession();
 
       console.log('[AuthService.refreshToken] Supabase response:', {
@@ -200,6 +254,10 @@ class AuthService {
       }
 
       await AsyncStorage.setItem('authToken', data.session.access_token);
+      await AsyncStorage.setItem(
+        AUTH_REFRESH_TOKEN_KEY,
+        data.session.refresh_token
+      );
       console.log('[AuthService.refreshToken] New token stored');
       return data.session.access_token;
     } catch (error) {
@@ -316,6 +374,7 @@ class AuthService {
     return {
       user: result.user,
       token: result.access_token,
+      refreshToken: result.refresh_token ?? result.refreshToken ?? null,
     };
   }
 

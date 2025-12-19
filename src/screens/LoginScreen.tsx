@@ -54,7 +54,7 @@ export const LoginScreen: React.FC = () => {
     setLoading(true);  
     try {  
       const result = await authService.loginWithGoogle();  
-      await loginWithSession(result.user, result.token);  
+      await loginWithSession(result.user, result.token, result.refreshToken);  
       // La navegación se manejará automáticamente por el AuthContext  
     } catch (error) {  
       console.error('❌ Error en login con Google:', error);  

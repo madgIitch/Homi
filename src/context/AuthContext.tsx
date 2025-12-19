@@ -8,13 +8,15 @@ interface AuthContextType {
   user: User | null;  
   isAuthenticated: boolean;  
   login: (email: string, password: string) => Promise<void>;  
-  loginWithSession: (user: User, token: string) => Promise<void>;  
+  loginWithSession: (user: User, token: string, refreshToken?: string | null) => Promise<void>;  
   logout: () => Promise<void>;  
   handleAuthError: (error: any) => boolean; // Add this  
   loading: boolean;  
 } 
   
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);  
+
+const AUTH_REFRESH_TOKEN_KEY = 'authRefreshToken';
   
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {  
   const [user, setUser] = useState<User | null>(null);  
@@ -31,6 +33,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
       if (token && userJson) {  
         const userData: User = JSON.parse(userJson);  
+        await authService.bootstrapSession();
         setUser(userData);  
       }  
     } catch (error) {  
@@ -41,21 +44,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };  
   
   const login = async (email: string, password: string) => {  
-    const { user: userData, token } = await authService.login({ email, password });  
+    const { user: userData, token, refreshToken } = await authService.login({ email, password });  
     await AsyncStorage.setItem('authToken', token);  
     await AsyncStorage.setItem('authUser', JSON.stringify(userData));  
+    await authService.persistSession(token, refreshToken);
     setUser(userData);  
   };  
   
-  const loginWithSession = async (userData: User, token: string) => {  
+  const loginWithSession = async (
+    userData: User,
+    token: string,
+    refreshToken?: string | null
+  ) => {
     await AsyncStorage.setItem('authToken', token);  
     await AsyncStorage.setItem('authUser', JSON.stringify(userData));  
+    await authService.persistSession(token, refreshToken);
     setUser(userData);  
   };  
   
   const logout = async () => {  
     await authService.logout();  
     await AsyncStorage.removeItem('authUser');  
+    await AsyncStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
     setUser(null);  
   };  
   
