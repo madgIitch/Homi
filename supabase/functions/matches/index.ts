@@ -250,6 +250,17 @@ const handler = withAuth(
     } catch (error) {
       console.error('Matches function error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (
+        errorMessage.includes('duplicate key value') ||
+        errorMessage.includes('matches_unique_pair')
+      ) {
+        return new Response(JSON.stringify({ error: 'Match already exists' }), {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       return new Response(
         JSON.stringify({
           error: 'Internal server error',

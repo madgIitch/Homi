@@ -13,12 +13,9 @@ import { useTheme } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
 import type { Chat, Match } from '../types/chat';
 
-type TabKey = 'matches' | 'messages';
-
 export const MatchesScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
-  const [activeTab, setActiveTab] = useState<TabKey>('matches');
   const [matches, setMatches] = useState<Match[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -50,12 +47,22 @@ export const MatchesScreen: React.FC = () => {
     }, [loadData])
   );
 
+  const chatMatchIds = useMemo(
+    () => new Set(chats.map((chat) => chat.matchId)),
+    [chats]
+  );
+
+  const unmatched = useMemo(
+    () => matches.filter((match) => !chatMatchIds.has(match.id)),
+    [matches, chatMatchIds]
+  );
+
   const emptyMessage = useMemo(() => {
     if (errorMessage) return errorMessage;
-    return activeTab === 'matches'
+    return matches.length === 0 && chats.length === 0
       ? 'Aun no tienes matches'
       : 'No hay mensajes todavia';
-  }, [activeTab, errorMessage]);
+  }, [errorMessage, matches.length, chats.length]);
 
   const renderMatch = ({ item }: { item: Match }) => (
     <View style={styles.matchItem}>
@@ -116,67 +123,62 @@ export const MatchesScreen: React.FC = () => {
         <Text style={[styles.title, { color: theme.colors.text }]}>
           Matches
         </Text>
-        <View style={styles.segment}>
-          {[
-            { id: 'matches', label: 'Matches' },
-            { id: 'messages', label: 'Mensajes' },
-          ].map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.segmentButton,
-                  isActive && styles.segmentButtonActive,
-                ]}
-                onPress={() => setActiveTab(item.id as TabKey)}
-              >
-                <Text
-                  style={[
-                    styles.segmentText,
-                    isActive && styles.segmentTextActive,
-                  ]}
-                >
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+          Conversaciones activas y nuevos matches
+        </Text>
       </View>
 
-      {activeTab === 'matches' ? (
-        matches.length > 0 ? (
-          <FlatList
-            data={matches}
-            keyExtractor={(item) => item.id}
-            renderItem={renderMatch}
-            numColumns={3}
-            columnWrapperStyle={styles.matchRow}
-            contentContainerStyle={styles.matchesGrid}
-            showsVerticalScrollIndicator={false}
-          />
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={[styles.emptyText, { color: theme.colors.text }]}>
-              {emptyMessage}
-            </Text>
-          </View>
-        )
-      ) : chats.length > 0 ? (
+      {matches.length === 0 && chats.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={[styles.emptyText, { color: theme.colors.text }]}>
+            {emptyMessage}
+          </Text>
+        </View>
+      ) : (
         <FlatList
           data={chats}
           keyExtractor={(item) => item.id}
           renderItem={renderChat}
           contentContainerStyle={styles.chatList}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            unmatched.length > 0 ? (
+              <View style={styles.matchesSection}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                  Nuevos matches
+                </Text>
+                <FlatList
+                  data={unmatched}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderMatch}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.matchesRow}
+                />
+              </View>
+            ) : (
+              <View style={styles.matchesSectionEmpty}>
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: theme.colors.textSecondary },
+                  ]}
+                >
+                  Sin nuevos matches
+                </Text>
+              </View>
+            )
+          }
+          ListEmptyComponent={
+            chats.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={[styles.emptyText, { color: theme.colors.text }]}>
+                  {emptyMessage}
+                </Text>
+              </View>
+            ) : null
+          }
         />
-      ) : (
-        <View style={styles.emptyState}>
-          <Text style={[styles.emptyText, { color: theme.colors.text }]}>
-            {emptyMessage}
-          </Text>
-        </View>
       )}
     </View>
   );
@@ -194,42 +196,31 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '600',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  matchesSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  matchesSectionEmpty: {
+    paddingHorizontal: 20,
+    paddingBottom: 6,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 12,
   },
-  segment: {
-    flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 999,
-    padding: 4,
-  },
-  segmentButton: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  segmentButtonActive: {
-    backgroundColor: '#7C3AED',
-  },
-  segmentText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  segmentTextActive: {
-    color: '#FFFFFF',
-  },
-  matchesGrid: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  matchRow: {
-    justifyContent: 'space-between',
+  matchesRow: {
+    gap: 12,
   },
   matchItem: {
     alignItems: 'center',
-    marginBottom: 18,
-    width: '31%',
+    width: 90,
   },
   avatarWrapper: {
     width: 86,

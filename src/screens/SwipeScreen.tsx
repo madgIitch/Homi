@@ -22,6 +22,7 @@ import {
 import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
+import { authService } from '../services/authService';
 import { API_CONFIG } from '../config/api';
 import type { Profile } from '../types/profile';
 import type { SwipeFilters } from '../types/swipeFilters';
@@ -94,6 +95,49 @@ export const SwipeScreen: React.FC = () => {
 
   const getTodayKey = () => new Date().toISOString().slice(0, 10);
 
+  const getAuthHeaders = async (): Promise<HeadersInit> => {
+    const token = await AsyncStorage.getItem('authToken');
+    return {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    };
+  };
+
+  const fetchWithAuth = async (input: RequestInfo, init: RequestInit) => {
+    let headers = await getAuthHeaders();
+    const tryFetch = () => fetch(input, { ...init, headers });
+    let response = await tryFetch();
+
+    if (response.status === 401) {
+      const newToken = await authService.refreshToken();
+      if (newToken) {
+        headers = await getAuthHeaders();
+        response = await tryFetch();
+      }
+    }
+
+    return response;
+  };
+
+  const sendLike = async (profileId: string) => {
+    try {
+      const response = await fetchWithAuth(
+        `${API_CONFIG.FUNCTIONS_URL}/matches`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ user_b_id: profileId }),
+        }
+      );
+
+      if (!response.ok && response.status !== 409) {
+        const error = await response.text();
+        console.error('Error guardando like:', error);
+      }
+    } catch (error) {
+      console.error('Error guardando like:', error);
+    }
+  };
+
   const updateSwipeCount = async (nextCount: number) => {
     setSwipesUsed(nextCount);
     await AsyncStorage.setItem(
@@ -111,6 +155,9 @@ export const SwipeScreen: React.FC = () => {
 
   const handleSwipe = (direction: 'left' | 'right') => {
     if (!currentProfile || !canSwipe) return;
+    if (direction === 'right') {
+      void sendLike(currentProfile.id);
+    }
     Animated.timing(position, {
       toValue: {
         x: direction === 'right' ? screenWidth + 100 : -screenWidth - 100,
