@@ -6,14 +6,16 @@ import { useTheme } from '../theme/ThemeContext';
 import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';
 import { Button } from '../components/Button';
+import { ChipGroup } from '../components/ChipGroup';
 import { roomService } from '../services/roomService';
+import { ZONES_OPTIONS } from '../constants/zones';
 
 export const CreateFlatScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
-  const [district, setDistrict] = useState('');
+  const [district, setDistrict] = useState<string | null>(null);
   const [totalRooms, setTotalRooms] = useState('');
   const [commonAreas, setCommonAreas] = useState('');
   const [saving, setSaving] = useState(false);
@@ -23,6 +25,10 @@ export const CreateFlatScreen: React.FC = () => {
     const cityValue = city.trim();
     if (!addressValue || !cityValue) {
       Alert.alert('Error', 'Direccion y ciudad son obligatorias');
+      return;
+    }
+    if (!district) {
+      Alert.alert('Error', 'Selecciona un distrito');
       return;
     }
 
@@ -39,7 +45,7 @@ export const CreateFlatScreen: React.FC = () => {
       await roomService.createFlat({
         address: addressValue,
         city: cityValue,
-        district: district.trim() || undefined,
+        district: district,
         total_rooms: totalRoomsValue,
         common_areas_description: commonAreas.trim() || undefined,
       });
@@ -83,7 +89,15 @@ export const CreateFlatScreen: React.FC = () => {
           required
         />
         <Input label="Ciudad" value={city} onChangeText={setCity} required />
-        <Input label="Distrito" value={district} onChangeText={setDistrict} />
+        <ChipGroup
+          label="Distrito"
+          options={ZONES_OPTIONS}
+          selectedIds={district ? [district] : []}
+          onSelect={(id) => {
+            setDistrict((prev) => (prev === id ? null : id));
+          }}
+          multiline
+        />
         <Input
           label="Numero de habitaciones"
           value={totalRooms}

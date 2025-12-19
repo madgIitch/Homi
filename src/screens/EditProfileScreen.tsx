@@ -23,6 +23,7 @@ import { FormSection } from '../components/FormSection';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { AuthContext } from '../context/AuthContext';
+import { ZONES_OPTIONS } from '../constants/zones';
 import type {
   ProfileCreateRequest,
   HousingSituation,
@@ -49,25 +50,6 @@ const INTERESES_OPTIONS = [
   { id: 'politica', label: 'Politica' },
   { id: 'activismo', label: 'Activismo' },
   { id: 'emprendimiento', label: 'Emprendimiento' },
-];
-
-const ZONAS_OPTIONS = [
-  { id: 'casco_antiguo', label: 'Casco Antiguo' },
-  { id: 'triana', label: 'Triana' },
-  { id: 'los_remedios', label: 'Los Remedios' },
-  { id: 'nervion', label: 'Nervion' },
-  { id: 'san_pablo', label: 'San Pablo - Santa Justa' },
-  { id: 'este_alcosa', label: 'Este - Alcosa - Torreblanca' },
-  { id: 'cerro_amate', label: 'Cerro - Amate' },
-  { id: 'sur', label: 'Sur' },
-  { id: 'bellavista', label: 'Bellavista - La Palmera' },
-  { id: 'macarena', label: 'Macarena' },
-  { id: 'norte', label: 'Norte' },
-  { id: 'viapol', label: 'Viapol' },
-  { id: 'plantinar', label: 'El Plantinar' },
-  { id: 'juncal', label: 'El Juncal' },
-  { id: 'gran_plaza', label: 'Gran Plaza' },
-  { id: 'otros', label: 'Otro/Alrededores' },
 ];
 
 const ESTILO_VIDA_OPTIONS = [
@@ -647,7 +629,7 @@ export const EditProfileScreen: React.FC = () => {
           </View>
           <ChipGroup
             label="Zonas de interes"
-            options={ZONAS_OPTIONS}
+            options={ZONES_OPTIONS}
             selectedIds={zonas}
             onSelect={(id) => {
               setZonas((prev) =>
