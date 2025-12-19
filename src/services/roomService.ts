@@ -143,6 +143,23 @@ class RoomService {
     const data: SingleRoomResponse = await response.json();  
     return data.data;  
   }  
+
+  async deleteRoom(roomId: string): Promise<void> {  
+    const headers = await this.getAuthHeaders();  
+  
+    const response = await fetch(  
+      `${API_CONFIG.FUNCTIONS_URL}/rooms/${roomId}?type=room`,  
+      {  
+        method: 'DELETE',  
+        headers,  
+      }  
+    );  
+  
+    if (!response.ok) {  
+      const error = await response.json();  
+      throw new Error(error.error || 'Error al eliminar la habitacion');  
+    }  
+  }  
   
   // === SEARCH OPERATIONS ===  
   

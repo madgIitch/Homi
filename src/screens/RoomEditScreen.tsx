@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -86,6 +86,10 @@ export const RoomEditScreen: React.FC = () => {
   const [selectedFlatId, setSelectedFlatId] = useState<string | null>(
     initialRoom?.flat_id ?? null
   );
+  const [flatRooms, setFlatRooms] = useState<Room[]>([]);
+  const [flatRoomExtras, setFlatRoomExtras] = useState<
+    Record<string, { category?: string | null; room_type?: string | null; common_area_type?: string | null; common_area_custom?: string | null }>
+  >({});
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -134,6 +138,38 @@ export const RoomEditScreen: React.FC = () => {
     }
   }, []);
 
+  const loadFlatRooms = useCallback(async (flatId: string) => {
+    try {
+      const data = await roomService.getMyRooms();
+      const filtered = data.filter((item) => item.flat_id === flatId);
+      setFlatRooms(filtered);
+      if (filtered.length === 0) {
+        setFlatRoomExtras({});
+        return;
+      }
+      const extras = await roomExtrasService.getExtrasForRooms(
+        filtered.map((room) => room.id)
+      );
+      setFlatRoomExtras(
+        Object.fromEntries(
+          extras.map((extra) => [
+            extra.room_id,
+            {
+              category: extra.category ?? null,
+              room_type: extra.room_type ?? null,
+              common_area_type: extra.common_area_type ?? null,
+              common_area_custom: extra.common_area_custom ?? null,
+            },
+          ])
+        )
+      );
+    } catch (error) {
+      console.error('Error cargando habitaciones del piso:', error);
+      setFlatRooms([]);
+      setFlatRoomExtras({});
+    }
+  }, []);
+
   const loadExtras = useCallback(async (targetRoom: Room) => {
     try {
       const extras = await roomExtrasService.getExtras(targetRoom.id);
@@ -174,6 +210,12 @@ export const RoomEditScreen: React.FC = () => {
   }, [isCreateMode, loadFlats]);
 
   useEffect(() => {
+    if (!isCreateMode) return;
+    if (!selectedFlatId) return;
+    loadFlatRooms(selectedFlatId);
+  }, [isCreateMode, selectedFlatId, loadFlatRooms]);
+
+  useEffect(() => {
     if (!room) return;
     setTitle(room.title ?? '');
     setDescription(room.description ?? '');
@@ -192,24 +234,77 @@ export const RoomEditScreen: React.FC = () => {
     }
   }, [isCreateMode, routeParams]);
 
-  useEffect(() => {
-    if (roomCategory !== 'area_comun') return;
-    if (!commonAreaType) return;
+  const defaultTitle = useMemo(() => {
+    if (!isCreateMode) return '';
+    if (!roomCategory) return '';
 
+    let baseLabel = '';
+    if (roomCategory === 'habitacion') {
+      baseLabel =
+        roomType === 'individual'
+          ? 'Individual'
+          : roomType === 'doble'
+          ? 'Doble'
+          : '';
+    } else {
+      if (commonAreaType === 'otros') {
+        baseLabel = commonAreaCustom.trim();
+      } else {
+        baseLabel = commonAreaLabelById.get(commonAreaType ?? '') ?? '';
+      }
+    }
+
+    if (!baseLabel) return '';
+
+    const count = flatRooms.reduce((acc, room) => {
+      const extras = flatRoomExtras[room.id];
+      if (roomCategory === 'habitacion') {
+        if (extras?.category === 'habitacion' && extras?.room_type === roomType) {
+          return acc + 1;
+        }
+      } else {
+        if (extras?.category === 'area_comun') {
+          if (commonAreaType === 'otros') {
+            if (
+              extras?.common_area_type === 'otros' &&
+              extras?.common_area_custom?.trim().toLowerCase() ===
+                commonAreaCustom.trim().toLowerCase()
+            ) {
+              return acc + 1;
+            }
+          } else if (extras?.common_area_type === commonAreaType) {
+            return acc + 1;
+          }
+        }
+      }
+
+      if (room.title?.toLowerCase().startsWith(baseLabel.toLowerCase())) {
+        return acc + 1;
+      }
+
+      return acc;
+    }, 0);
+
+    return `${baseLabel} ${count + 1}`;
+  }, [
+    isCreateMode,
+    roomCategory,
+    roomType,
+    commonAreaType,
+    commonAreaCustom,
+    flatRooms,
+    flatRoomExtras,
+  ]);
+
+  useEffect(() => {
+    if (!isCreateMode) return;
     const shouldAutoFill =
       title.trim() === '' || title.trim() === lastAutoTitleRef.current;
-
     if (!shouldAutoFill) return;
-
-    const nextTitle =
-      commonAreaType === 'otros'
-        ? commonAreaCustom.trim()
-        : commonAreaLabelById.get(commonAreaType) ?? '';
-
-    if (!nextTitle) return;
-    lastAutoTitleRef.current = nextTitle;
-    setTitle(nextTitle);
-  }, [roomCategory, commonAreaType, commonAreaCustom, title]);
+    if (!defaultTitle) return;
+    lastAutoTitleRef.current = defaultTitle;
+    setTitle(defaultTitle);
+  }, [isCreateMode, defaultTitle, title]);
 
   const handleAddPhoto = async () => {
     const result = await launchImageLibrary({

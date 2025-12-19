@@ -140,6 +140,29 @@ export const RoomManagementScreen: React.FC = () => {
     });
   };
 
+  const handleDeleteRoom = (room: Room) => {
+    Alert.alert(
+      'Eliminar habitacion',
+      'Esta accion no se puede deshacer. ?Quieres continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await roomService.deleteRoom(room.id);
+              await loadRooms();
+            } catch (error) {
+              console.error('Error eliminando habitacion:', error);
+              Alert.alert('Error', 'No se pudo eliminar la habitacion');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleCreateRoom = () => {
     if (!selectedFlatId) {
       Alert.alert('Aviso', 'Debes crear un piso antes de añadir habitaciones.');
@@ -394,13 +417,22 @@ export const RoomManagementScreen: React.FC = () => {
                           onPress={() => handleViewInterests(room)}
                         >
                           <Ionicons name="heart-outline" size={16} color="#111827" />
-                          <Text style={styles.actionText}>Interesados</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                })}
-              </FormSection>
+                      <Text style={styles.actionText}>Interesados</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteButton]}
+                      onPress={() => handleDeleteRoom(room)}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      <Text style={[styles.actionText, styles.deleteButtonText]}>
+                        Eliminar
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </FormSection>
             </>
           )}
         </ScrollView>
@@ -679,5 +711,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#111827',
+  },
+  deleteButton: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+  },
+  deleteButtonText: {
+    color: '#EF4444',
   },
 });

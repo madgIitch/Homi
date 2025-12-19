@@ -183,6 +183,47 @@ async function updateRoom(roomId: string, userId: string, updates: Partial<Room>
         
   return data as Room  
 }  
+
+/**      
+ * Eliminar room existente      
+ */  
+async function deleteRoom(roomId: string, userId: string): Promise<void> {  
+  const { data: existingRoom, error: fetchError } = await supabaseClient  
+    .from('rooms')  
+    .select('id, owner_id')  
+    .eq('id', roomId)  
+    .single()  
+
+  if (fetchError || !existingRoom) {  
+    throw new Error('Room not found')  
+  }  
+
+  if (existingRoom.owner_id !== userId) {  
+    throw new Error('Unauthorized: You can only delete your own rooms')  
+  }  
+
+  const { data: extras } = await supabaseClient  
+    .from('room_extras')  
+    .select('photos')  
+    .eq('room_id', roomId)  
+    .single()  
+
+  const photoPaths = Array.isArray(extras?.photos) ? extras.photos : []  
+  if (photoPaths.length > 0) {  
+    await supabaseClient.storage.from('room-photos').remove(photoPaths)  
+  }  
+
+  await supabaseClient.from('room_extras').delete().eq('room_id', roomId)  
+
+  const { error } = await supabaseClient  
+    .from('rooms')  
+    .delete()  
+    .eq('id', roomId)  
+
+  if (error) {  
+    throw new Error(`Failed to delete room: ${error.message}`)  
+  }  
+}  
   
 /**      
  * Validar datos de flat      
@@ -407,6 +448,23 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
               
         return new Response(  
           JSON.stringify(response),  
+          {       
+            status: 200,       
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+          }  
+        )  
+      }  
+    }  
+  
+    // DELETE - Eliminar room existente  
+    if (method === 'DELETE') {  
+      const resourceId = pathParts[pathParts.length - 1]  
+      const type = url.searchParams.get('type') // 'room'  
+  
+      if (type === 'room') {  
+        await deleteRoom(resourceId, userId)  
+        return new Response(  
+          JSON.stringify({ message: 'Room deleted successfully' }),  
           {       
             status: 200,       
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
