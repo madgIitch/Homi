@@ -9,6 +9,16 @@ interface ProfileResponse {
   data: Profile;
 }
 
+interface ProfileRecommendation {
+  profile: Profile;
+  compatibility_score: number;
+  match_reasons: string[];
+}
+
+interface ProfileRecommendationsResponse {
+  recommendations: ProfileRecommendation[];
+}
+
 class ProfileService {
   private async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem('authToken');
@@ -75,6 +85,42 @@ class ProfileService {
     const data: ProfileResponse = await response.json();
     console.log('[ProfileService.getProfile] Perfil cargado correctamente');
     return data.data;
+  }
+
+  async getProfileRecommendations(): Promise<ProfileRecommendation[]> {
+    let headers = await this.getAuthHeaders();
+
+    let response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      }
+    );
+
+    if (response.status === 401) {
+      const newToken = await authService.refreshToken();
+      if (newToken) {
+        headers = await this.getAuthHeaders();
+        response = await fetch(
+          `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({}),
+          }
+        );
+      }
+    }
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error?.error || 'Error al obtener recomendaciones');
+    }
+
+    const data: ProfileRecommendationsResponse = await response.json();
+    return data.recommendations ?? [];
   }
 
   async createProfile(profileData: ProfileCreateRequest): Promise<Profile> {

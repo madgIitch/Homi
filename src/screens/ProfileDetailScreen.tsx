@@ -1,5 +1,5 @@
 // src/screens/ProfileDetailScreen.tsx
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   FlatList,
   Dimensions,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
@@ -34,14 +34,26 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const route = useRoute();
   const authContext = useContext(AuthContext);
   const currentUserId = authContext?.user?.id ?? '';
-  const isOwnProfile = !userId || userId === currentUserId;
+  const routeProfile = (route as { params?: { profile?: Profile } }).params
+    ?.profile;
+  const isOwnProfile =
+    (!routeProfile && (!userId || userId === currentUserId)) ||
+    routeProfile?.id === currentUserId;
 
   useEffect(() => {
+    if (routeProfile) {
+      setProfile(routeProfile);
+      setLoading(false);
+      setProfilePhotos([]);
+      return;
+    }
+
     loadProfile();
     loadPhotos();
-  }, [userId]);
+  }, [userId, routeProfile]);
 
   const loadProfile = async () => {
     try {
@@ -140,6 +152,17 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     return 'sparkles';
   };
 
+  const aboutText = profile.bio ?? 'Sin descripcion por ahora.';
+  const housingBadge =
+    profile.housing_situation === 'seeking'
+      ? 'Busco piso'
+      : profile.housing_situation === 'offering'
+      ? `Tengo piso en ${preferredZones[0] ?? 'zona preferida'}`
+      : null;
+  const aboutBadges = [housingBadge].filter(
+    (badge): badge is string => Boolean(badge)
+  );
+
   const carouselWidth = Dimensions.get('window').width - 40;
   const carouselPhotos =
     profilePhotos.length > 0
@@ -223,28 +246,66 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         )}
 
-        <View style={styles.cardRow}>
-          <View style={[styles.infoCard, styles.infoCardBlue]}>
-            <View style={[styles.infoIcon, styles.infoIconBlue]}>
-              <Ionicons name="people" size={22} color="#2563EB" />
-            </View>
-            <Text style={[styles.infoLabel, styles.infoTextBlue]}>
-              COMPANEROS
-            </Text>
-            <Text style={[styles.infoValue, styles.infoTextBlue]}>
-              {profile.num_roommates_wanted ?? '-'}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="person" size={20} color="#111827" />
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Sobre
             </Text>
           </View>
-          <View style={[styles.infoCard, styles.infoCardGreen]}>
-            <View style={[styles.infoIcon, styles.infoIconGreen]}>
-              <Ionicons name="cash" size={22} color="#16A34A" />
+          <View style={styles.detailCard}>
+            <Text style={styles.aboutText}>{aboutText}</Text>
+            {aboutBadges.length > 0 && (
+              <View style={styles.chipsContainer}>
+                {aboutBadges.map((badge) => (
+                  <View key={badge} style={styles.outlineChip}>
+                    <Text style={styles.outlineChipText}>{badge}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="people" size={20} color="#111827" />
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Companeros
+            </Text>
+          </View>
+          <View style={styles.detailCard}>
+            <View style={styles.detailRow}>
+              <View style={[styles.detailIcon, styles.detailIconBlue]}>
+                <Ionicons name="people" size={18} color="#2563EB" />
+              </View>
+              <View style={styles.detailText}>
+                <Text style={styles.detailLabel}>COMPANEROS BUSCADOS</Text>
+                <Text style={styles.detailValue}>
+                  {profile.num_roommates_wanted ?? '-'}
+                </Text>
+              </View>
             </View>
-            <Text style={[styles.infoLabel, styles.infoTextGreen]}>
-              PRESUPUESTO
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="cash" size={20} color="#111827" />
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Presupuesto
             </Text>
-            <Text style={[styles.infoValue, styles.infoTextGreen]}>
-              {formatBudget()}
-            </Text>
+          </View>
+          <View style={styles.detailCard}>
+            <View style={styles.detailRow}>
+              <View style={[styles.detailIcon, styles.detailIconGreen]}>
+                <Ionicons name="cash" size={18} color="#16A34A" />
+              </View>
+              <View style={styles.detailText}>
+                <Text style={styles.detailLabel}>RANGO</Text>
+                <Text style={styles.detailValue}>{formatBudget()}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -330,7 +391,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             <View style={styles.sectionHeader}>
               <Ionicons name="location" size={20} color="#111827" />
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Zonas de Interes
+                Zonas de interes
               </Text>
             </View>
             <View style={styles.chipsContainer}>
@@ -348,7 +409,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             <View style={styles.sectionHeader}>
               <Ionicons name="clipboard" size={20} color="#111827" />
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Detalles de Convivencia
+                Detalles de convivencia
               </Text>
             </View>
             <View style={styles.detailCard}>
@@ -368,6 +429,12 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               ))}
             </View>
           </View>
+        )}
+
+        {!isOwnProfile && (
+          <TouchableOpacity style={styles.ctaButton}>
+            <Text style={styles.ctaText}>Enviar mensaje</Text>
+          </TouchableOpacity>
         )}
       </ScrollView>
     </View>
@@ -430,11 +497,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
   },
-  cardRow: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 24,
-  },
   carouselContainer: {
     marginBottom: 24,
   },
@@ -459,50 +521,6 @@ const styles = StyleSheet.create({
   carouselDotActive: {
     backgroundColor: '#7C3AED',
   },
-  infoCard: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1.5,
-  },
-  infoCardBlue: {
-    borderColor: '#BFDBFE',
-    backgroundColor: '#F8FAFF',
-  },
-  infoCardGreen: {
-    borderColor: '#BBF7D0',
-    backgroundColor: '#F0FDF4',
-  },
-  infoIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  infoIconBlue: {
-    backgroundColor: '#DBEAFE',
-  },
-  infoIconGreen: {
-    backgroundColor: '#DCFCE7',
-  },
-  infoLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  infoTextBlue: {
-    color: '#1D4ED8',
-  },
-  infoTextGreen: {
-    color: '#15803D',
-  },
   section: {
     marginBottom: 28,
   },
@@ -514,6 +532,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    marginBottom: 12,
+  },
+  aboutText: {
+    fontSize: 15,
+    color: '#374151',
     marginBottom: 12,
   },
   detailCard: {
@@ -585,5 +608,17 @@ const styles = StyleSheet.create({
   },
   chipIcon: {
     marginRight: 6,
+  },
+  ctaButton: {
+    marginBottom: 32,
+    backgroundColor: '#7C3AED',
+    borderRadius: 18,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  ctaText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
