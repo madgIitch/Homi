@@ -42,15 +42,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const login = async (email: string, password: string) => {  
     const { user: userData, token } = await authService.login({ email, password });  
-    setUser(userData);  
     await AsyncStorage.setItem('authToken', token);  
     await AsyncStorage.setItem('authUser', JSON.stringify(userData));  
+    setUser(userData);  
   };  
   
   const loginWithSession = async (userData: User, token: string) => {  
-    setUser(userData);  
     await AsyncStorage.setItem('authToken', token);  
     await AsyncStorage.setItem('authUser', JSON.stringify(userData));  
+    setUser(userData);  
   };  
   
   const logout = async () => {  

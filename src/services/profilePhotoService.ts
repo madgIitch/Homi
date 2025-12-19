@@ -35,6 +35,24 @@ class ProfilePhotoService {
     return data.data ?? [];
   }
 
+  async getPhotosForProfile(profileId: string): Promise<ProfilePhoto[]> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/profile-photos-public?profile_id=${profileId}`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Error al obtener fotos (${response.status})`);
+    }
+
+    const data: ProfilePhotosResponse = await response.json();
+    return data.data ?? [];
+  }
+
   async uploadPhoto(
     uri: string,
     fileName?: string,

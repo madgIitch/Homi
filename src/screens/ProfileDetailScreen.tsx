@@ -10,6 +10,7 @@ import {
   Image,
   FlatList,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -33,6 +34,8 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [lightboxVisible, setLightboxVisible] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
@@ -48,7 +51,16 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     if (routeProfile) {
       setProfile(routeProfile);
       setLoading(false);
-      setProfilePhotos([]);
+      if (routeProfile.id && routeProfile.id !== currentUserId) {
+        profilePhotoService
+          .getPhotosForProfile(routeProfile.id)
+          .then((data) => setProfilePhotos(data))
+          .catch((error) =>
+            console.error('Error cargando fotos externas:', error)
+          );
+      } else {
+        setProfilePhotos([]);
+      }
       return;
     }
 
@@ -189,7 +201,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerSpacer} />
+        {isOwnProfile ? (
+          <View style={styles.headerSpacer} />
+        ) : (
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={22} color="#111827" />
+          </TouchableOpacity>
+        )}
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           {profile.display_name}
         </Text>
@@ -228,10 +246,18 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               }}
               renderItem={({ item }) => (
                 <View style={{ width: carouselWidth }}>
-                  <Image
-                    source={{ uri: item.signedUrl }}
-                    style={styles.carouselImage}
-                  />
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      setLightboxUrl(item.signedUrl);
+                      setLightboxVisible(true);
+                    }}
+                  >
+                    <Image
+                      source={{ uri: item.signedUrl }}
+                      style={styles.carouselImage}
+                    />
+                  </TouchableOpacity>
                 </View>
               )}
             />
@@ -442,6 +468,43 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      {!isOwnProfile && (
+        <View style={styles.bottomActions}>
+          <TouchableOpacity style={[styles.bottomButton, styles.rejectButton]}>
+            <Ionicons name="close" size={24} color="#EF4444" />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.bottomButton, styles.likeButton]}>
+            <Ionicons name="heart" size={24} color="#7C3AED" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <Modal
+        visible={lightboxVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxVisible(false)}
+      >
+        <View style={styles.lightboxOverlay}>
+          <TouchableOpacity
+            style={styles.lightboxBackdrop}
+            activeOpacity={1}
+            onPress={() => setLightboxVisible(false)}
+          />
+          <View style={styles.lightboxContent}>
+            <TouchableOpacity
+              style={styles.lightboxClose}
+              onPress={() => setLightboxVisible(false)}
+            >
+              <Ionicons name="close" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+            {lightboxUrl && (
+              <Image source={{ uri: lightboxUrl }} style={styles.lightboxImage} />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -507,7 +570,7 @@ const styles = StyleSheet.create({
   },
   carouselImage: {
     width: '100%',
-    height: 220,
+    height: 480,
     borderRadius: 16,
     backgroundColor: '#F3F4F6',
   },
@@ -625,5 +688,57 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  bottomActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    paddingTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  bottomButton: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  lightboxOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lightboxBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  lightboxContent: {
+    width: '90%',
+    height: '70%',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  lightboxImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
+    backgroundColor: '#000000',
+  },
+  lightboxClose: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 2,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(17, 24, 39, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

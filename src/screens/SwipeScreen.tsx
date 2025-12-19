@@ -111,6 +111,14 @@ export const SwipeScreen: React.FC = () => {
           position.setValue({ x: 0, y: 0 });
           return;
         }
+        if (Math.abs(gesture.dx) < 6 && Math.abs(gesture.dy) < 6) {
+          if (currentProfile) {
+            navigation.navigate('ProfileDetail', {
+              profile: currentProfile.profile,
+            });
+          }
+          return;
+        }
         if (gesture.dx > SWIPE_THRESHOLD) {
           handleSwipe('right');
           return;
@@ -312,9 +320,6 @@ export const SwipeScreen: React.FC = () => {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Explorar</Text>
-          <Text style={styles.subtitle}>
-            Swipes diarios {swipesUsed}/{SWIPE_LIMIT}
-          </Text>
         </View>
         <View style={styles.counterPill}>
           <Ionicons name="flash" size={16} color={colors.primary} />
@@ -359,17 +364,6 @@ export const SwipeScreen: React.FC = () => {
           disabled={!currentProfile || !canSwipe}
         >
           <Ionicons name="close" size={22} color="#EF4444" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.detailButton]}
-          onPress={() =>
-            navigation.navigate('ProfileDetail', {
-              profile: currentProfile.profile,
-            })
-          }
-          disabled={!currentProfile}
-        >
-          <Text style={styles.detailButtonText}>Ver detalles completos</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionButton, styles.likeButton]}
@@ -432,7 +426,7 @@ const styles = StyleSheet.create({
   },
   cardImage: {
     width: '100%',
-    height: 280,
+    height: 480,
   },
   cardBody: {
     padding: spacing.md,
@@ -506,36 +500,27 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
-    gap: 12,
+    gap: 120,
   },
   actionButton: {
-    height: 52,
-    borderRadius: 26,
+    height: 70,
+    borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: 2,
   },
   rejectButton: {
-    width: 56,
+    width: 70,
     backgroundColor: '#FEE2E2',
     borderColor: '#FCA5A5',
   },
   likeButton: {
-    width: 56,
+    width: 70,
     backgroundColor: '#F3E8FF',
     borderColor: '#D8B4FE',
-  },
-  detailButton: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    borderColor: colors.primaryDark,
-  },
-  detailButtonText: {
-    ...typography.bodyMedium,
-    color: '#FFFFFF',
   },
   emptyState: {
     alignItems: 'center',
