@@ -648,6 +648,8 @@ CREATE TABLE public.flats (
   total_rooms integer,
   common_areas_description text,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  rules text,
+  services jsonb DEFAULT '[]'::jsonb,
   CONSTRAINT flats_pkey PRIMARY KEY (id),
   CONSTRAINT flats_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
 );
@@ -655,7 +657,7 @@ CREATE TABLE public.matches (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_a_id uuid NOT NULL,
   user_b_id uuid NOT NULL,
-  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text])),
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text, 'room_offer'::text, 'room_assigned'::text, 'room_declined'::text])),
   matched_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT matches_pkey PRIMARY KEY (id),
   CONSTRAINT matches_user_a_id_fkey FOREIGN KEY (user_a_id) REFERENCES public.profiles(id),
@@ -704,6 +706,32 @@ CREATE TABLE public.profiles (
   num_roommates_wanted integer,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES public.users(id)
+);
+CREATE TABLE public.room_assignments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  match_id uuid UNIQUE,
+  room_id uuid NOT NULL,
+  assignee_id uuid NOT NULL,
+  status text NOT NULL DEFAULT 'offered'::text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT room_assignments_pkey PRIMARY KEY (id),
+  CONSTRAINT room_assignments_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id),
+  CONSTRAINT room_assignments_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES public.profiles(id),
+  CONSTRAINT room_assignments_match_id_fkey FOREIGN KEY (match_id) REFERENCES public.matches(id)
+);
+CREATE TABLE public.room_extras (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  room_id uuid NOT NULL,
+  category text,
+  room_type text,
+  common_area_type text,
+  common_area_custom text,
+  photos ARRAY NOT NULL DEFAULT '{}'::text[],
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT room_extras_pkey PRIMARY KEY (id),
+  CONSTRAINT room_extras_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id)
 );
 CREATE TABLE public.room_interests (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
