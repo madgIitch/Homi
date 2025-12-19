@@ -15,6 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { borderRadius, colors, shadows, spacing, typography } from '../theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { profileService } from '../services/profileService';
+import { profilePhotoService } from '../services/profilePhotoService';
 import { API_CONFIG } from '../config/api';
 import type { Profile } from '../types/profile';
 
@@ -45,6 +46,12 @@ export const SwipeScreen: React.FC = () => {
   const [profiles, setProfiles] = useState<SwipeProfile[]>([]);
   const [loadingProfiles, setLoadingProfiles] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [photoIndexByProfile, setPhotoIndexByProfile] = useState<
+    Record<string, number>
+  >({});
+  const [profilePhotosById, setProfilePhotosById] = useState<
+    Record<string, string[]>
+  >({});
   const position = useRef(new Animated.ValueXY()).current;
 
   const screenWidth = Dimensions.get('window').width;
@@ -102,21 +109,15 @@ export const SwipeScreen: React.FC = () => {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => canSwipe,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        canSwipe && (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4),
       onPanResponderMove: (_, gesture) => {
         position.setValue({ x: gesture.dx, y: gesture.dy });
       },
       onPanResponderRelease: (_, gesture) => {
         if (!canSwipe) {
           position.setValue({ x: 0, y: 0 });
-          return;
-        }
-        if (Math.abs(gesture.dx) < 6 && Math.abs(gesture.dy) < 6) {
-          if (currentProfile) {
-            navigation.navigate('ProfileDetail', {
-              profile: currentProfile.profile,
-            });
-          }
           return;
         }
         if (gesture.dx > SWIPE_THRESHOLD) {
@@ -245,6 +246,67 @@ export const SwipeScreen: React.FC = () => {
     void loadProfiles();
   }, []);
 
+  useEffect(() => {
+    const loadPhotosForProfile = async () => {
+      if (!currentProfile) return;
+      const profileId = currentProfile.id;
+      if (profilePhotosById[profileId]) return;
+
+      try {
+        const photos = await profilePhotoService.getPhotosForProfile(profileId);
+        const urls = photos.map((photo) => photo.signedUrl).filter(Boolean);
+        if (urls.length > 0) {
+          setProfilePhotosById((prev) => ({
+            ...prev,
+            [profileId]: urls,
+          }));
+        } else {
+          setProfilePhotosById((prev) => ({
+            ...prev,
+            [profileId]: [currentProfile.photoUrl],
+          }));
+        }
+      } catch (error) {
+        console.error('Error cargando fotos del perfil:', error);
+        setProfilePhotosById((prev) => ({
+          ...prev,
+          [profileId]: [currentProfile.photoUrl],
+        }));
+      }
+    };
+
+    void loadPhotosForProfile();
+  }, [currentProfile, profilePhotosById]);
+
+  const getProfilePhotos = (profile: SwipeProfile) =>
+    profilePhotosById[profile.id] ?? [profile.photoUrl];
+
+  const getPhotoIndex = (profile: SwipeProfile) =>
+    photoIndexByProfile[profile.id] ?? 0;
+
+  const setPhotoIndex = (profile: SwipeProfile, nextIndex: number) => {
+    setPhotoIndexByProfile((prev) => ({
+      ...prev,
+      [profile.id]: nextIndex,
+    }));
+  };
+
+  const goToNextPhoto = (profile: SwipeProfile) => {
+    const photos = getProfilePhotos(profile);
+    if (photos.length <= 1) return;
+    const current = getPhotoIndex(profile);
+    const next = (current + 1) % photos.length;
+    setPhotoIndex(profile, next);
+  };
+
+  const goToPrevPhoto = (profile: SwipeProfile) => {
+    const photos = getProfilePhotos(profile);
+    if (photos.length <= 1) return;
+    const current = getPhotoIndex(profile);
+    const next = (current - 1 + photos.length) % photos.length;
+    setPhotoIndex(profile, next);
+  };
+
   const renderCard = (profile: SwipeProfile, index: number) => {
     if (index < currentIndex) return null;
     const isTop = index === currentIndex;
@@ -274,7 +336,37 @@ export const SwipeScreen: React.FC = () => {
         ]}
         {...(isTop ? panResponder.panHandlers : {})}
       >
-        <Image source={{ uri: profile.photoUrl }} style={styles.cardImage} />
+        <View style={styles.photoWrapper}>
+          <Image
+            source={{ uri: getProfilePhotos(profile)[getPhotoIndex(profile)] }}
+            style={styles.cardImage}
+          />
+          {getProfilePhotos(profile).length > 1 && (
+            <View style={styles.photoIndicators}>
+              {getProfilePhotos(profile).map((_, photoIndex) => (
+                <View
+                  key={`${profile.id}-dot-${photoIndex}`}
+                  style={[
+                    styles.photoDot,
+                    photoIndex === getPhotoIndex(profile) && styles.photoDotActive,
+                  ]}
+                />
+              ))}
+            </View>
+          )}
+          <View style={styles.photoTapOverlay}>
+            <TouchableOpacity
+              style={styles.photoTapZone}
+              onPress={() => goToPrevPhoto(profile)}
+              activeOpacity={0.9}
+            />
+            <TouchableOpacity
+              style={styles.photoTapZone}
+              onPress={() => goToNextPhoto(profile)}
+              activeOpacity={0.9}
+            />
+          </View>
+        </View>
         {isTop && (
           <>
             <Animated.View
@@ -310,6 +402,17 @@ export const SwipeScreen: React.FC = () => {
               </View>
             ))}
           </View>
+          <TouchableOpacity
+            style={styles.detailTapArea}
+            onPress={() =>
+              navigation.navigate('ProfileDetail', {
+                profile: profile.profile,
+              })
+            }
+          >
+            <Text style={styles.detailTapText}>Ver perfil completo</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+          </TouchableOpacity>
         </View>
       </Animated.View>
     );
@@ -427,6 +530,34 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: 480,
+  },
+  photoWrapper: {
+    position: 'relative',
+  },
+  photoTapOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  photoTapZone: {
+    flex: 1,
+  },
+  photoIndicators: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  photoDot: {
+    width: 18,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  photoDotActive: {
+    backgroundColor: '#FFFFFF',
   },
   cardBody: {
     padding: spacing.md,
@@ -548,5 +679,21 @@ const styles = StyleSheet.create({
   limitText: {
     ...typography.smallMedium,
     color: colors.warning,
+  },
+  detailTapArea: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.surfaceLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  detailTapText: {
+    ...typography.captionMedium,
+    color: colors.primaryDark,
   },
 });

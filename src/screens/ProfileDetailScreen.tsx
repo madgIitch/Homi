@@ -216,14 +216,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             <Text style={styles.editButton}>Editar</Text>
           </TouchableOpacity>
         ) : (
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={[styles.actionButton, styles.rejectButton]}>
-              <Ionicons name="close" size={18} color="#EF4444" />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionButton, styles.likeButton]}>
-              <Ionicons name="heart" size={18} color="#7C3AED" />
-            </TouchableOpacity>
-          </View>
+          <View style={styles.headerSpacer} />
         )}
       </View>
 
