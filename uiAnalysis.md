@@ -631,6 +631,14 @@ src/
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE public.chats (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  match_id uuid NOT NULL UNIQUE,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT chats_pkey PRIMARY KEY (id),
+  CONSTRAINT chats_match_id_fkey FOREIGN KEY (match_id) REFERENCES public.matches(id)
+);
 CREATE TABLE public.flats (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   owner_id uuid NOT NULL,
@@ -650,8 +658,29 @@ CREATE TABLE public.matches (
   status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text])),
   matched_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT matches_pkey PRIMARY KEY (id),
-  CONSTRAINT matches_user_a_id_fkey FOREIGN KEY (user_a_id) REFERENCES public.users(id),
-  CONSTRAINT matches_user_b_id_fkey FOREIGN KEY (user_b_id) REFERENCES public.users(id)
+  CONSTRAINT matches_user_a_id_fkey FOREIGN KEY (user_a_id) REFERENCES public.profiles(id),
+  CONSTRAINT matches_user_b_id_fkey FOREIGN KEY (user_b_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.messages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  chat_id uuid NOT NULL,
+  sender_id uuid NOT NULL,
+  body text NOT NULL CHECK (length(body) <= 1000),
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  read_at timestamp with time zone,
+  CONSTRAINT messages_pkey PRIMARY KEY (id),
+  CONSTRAINT messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id),
+  CONSTRAINT messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.profile_photos (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  profile_id uuid NOT NULL,
+  path text NOT NULL,
+  position integer NOT NULL CHECK ("position" >= 1 AND "position" <= 10),
+  is_primary boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT profile_photos_pkey PRIMARY KEY (id),
+  CONSTRAINT profile_photos_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL,
@@ -664,6 +693,15 @@ CREATE TABLE public.profiles (
   has_pets boolean DEFAULT false,
   social_links jsonb,
   updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  university text,
+  field_of_study text,
+  interests jsonb,
+  lifestyle_preferences jsonb,
+  housing_situation text,
+  preferred_zones jsonb,
+  budget_min numeric,
+  budget_max numeric,
+  num_roommates_wanted integer,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES public.users(id)
 );
@@ -691,6 +729,15 @@ CREATE TABLE public.rooms (
   CONSTRAINT rooms_pkey PRIMARY KEY (id),
   CONSTRAINT rooms_flat_id_fkey FOREIGN KEY (flat_id) REFERENCES public.flats(id),
   CONSTRAINT rooms_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.swipe_rejections (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  rejected_profile_id uuid NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT swipe_rejections_pkey PRIMARY KEY (id),
+  CONSTRAINT swipe_rejections_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT swipe_rejections_rejected_profile_id_fkey FOREIGN KEY (rejected_profile_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.temp_registrations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

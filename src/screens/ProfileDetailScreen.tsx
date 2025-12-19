@@ -291,6 +291,31 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         </View>
 
+        {isOwnProfile && profile.housing_situation === 'offering' && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="bed" size={20} color="#111827" />
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                Gestion de habitaciones
+              </Text>
+            </View>
+            <View style={styles.manageCard}>
+              <View style={styles.manageInfo}>
+                <Text style={styles.manageTitle}>Administra tus anuncios</Text>
+                <Text style={styles.manageSubtitle}>
+                  Edita detalles, pausa publicaciones y revisa interesados.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.manageButton}
+                onPress={() => navigation.navigate('RoomManagement')}
+              >
+                <Text style={styles.manageButtonText}>Gestionar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Ionicons name="people" size={20} color="#111827" />
@@ -646,6 +671,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+  },
+  manageCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+  },
+  manageInfo: {
+    marginBottom: 12,
+  },
+  manageTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  manageSubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  manageButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
+  },
+  manageButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   chipsContainer: {
     flexDirection: 'row',

@@ -11,6 +11,9 @@ import { ProfileDetailScreen } from '../screens/ProfileDetailScreen';
 import { EditProfileScreen } from '../screens/EditProfileScreen';    
 import { FiltersScreen } from '../screens/FiltersScreen';
 import { ChatScreen } from '../screens/ChatScreen';
+import { RoomManagementScreen } from '../screens/RoomManagementScreen';
+import { RoomEditScreen } from '../screens/RoomEditScreen';
+import { RoomInterestsScreen } from '../screens/RoomInterestsScreen';
 import { useTheme } from '../theme/ThemeContext';    
     
 const Stack = createStackNavigator();    
@@ -51,6 +54,9 @@ export const AppNavigator: React.FC = () => {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />    
             <Stack.Screen name="Filters" component={FiltersScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="RoomManagement" component={RoomManagementScreen} />
+            <Stack.Screen name="RoomEdit" component={RoomEditScreen} />
+            <Stack.Screen name="RoomInterests" component={RoomInterestsScreen} />
           </>    
         ) : (    
           <>    
