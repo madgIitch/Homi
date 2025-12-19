@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useContext } from 'react';
 import {
   FlatList,
   Image,
@@ -10,12 +10,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useTheme } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
+import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
+import { AuthContext } from '../context/AuthContext';
 import type { Message } from '../types/chat';
 import type { Profile } from '../types/profile';
 
@@ -30,10 +34,13 @@ export const ChatScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
+  const authContext = useContext(AuthContext);
+  const currentUserId = authContext?.user?.id ?? null;
   const { chatId, name, avatarUrl, profile } = route.params as RouteParams;
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [headerAvatarUrl, setHeaderAvatarUrl] = useState(avatarUrl);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -55,6 +62,59 @@ export const ChatScreen: React.FC = () => {
       isMounted = false;
     };
   }, [profile?.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const subscribeToMessages = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const channel = supabaseClient
+        .channel(`messages:chat:${chatId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `chat_id=eq.${chatId}`,
+          },
+          (payload) => {
+            if (!isMounted) return;
+            const next = mapRealtimeMessage(payload.new, currentUserId);
+            setMessages((prev) =>
+              prev.some((message) => message.id === next.id)
+                ? prev
+                : [...prev, next]
+            );
+            if (!next.isMine) {
+              void chatService.markMessagesAsRead(chatId);
+            }
+          }
+        )
+        .subscribe();
+
+      channelRef.current = channel;
+    };
+
+    void subscribeToMessages();
+
+    return () => {
+      isMounted = false;
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [chatId, currentUserId]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -178,13 +238,37 @@ const statusLabel = (status: Message['status']) => {
   }
 };
 
+const mapRealtimeMessage = (
+  payload: any,
+  currentUserId: string | null
+): Message => {
+  const isMine = payload.sender_id === currentUserId;
+  return {
+    id: payload.id,
+    chatId: payload.chat_id,
+    text: payload.body,
+    createdAt: formatChatTime(payload.created_at),
+    isMine,
+    status: isMine ? (payload.read_at ? 'read' : 'sent') : undefined,
+    readAt: payload.read_at ?? null,
+  };
+};
+
+const formatChatTime = (iso?: string | null) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,

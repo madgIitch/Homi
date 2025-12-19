@@ -142,7 +142,14 @@ export const MatchesScreen: React.FC = () => {
         })
       }
     >
-      <Image source={{ uri: item.avatarUrl }} style={styles.chatAvatar} />
+      <Image
+        source={{
+          uri:
+            matchPhotoByProfile[item.profileId ?? ''] ||
+            item.avatarUrl,
+        }}
+        style={styles.chatAvatar}
+      />
       <View style={styles.chatBody}>
         <View style={styles.chatHeaderRow}>
           <Text style={[styles.chatName, { color: theme.colors.text }]}>
