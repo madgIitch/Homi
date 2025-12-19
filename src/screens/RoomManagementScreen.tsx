@@ -338,7 +338,6 @@ export const RoomManagementScreen: React.FC = () => {
                 ) : null}
 
                 {filteredRooms.map((room) => {
-                  const status = getRoomStatus(room);
                   const extras = roomExtras[room.id];
                   const isCommonArea = extras?.category === 'area_comun';
                   const photo = extras?.photos?.[0];
@@ -372,14 +371,19 @@ export const RoomManagementScreen: React.FC = () => {
                               {room.price_per_month} EUR/mes
                             </Text>
                           ) : null}
+                        {!isCommonArea && (
                           <Text style={styles.roomMeta}>
                             Disponible desde:{' '}
                             {room.available_from ? room.available_from : 'Sin fecha'}
                           </Text>
-                          {typeText ? (
-                            <Text style={styles.roomMeta}>{typeText}</Text>
-                          ) : null}
-                        </View>
+                        )}
+                        {typeText ? (
+                          <Text style={styles.roomMeta}>{typeText}</Text>
+                        ) : null}
+                    </View>
+                    {!isCommonArea && (() => {
+                      const status = getRoomStatus(room);
+                      return (
                         <View
                           style={[
                             styles.statusBadge,
@@ -389,34 +393,38 @@ export const RoomManagementScreen: React.FC = () => {
                         >
                           <Text style={styles.statusText}>{status.label}</Text>
                         </View>
-                      </View>
+                      );
+                    })()}
+                  </View>
 
-                      <View style={styles.actionsRow}>
-                        <TouchableOpacity
-                          style={styles.actionButton}
-                          onPress={() => handleEditRoom(room)}
-                        >
-                          <Ionicons name="create-outline" size={16} color="#111827" />
-                          <Text style={styles.actionText}>Editar</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.actionButton}
-                          onPress={() => handleToggleAvailability(room)}
-                        >
-                          <Ionicons
-                            name={room.is_available ? 'pause' : 'play'}
-                            size={16}
-                            color="#111827"
-                          />
-                          <Text style={styles.actionText}>
-                            {room.is_available ? 'Pausar' : 'Activar'}
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.actionButton}
-                          onPress={() => handleViewInterests(room)}
-                        >
-                          <Ionicons name="heart-outline" size={16} color="#111827" />
+                  <View style={styles.actionsRow}>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => handleEditRoom(room)}
+                    >
+                      <Ionicons name="create-outline" size={16} color="#111827" />
+                      <Text style={styles.actionText}>Editar</Text>
+                    </TouchableOpacity>
+                    {!isCommonArea && (
+                      <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => handleToggleAvailability(room)}
+                      >
+                        <Ionicons
+                          name={room.is_available ? 'pause' : 'play'}
+                          size={16}
+                          color="#111827"
+                        />
+                        <Text style={styles.actionText}>
+                          {room.is_available ? 'Pausar' : 'Activar'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => handleViewInterests(room)}
+                    >
+                      <Ionicons name="heart-outline" size={16} color="#111827" />
                       <Text style={styles.actionText}>Interesados</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
