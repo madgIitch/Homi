@@ -90,6 +90,10 @@ export const EditProfileScreen: React.FC = () => {
   const [nombre, setNombre] = useState('');
   const [biografia, setBiografia] = useState('');
   const [ocupacion, setOcupacion] = useState('');
+  const [occupationType, setOccupationType] = useState<
+    'universidad' | 'trabajo' | 'mixto'
+  >('universidad');
+  const [workplace, setWorkplace] = useState('');
   const [universidad, setUniversidad] = useState('');
   const [campoEstudio, setCampoEstudio] = useState('');
   const [intereses, setIntereses] = useState<string[]>([]);
@@ -117,7 +121,43 @@ export const EditProfileScreen: React.FC = () => {
       console.log('[EditProfileScreen] avatar_url:', data.avatar_url);
       setNombre(data.display_name || '');
       setBiografia(data.bio || '');
-      setOcupacion(data.occupation || '');
+      const occupationRaw = data.occupation || '';
+      const normalizedOccupation = occupationRaw.toLowerCase();
+      let nextType: 'universidad' | 'trabajo' | 'mixto' = 'universidad';
+      let nextWorkplace = '';
+
+      if (occupationRaw.includes('|')) {
+        const [typePart, placePart] = occupationRaw.split('|');
+        const typeNormalized = typePart.trim().toLowerCase();
+        if (typeNormalized.includes('mixto')) {
+          nextType = 'mixto';
+        } else if (typeNormalized.includes('trabajo')) {
+          nextType = 'trabajo';
+        } else {
+          nextType = 'universidad';
+        }
+        nextWorkplace = placePart ? placePart.trim() : '';
+      } else if (normalizedOccupation.includes('mixto')) {
+        nextType = 'mixto';
+      } else if (
+        normalizedOccupation.includes('trabajo') ||
+        normalizedOccupation.includes('profesional')
+      ) {
+        nextType = 'trabajo';
+        nextWorkplace = data.occupation || '';
+      } else if (
+        normalizedOccupation.includes('universidad') ||
+        normalizedOccupation.includes('estudiante')
+      ) {
+        nextType = 'universidad';
+      } else if (occupationRaw) {
+        nextType = 'trabajo';
+        nextWorkplace = occupationRaw;
+      }
+
+      setOccupationType(nextType);
+      setWorkplace(nextWorkplace);
+      setOcupacion(occupationRaw);
       setUniversidad(data.university || '');
       setCampoEstudio(data.field_of_study || '');
       setIntereses(data.interests || []);
@@ -171,12 +211,29 @@ export const EditProfileScreen: React.FC = () => {
       const cleaningId = estiloVida.find((id) => id.startsWith('cleaning_'));
       const guestsId = estiloVida.find((id) => id.startsWith('guests_'));
 
+      const occupationValue =
+        occupationType === 'universidad'
+          ? 'Universidad'
+          : occupationType === 'trabajo'
+          ? workplace
+            ? `Trabajo|${workplace}`
+            : 'Trabajo'
+          : workplace
+          ? `Mixto|${workplace}`
+          : 'Mixto';
+
       const profileData: Partial<ProfileCreateRequest> = {
         display_name: nombre,
         bio: biografia || undefined,
-        occupation: ocupacion || undefined,
-        university: universidad || undefined,
-        field_of_study: campoEstudio || undefined,
+        occupation: occupationValue || undefined,
+        university:
+          occupationType === 'universidad' || occupationType === 'mixto'
+            ? universidad || undefined
+            : undefined,
+        field_of_study:
+          occupationType === 'universidad' || occupationType === 'mixto'
+            ? campoEstudio || undefined
+            : undefined,
         interests: intereses,
         lifestyle_preferences: {
           schedule: scheduleId ? lifestyleLabelById.get(scheduleId) : undefined,
@@ -272,22 +329,61 @@ export const EditProfileScreen: React.FC = () => {
 
         {/* Ocupacion */}
         <FormSection title="Ocupacion" iconName="briefcase-outline">
-          <Input
-            label="Ocupacion"
-            value={ocupacion}
-            onChangeText={setOcupacion}
-            placeholder="Estudiante / Trabajador / Mixto"
-          />
-          <Input
-            label="Universidad"
-            value={universidad}
-            onChangeText={setUniversidad}
-          />
-          <Input
-            label="Campo de estudio"
-            value={campoEstudio}
-            onChangeText={setCampoEstudio}
-          />
+          <Text style={styles.switchLabel}>Selecciona tu situacion</Text>
+          <View style={styles.switchRow}>
+            {[
+              { id: 'universidad', label: 'Universidad' },
+              { id: 'trabajo', label: 'Trabajo' },
+              { id: 'mixto', label: 'Mixto' },
+            ].map((option) => {
+              const isActive = occupationType === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[
+                    styles.switchButton,
+                    isActive && styles.switchButtonActive,
+                  ]}
+                  onPress={() =>
+                    setOccupationType(
+                      option.id as 'universidad' | 'trabajo' | 'mixto'
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.switchButtonText,
+                      isActive && styles.switchButtonTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {(occupationType === 'universidad' || occupationType === 'mixto') && (
+            <>
+              <Input
+                label="Universidad"
+                value={universidad}
+                onChangeText={setUniversidad}
+              />
+              <Input
+                label="Campo de estudio"
+                value={campoEstudio}
+                onChangeText={setCampoEstudio}
+              />
+            </>
+          )}
+          {(occupationType === 'trabajo' || occupationType === 'mixto') && (
+            <Input
+              label="Lugar de trabajo"
+              value={workplace}
+              onChangeText={setWorkplace}
+              placeholder="Empresa / Centro"
+            />
+          )}
         </FormSection>
 
         {/* Intereses */}
@@ -442,6 +538,38 @@ const styles = StyleSheet.create({
   avatarSection: {
     alignItems: 'center',
     marginBottom: 8,
+  },
+  switchLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 10,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  switchButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  switchButtonActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  switchButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  switchButtonTextActive: {
+    color: '#FFFFFF',
   },
   presupuestoRow: {
     flexDirection: 'row',
