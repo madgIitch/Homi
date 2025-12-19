@@ -39,6 +39,52 @@ class RoomAssignmentService {
     return payload.data;
   }
 
+  async getAssignmentsForRoom(roomId: string): Promise<RoomAssignmentsResponse> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/room-assignments?room_id=${roomId}`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al obtener asignaciones');
+    }
+
+    const payload = (await response.json()) as ApiResponse<RoomAssignmentsResponse>;
+    if (!payload.data) {
+      throw new Error('Respuesta invalida al obtener asignaciones');
+    }
+
+    return payload.data;
+  }
+
+  async getAssignmentsForOwner(): Promise<RoomAssignmentsResponse> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/room-assignments?owner=true`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al obtener asignaciones');
+    }
+
+    const payload = (await response.json()) as ApiResponse<RoomAssignmentsResponse>;
+    if (!payload.data) {
+      throw new Error('Respuesta invalida al obtener asignaciones');
+    }
+
+    return payload.data;
+  }
+
   async createAssignment(input: {
     match_id?: string;
     room_id: string;

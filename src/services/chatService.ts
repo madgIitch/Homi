@@ -158,6 +158,7 @@ class ChatService {
         profileId: otherProfile?.id ?? '',
         name: otherProfile?.display_name ?? 'Usuario',
         avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
+        status: match.status as Match['status'],
       };
     });
   }

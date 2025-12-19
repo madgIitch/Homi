@@ -16,11 +16,14 @@ import { useTheme } from '../theme/ThemeContext';
 import { FormSection } from '../components/FormSection';
 import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
+import { roomAssignmentService } from '../services/roomAssignmentService';
 import type { Flat, Room, RoomExtras } from '../types/room';
+import type { RoomAssignment } from '../types/roomAssignment';
 
 type RoomStatus = 'available' | 'paused';
 
 type RoomExtrasMap = Record<string, RoomExtras | null>;
+type RoomAssignmentsMap = Record<string, RoomAssignment[]>;
 
 const toISODate = (date: Date) => date.toISOString().split('T')[0];
 
@@ -43,7 +46,13 @@ const commonAreaLabel = new Map([
   ['estudio', 'Sala de estudio'],
 ]);
 
-const getRoomStatus = (room: Room): { label: string; key: RoomStatus } => {
+const getRoomStatus = (
+  room: Room,
+  isAssigned: boolean
+): { label: string; key: RoomStatus } => {
+  if (isAssigned) {
+    return { label: 'Ocupada', key: 'paused' };
+  }
   if (room.is_available) {
     return { label: 'Disponible', key: 'available' };
   }
@@ -59,6 +68,7 @@ export const RoomManagementScreen: React.FC = () => {
   const [selectedFlatId, setSelectedFlatId] = useState<string | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomExtras, setRoomExtras] = useState<RoomExtrasMap>({});
+  const [roomAssignments, setRoomAssignments] = useState<RoomAssignmentsMap>({});
 
   const loadRooms = useCallback(async () => {
     try {
@@ -72,6 +82,16 @@ export const RoomManagementScreen: React.FC = () => {
       setRoomExtras(
         Object.fromEntries(extras.map((item) => [item.room_id, item]))
       );
+
+      const assignmentsResponse = await roomAssignmentService.getAssignmentsForOwner();
+      const assignmentsByRoom: RoomAssignmentsMap = {};
+      assignmentsResponse.assignments.forEach((assignment) => {
+        if (!assignmentsByRoom[assignment.room_id]) {
+          assignmentsByRoom[assignment.room_id] = [];
+        }
+        assignmentsByRoom[assignment.room_id].push(assignment);
+      });
+      setRoomAssignments(assignmentsByRoom);
     } catch (error) {
       console.error('Error cargando habitaciones:', error);
       Alert.alert('Error', 'No se pudieron cargar las habitaciones');
@@ -340,6 +360,10 @@ export const RoomManagementScreen: React.FC = () => {
                 {filteredRooms.map((room) => {
                   const extras = roomExtras[room.id];
                   const isCommonArea = extras?.category === 'area_comun';
+                  const assignmentsForRoom = roomAssignments[room.id] ?? [];
+                  const isAssigned = assignmentsForRoom.some(
+                    (assignment) => assignment.status === 'accepted'
+                  );
                   const photo = extras?.photos?.[0];
                   const typeLabel =
                     extras?.category === 'area_comun'
@@ -382,7 +406,7 @@ export const RoomManagementScreen: React.FC = () => {
                         ) : null}
                     </View>
                     {!isCommonArea && (() => {
-                      const status = getRoomStatus(room);
+                      const status = getRoomStatus(room, isAssigned);
                       return (
                         <View
                           style={[
@@ -407,8 +431,12 @@ export const RoomManagementScreen: React.FC = () => {
                     </TouchableOpacity>
                     {!isCommonArea && (
                       <TouchableOpacity
-                        style={styles.actionButton}
+                        style={[
+                          styles.actionButton,
+                          isAssigned && styles.actionButtonDisabled,
+                        ]}
                         onPress={() => handleToggleAvailability(room)}
+                        disabled={isAssigned}
                       >
                         <Ionicons
                           name={room.is_available ? 'pause' : 'play'}
@@ -420,13 +448,15 @@ export const RoomManagementScreen: React.FC = () => {
                         </Text>
                       </TouchableOpacity>
                     )}
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleViewInterests(room)}
-                    >
-                      <Ionicons name="heart-outline" size={16} color="#111827" />
-                      <Text style={styles.actionText}>Interesados</Text>
-                    </TouchableOpacity>
+                    {!isCommonArea && (
+                      <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => handleViewInterests(room)}
+                      >
+                        <Ionicons name="heart-outline" size={16} color="#111827" />
+                        <Text style={styles.actionText}>Interesados</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={[styles.actionButton, styles.deleteButton]}
                       onPress={() => handleDeleteRoom(room)}
@@ -613,26 +643,32 @@ const styles = StyleSheet.create({
   },
   roomCard: {
     marginTop: 12,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
-    padding: 12,
+    padding: 14,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
   },
   roomCardHeader: {
     flexDirection: 'row',
     gap: 12,
+    alignItems: 'center',
   },
   roomPhoto: {
-    width: 68,
-    height: 68,
-    borderRadius: 12,
+    width: 72,
+    height: 72,
+    borderRadius: 14,
     backgroundColor: '#F3F4F6',
   },
   roomPhotoPlaceholder: {
-    width: 68,
-    height: 68,
-    borderRadius: 12,
+    width: 72,
+    height: 72,
+    borderRadius: 14,
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
@@ -683,8 +719,10 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minWidth: 86,
+    alignItems: 'center',
   },
   statusText: {
     fontSize: 12,
@@ -703,17 +741,25 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     gap: 12,
+    flexWrap: 'wrap',
+    marginTop: 12,
   },
   actionButton: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '48%',
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 12,
     paddingVertical: 10,
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
   },
   actionText: {
     fontSize: 13,

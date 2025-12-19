@@ -71,7 +71,9 @@ export const SwipeScreen: React.FC = () => {
   const position = useRef(new Animated.ValueXY()).current;
 
   const screenWidth = Dimensions.get('window').width;
+  const screenHeight = Dimensions.get('window').height;
   const cardWidth = screenWidth - 40;
+  const cardImageHeight = Math.min(480, Math.round(screenHeight * 0.5));
 
   const rotate = position.x.interpolate({
     inputRange: [-screenWidth, 0, screenWidth],
@@ -441,7 +443,7 @@ export const SwipeScreen: React.FC = () => {
         <View style={styles.photoWrapper}>
           <Image
             source={{ uri: getProfilePhotos(profile)[getPhotoIndex(profile)] }}
-            style={styles.cardImage}
+            style={[styles.cardImage, { height: cardImageHeight }]}
           />
           {getProfilePhotos(profile).length > 1 && (
             <View style={styles.photoIndicators}>
