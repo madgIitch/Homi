@@ -218,6 +218,19 @@ export const RoomDetailScreen: React.FC = () => {
         .filter(Boolean)
     : [];
   const services = flat?.services ?? [];
+  const statusLabel = !isCommonArea
+    ? isAssigned
+      ? 'Ocupada'
+      : roomState.is_available === true
+      ? 'Disponible'
+      : roomState.is_available === false
+      ? 'Ocupada'
+      : 'Sin estado'
+    : null;
+  const statusTone =
+    statusLabel === 'Disponible'
+      ? styles.statusPillAvailable
+      : styles.statusPillOccupied;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -274,30 +287,51 @@ export const RoomDetailScreen: React.FC = () => {
           <Text style={styles.sectionTitle}>Informacion</Text>
           <View style={styles.detailCard}>
             {typeLabel ? (
-              <Text style={styles.detailItem}>Tipo: {typeLabel}</Text>
+              <View style={styles.detailRow}>
+                <View style={styles.detailLabelRow}>
+                  <Ionicons name="home-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailLabel}>Tipo</Text>
+                </View>
+                <Text style={styles.detailValue}>{typeLabel}</Text>
+              </View>
             ) : null}
             {!isCommonArea && roomState.price_per_month != null ? (
-              <Text style={styles.detailItem}>
-                Precio: {roomState.price_per_month} EUR/mes
-              </Text>
+              <View style={styles.detailRow}>
+                <View style={styles.detailLabelRow}>
+                  <Ionicons name="card-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailLabel}>Precio</Text>
+                </View>
+                <View style={styles.pricePill}>
+                  <Text style={styles.pricePillText}>
+                    {roomState.price_per_month} EUR/mes
+                  </Text>
+                </View>
+              </View>
             ) : null}
-            {!isCommonArea && (
-              <Text style={styles.detailItem}>
-                Estado:{' '}
-                {isAssigned
-                  ? 'Ocupada'
-                  : roomState.is_available === true
-                  ? 'Disponible'
-                  : roomState.is_available === false
-                  ? 'Ocupada'
-                  : 'Sin estado'}
-              </Text>
-            )}
+            {!isCommonArea && statusLabel ? (
+              <View style={styles.detailRow}>
+                <View style={styles.detailLabelRow}>
+                  <Ionicons name="pulse-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailLabel}>Estado</Text>
+                </View>
+                <View style={[styles.statusPill, statusTone]}>
+                  <Text style={styles.statusPillText}>{statusLabel}</Text>
+                </View>
+              </View>
+            ) : null}
             {roomState.size_m2 != null ? (
-              <Text style={styles.detailItem}>Tamano: {roomState.size_m2} m2</Text>
+              <View style={styles.detailRow}>
+                <View style={styles.detailLabelRow}>
+                  <Ionicons name="resize-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailLabel}>Tamano</Text>
+                </View>
+                <Text style={styles.detailValue}>{roomState.size_m2} m2</Text>
+              </View>
             ) : null}
             {roomState.description ? (
-              <Text style={styles.detailItem}>{roomState.description}</Text>
+              <View style={styles.detailNote}>
+                <Text style={styles.detailNoteText}>{roomState.description}</Text>
+              </View>
             ) : null}
           </View>
         </View>
@@ -306,11 +340,23 @@ export const RoomDetailScreen: React.FC = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Piso</Text>
             <View style={styles.detailCard}>
-              <Text style={styles.detailItem}>{flat.address}</Text>
-              <Text style={styles.detailItem}>
-                {flat.city}
-                {flat.district ? ` - ${flat.district}` : ''}
-              </Text>
+              <View style={styles.detailRow}>
+                <View style={styles.detailLabelRow}>
+                  <Ionicons name="location-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailLabel}>Direccion</Text>
+                </View>
+                <Text style={styles.detailValue}>{flat.address}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <View style={styles.detailLabelRow}>
+                  <Ionicons name="map-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailLabel}>Zona</Text>
+                </View>
+                <Text style={styles.detailValue}>
+                  {flat.city}
+                  {flat.district ? ` - ${flat.district}` : ''}
+                </Text>
+              </View>
             </View>
           </View>
         )}
@@ -410,10 +456,74 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     padding: 16,
-    gap: 8,
+    gap: 12,
+    shadowColor: '#111827',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 2,
   },
-  detailItem: {
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  detailLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    textAlign: 'right',
+    flexShrink: 1,
+  },
+  pricePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+  },
+  pricePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  statusPillAvailable: {
+    backgroundColor: '#ECFDF3',
+  },
+  statusPillOccupied: {
+    backgroundColor: '#FEF2F2',
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  detailNote: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  detailNoteText: {
     fontSize: 13,
     color: '#374151',
+    lineHeight: 18,
   },
 });
