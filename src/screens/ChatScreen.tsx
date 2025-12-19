@@ -33,8 +33,13 @@ export const ChatScreen: React.FC = () => {
 
   useEffect(() => {
     const loadMessages = async () => {
-      const data = await chatService.getMessages(chatId);
-      setMessages(data);
+      try {
+        const data = await chatService.getMessages(chatId);
+        setMessages(data);
+        await chatService.markMessagesAsRead(chatId);
+      } catch (error) {
+        console.error('Error cargando mensajes:', error);
+      }
     };
 
     void loadMessages();
@@ -48,8 +53,12 @@ export const ChatScreen: React.FC = () => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     setInputValue('');
-    const next = await chatService.sendMessage(chatId, trimmed);
-    setMessages((prev) => [...prev, next]);
+    try {
+      const next = await chatService.sendMessage(chatId, trimmed);
+      setMessages((prev) => [...prev, next]);
+    } catch (error) {
+      console.error('Error enviando mensaje:', error);
+    }
   };
 
   const renderMessage = ({ item }: { item: Message }) => {

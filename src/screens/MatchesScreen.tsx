@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
@@ -21,25 +21,41 @@ export const MatchesScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('matches');
   const [matches, setMatches] = useState<Match[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadData = async () => {
+  const loadData = React.useCallback(async () => {
+    try {
+      setErrorMessage(null);
       const [nextMatches, nextChats] = await Promise.all([
         chatService.getMatches(),
         chatService.getChats(),
       ]);
       setMatches(nextMatches);
       setChats(nextChats);
-    };
-
-    void loadData();
+    } catch (error) {
+      console.error('Error cargando matches/chats:', error);
+      setMatches([]);
+      setChats([]);
+      setErrorMessage('No se pudo cargar la informacion.');
+    }
   }, []);
 
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void loadData();
+    }, [loadData])
+  );
+
   const emptyMessage = useMemo(() => {
+    if (errorMessage) return errorMessage;
     return activeTab === 'matches'
       ? 'Aun no tienes matches'
       : 'No hay mensajes todavia';
-  }, [activeTab]);
+  }, [activeTab, errorMessage]);
 
   const renderMatch = ({ item }: { item: Match }) => (
     <View style={styles.matchItem}>

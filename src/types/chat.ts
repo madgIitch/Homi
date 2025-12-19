@@ -24,4 +24,5 @@ export interface Message {
   createdAt: string;
   isMine: boolean;
   status?: MessageStatus;
+  readAt?: string | null;
 }

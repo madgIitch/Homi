@@ -1,134 +1,248 @@
-import type { Chat, Match, Message } from '../types/chat';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_CONFIG } from '../config/api';
+import { authService } from './authService';
+import type { Chat, Match, Message, MessageStatus } from '../types/chat';
 
-const matches: Match[] = [
-  {
-    id: 'match-1',
-    profileId: 'profile-1',
-    name: 'Clara',
-    avatarUrl:
-      'https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=200&q=80',
-  },
-  {
-    id: 'match-2',
-    profileId: 'profile-2',
-    name: 'Mario',
-    avatarUrl:
-      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80',
-  },
-  {
-    id: 'match-3',
-    profileId: 'profile-3',
-    name: 'Sofia',
-    avatarUrl:
-      'https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=200&q=70',
-  },
-];
+type ApiProfile = {
+  id: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
 
-const chats: Chat[] = [
-  {
-    id: 'chat-1',
-    matchId: 'match-1',
-    name: 'Clara',
-    avatarUrl:
-      'https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=200&q=80',
-    lastMessage: 'Genial, hablamos luego!',
-    lastMessageAt: '14:32',
-    unreadCount: 2,
-  },
-  {
-    id: 'chat-2',
-    matchId: 'match-2',
-    name: 'Mario',
-    avatarUrl:
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-    lastMessage: 'Vale, gracias!',
-    lastMessageAt: '11:05',
-    unreadCount: 0,
-  },
-];
+type ApiMatch = {
+  id: string;
+  user_a_id: string;
+  user_b_id: string;
+  matched_at?: string;
+  user_a?: ApiProfile;
+  user_b?: ApiProfile;
+};
 
-const messagesByChatId: Record<string, Message[]> = {
-  'chat-1': [
-    {
-      id: 'msg-1',
-      chatId: 'chat-1',
-      text: 'Hola! te gusta la zona de Triana?',
-      createdAt: '10:21',
-      isMine: false,
-    },
-    {
-      id: 'msg-2',
-      chatId: 'chat-1',
-      text: 'Si, me queda cerca del trabajo.',
-      createdAt: '10:22',
-      isMine: true,
-      status: 'read',
-    },
-    {
-      id: 'msg-3',
-      chatId: 'chat-1',
-      text: 'Genial, hablamos luego!',
-      createdAt: '14:32',
-      isMine: false,
-    },
-  ],
-  'chat-2': [
-    {
-      id: 'msg-4',
-      chatId: 'chat-2',
-      text: 'Que presupuesto manejas?',
-      createdAt: '09:10',
-      isMine: false,
-    },
-    {
-      id: 'msg-5',
-      chatId: 'chat-2',
-      text: 'Entre 350 y 450, mas o menos.',
-      createdAt: '09:12',
-      isMine: true,
-      status: 'delivered',
-    },
-    {
-      id: 'msg-6',
-      chatId: 'chat-2',
-      text: 'Vale, gracias!',
-      createdAt: '11:05',
-      isMine: false,
-    },
-  ],
+type ApiChat = {
+  id: string;
+  match_id: string;
+  created_at: string;
+  updated_at: string;
+  match?: ApiMatch;
+};
+
+type ApiMessage = {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+  read_at?: string | null;
+};
+
+type ApiResponse<T> = {
+  data?: T;
+  error?: string;
+};
+
+const FALLBACK_AVATAR =
+  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80';
+
+const MATCHES_ENDPOINT = `${API_CONFIG.FUNCTIONS_URL}/matches`;
+const CHATS_ENDPOINT = `${API_CONFIG.FUNCTIONS_URL}/chats`;
+
+const resolveAvatarUrl = (avatarUrl?: string | null) => {
+  if (!avatarUrl) return FALLBACK_AVATAR;
+  if (avatarUrl.startsWith('http')) return avatarUrl;
+  return `${API_CONFIG.SUPABASE_URL}/storage/v1/object/public/avatars/${avatarUrl}`;
+};
+
+const formatTime = (iso?: string | null) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 };
 
 class ChatService {
+  private async getAuthHeaders(): Promise<HeadersInit> {
+    const token = await AsyncStorage.getItem('authToken');
+    return {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    };
+  }
+
+  private async getCurrentUserId(): Promise<string | null> {
+    const stored = await AsyncStorage.getItem('authUser');
+    if (!stored) return null;
+    try {
+      const parsed = JSON.parse(stored) as { id?: string };
+      return parsed.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async fetchWithAuth(input: RequestInfo, init: RequestInit) {
+    let headers = await this.getAuthHeaders();
+    const tryFetch = () => fetch(input, { ...init, headers });
+    let response = await tryFetch();
+
+    if (response.status === 401) {
+      const newToken = await authService.refreshToken();
+      if (newToken) {
+        headers = await this.getAuthHeaders();
+        response = await tryFetch();
+      }
+    }
+
+    return response;
+  }
+
   async getMatches(): Promise<Match[]> {
-    return matches;
+    const response = await this.fetchWithAuth(MATCHES_ENDPOINT, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al obtener matches');
+    }
+
+    const payload = (await response.json()) as ApiResponse<ApiMatch[]>;
+    const data = payload.data ?? [];
+    const currentUserId = await this.getCurrentUserId();
+
+    return data.map((match) => {
+      const isUserA = currentUserId && match.user_a_id === currentUserId;
+      const otherProfile = isUserA ? match.user_b : match.user_a;
+      return {
+        id: match.id,
+        profileId: otherProfile?.id ?? '',
+        name: otherProfile?.display_name ?? 'Usuario',
+        avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
+      };
+    });
   }
 
   async getChats(): Promise<Chat[]> {
-    return chats;
+    const response = await this.fetchWithAuth(CHATS_ENDPOINT, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al obtener chats');
+    }
+
+    const payload = (await response.json()) as ApiResponse<ApiChat[]>;
+    const data = payload.data ?? [];
+    const currentUserId = await this.getCurrentUserId();
+
+    const chatsWithMessages = await Promise.all(
+      data.map(async (chat) => {
+        const messages = await this.getMessages(chat.id);
+        const lastMessage = messages[messages.length - 1];
+        const unreadCount = messages.filter(
+          (message) => !message.isMine && !message.readAt
+        ).length;
+
+        const isUserA =
+          currentUserId && chat.match?.user_a_id === currentUserId;
+        const otherProfile = isUserA
+          ? chat.match?.user_b
+          : chat.match?.user_a;
+
+        return {
+          id: chat.id,
+          matchId: chat.match_id,
+          name: otherProfile?.display_name ?? 'Usuario',
+          avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
+          lastMessage: lastMessage?.text ?? '',
+          lastMessageAt: lastMessage?.createdAt ?? formatTime(chat.updated_at),
+          unreadCount,
+        };
+      })
+    );
+
+    return chatsWithMessages;
   }
 
   async getMessages(chatId: string): Promise<Message[]> {
-    return messagesByChatId[chatId] ?? [];
+    const response = await this.fetchWithAuth(
+      `${CHATS_ENDPOINT}?chat_id=${chatId}`,
+      { method: 'GET' }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al obtener mensajes');
+    }
+
+    const payload = (await response.json()) as ApiResponse<ApiMessage[]>;
+    const data = payload.data ?? [];
+    const currentUserId = await this.getCurrentUserId();
+
+    return data.map((message) => {
+      const isMine = currentUserId === message.sender_id;
+      const status: MessageStatus | undefined = isMine
+        ? message.read_at
+          ? 'read'
+          : 'sent'
+        : undefined;
+
+      return {
+        id: message.id,
+        chatId: message.chat_id,
+        text: message.body,
+        createdAt: formatTime(message.created_at),
+        isMine,
+        status,
+        readAt: message.read_at ?? null,
+      };
+    });
   }
 
   async sendMessage(chatId: string, text: string): Promise<Message> {
-    const message: Message = {
-      id: `msg-${Date.now()}`,
-      chatId,
-      text,
-      createdAt: new Date().toLocaleTimeString('es-ES', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      isMine: true,
-      status: 'sent',
-    };
+    const response = await this.fetchWithAuth(
+      `${CHATS_ENDPOINT}?type=message`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ chat_id: chatId, body: text }),
+      }
+    );
 
-    if (!messagesByChatId[chatId]) {
-      messagesByChatId[chatId] = [];
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al enviar mensaje');
     }
-    messagesByChatId[chatId].push(message);
-    return message;
+
+    const payload = (await response.json()) as ApiResponse<ApiMessage>;
+    const message = payload.data;
+    if (!message) {
+      throw new Error('Respuesta invalida al enviar mensaje');
+    }
+
+    const currentUserId = await this.getCurrentUserId();
+    const isMine = currentUserId === message.sender_id;
+
+    return {
+      id: message.id,
+      chatId: message.chat_id,
+      text: message.body,
+      createdAt: formatTime(message.created_at),
+      isMine,
+      status: isMine ? 'sent' : undefined,
+      readAt: message.read_at ?? null,
+    };
+  }
+
+  async markMessagesAsRead(chatId: string): Promise<void> {
+    const response = await this.fetchWithAuth(
+      `${CHATS_ENDPOINT}?chat_id=${chatId}`,
+      { method: 'PATCH' }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al marcar mensajes como leidos');
+    }
   }
 }
 
