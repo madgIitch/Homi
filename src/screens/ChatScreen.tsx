@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
   Modal,
+  ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -60,6 +61,7 @@ export const ChatScreen: React.FC = () => {
   const [roomExtras, setRoomExtras] = useState<Record<string, RoomExtras | null>>({});
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [assignTarget, setAssignTarget] = useState<'seeker' | 'owner'>('seeker');
   const [loadingAssignments, setLoadingAssignments] = useState(false);
 
   useEffect(() => {
@@ -180,6 +182,11 @@ export const ChatScreen: React.FC = () => {
     [assignments]
   );
 
+  const ownerHasRoom = useMemo(
+    () => acceptedAssignments.some((assignment) => assignment.assignee_id === ownerId),
+    [acceptedAssignments, ownerId]
+  );
+
   const assignedRoomIds = useMemo(
     () =>
       new Set(
@@ -195,21 +202,32 @@ export const ChatScreen: React.FC = () => {
     );
   }, [isOwner, ownerRooms, assignedRoomIds]);
 
-  const assignRoomToSeeker = async () => {
-    if (!matchId || !selectedRoomId || !seekerId) return;
+  const assignRoom = async () => {
+    if (!selectedRoomId) return;
+    const targetId = assignTarget === 'owner' ? ownerId : seekerId;
+    if (!targetId) return;
+    if (assignTarget === 'seeker' && !matchId) return;
+
     try {
-      await roomAssignmentService.createAssignment({
-        match_id: matchId,
+      const payload: { match_id?: string; room_id: string; assignee_id: string } = {
         room_id: selectedRoomId,
-        assignee_id: seekerId,
-      });
+        assignee_id: targetId,
+      };
+      if (assignTarget === 'seeker' && matchId) {
+        payload.match_id = matchId;
+      }
+      await roomAssignmentService.createAssignment(payload);
       setAssignModalVisible(false);
       setSelectedRoomId(null);
-      const data = await roomAssignmentService.getAssignments(matchId);
-      setAssignments(data.assignments);
-      setMatchAssignment(data.match_assignment ?? null);
-      setOwnerId(data.owner_id);
-      setMatchStatus('room_offer');
+      if (matchId) {
+        const data = await roomAssignmentService.getAssignments(matchId);
+        setAssignments(data.assignments);
+        setMatchAssignment(data.match_assignment ?? null);
+        setOwnerId(data.owner_id);
+      }
+      if (assignTarget === 'seeker') {
+        setMatchStatus('room_offer');
+      }
     } catch (error) {
       console.error('Error asignando habitacion:', error);
     }
@@ -241,7 +259,7 @@ export const ChatScreen: React.FC = () => {
           : extras.common_area_type
         : extras.room_type;
     if (!typeLabel) return room.title;
-    return `${room.title} · ${typeLabel}`;
+    return `${room.title} - ${typeLabel}`;
   };
 
   useEffect(() => {
@@ -390,12 +408,37 @@ export const ChatScreen: React.FC = () => {
             )}
           </View>
           {isOwner && (
-            <TouchableOpacity
-              style={styles.assignButton}
-              onPress={() => setAssignModalVisible(true)}
-            >
-              <Text style={styles.assignButtonText}>Asignar habitacion</Text>
-            </TouchableOpacity>
+            <View style={styles.assignActions}>
+              <TouchableOpacity
+                style={[
+                  styles.assignButton,
+                  availableRooms.length === 0 && styles.assignButtonDisabled,
+                ]}
+                onPress={() => {
+                  setAssignTarget('seeker');
+                  setSelectedRoomId(null);
+                  setAssignModalVisible(true);
+                }}
+                disabled={availableRooms.length === 0}
+              >
+                <Text style={styles.assignButtonText}>Asignar habitacion</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.assignButton,
+                  (ownerHasRoom || availableRooms.length === 0) &&
+                    styles.assignButtonDisabled,
+                ]}
+                onPress={() => {
+                  setAssignTarget('owner');
+                  setSelectedRoomId(null);
+                  setAssignModalVisible(true);
+                }}
+                disabled={ownerHasRoom || availableRooms.length === 0}
+              >
+                <Text style={styles.assignButtonText}>Asignarme una habitacion</Text>
+              </TouchableOpacity>
+            </View>
           )}
           {isSeeker && matchAssignment?.status === 'offered' && (
             <View style={styles.offerCard}>
@@ -473,7 +516,9 @@ export const ChatScreen: React.FC = () => {
       <Modal visible={assignModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Asignar habitacion</Text>
+            <Text style={styles.modalTitle}>
+              {assignTarget === 'owner' ? 'Asignarme habitacion' : 'Asignar habitacion'}
+            </Text>
             <Text style={styles.modalSubtitle}>
               Selecciona una habitacion disponible.
             </Text>
@@ -526,10 +571,12 @@ export const ChatScreen: React.FC = () => {
                   styles.modalConfirm,
                   !selectedRoomId && styles.modalButtonDisabled,
                 ]}
-                onPress={assignRoomToSeeker}
+                onPress={assignRoom}
                 disabled={!selectedRoomId}
               >
-                <Text style={styles.modalConfirmText}>Asignar</Text>
+                <Text style={styles.modalConfirmText}>
+                    {assignTarget === 'owner' ? 'Asignarme' : 'Asignar'}
+                  </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -642,12 +689,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
   },
+  assignActions: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
   assignButton: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: '#7C3AED',
+  },
+  assignButtonDisabled: {
+    backgroundColor: '#C4B5FD',
   },
   assignButtonText: {
     fontSize: 12,

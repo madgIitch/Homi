@@ -40,7 +40,7 @@ class RoomAssignmentService {
   }
 
   async createAssignment(input: {
-    match_id: string;
+    match_id?: string;
     room_id: string;
     assignee_id: string;
   }): Promise<RoomAssignment> {

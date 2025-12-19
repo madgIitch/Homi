@@ -77,6 +77,18 @@ async function listAssignmentsForOwner(ownerId: string): Promise<AssignmentRow[]
   return data as AssignmentRow[];
 }
 
+async function hasAcceptedAssignment(roomId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('room_assignments')
+    .select('id')
+    .eq('room_id', roomId)
+    .eq('status', 'accepted')
+    .limit(1);
+
+  if (error || !data) return false;
+  return data.length > 0;
+}
+
 serve(
   withAuth(async (req: Request, payload: JWTPayload): Promise<Response> => {
     if (req.method === 'OPTIONS') {
@@ -133,13 +145,13 @@ serve(
 
     if (req.method === 'POST') {
       const body = await req.json();
-      const matchId = body?.match_id as string | undefined;
       const roomId = body?.room_id as string | undefined;
       const assigneeId = body?.assignee_id as string | undefined;
+      const matchId = body?.match_id as string | undefined;
 
-      if (!matchId || !roomId || !assigneeId) {
+      if (!roomId || !assigneeId) {
         return new Response(
-          JSON.stringify({ error: 'match_id, room_id and assignee_id are required' }),
+          JSON.stringify({ error: 'room_id and assignee_id are required' }),
           {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -147,37 +159,99 @@ serve(
         );
       }
 
-      const match = await getMatch(matchId);
-      if (!match) {
-        return new Response(JSON.stringify({ error: 'Match not found' }), {
-          status: 404,
+      if (await hasAcceptedAssignment(roomId)) {
+        return new Response(JSON.stringify({ error: 'Room already assigned' }), {
+          status: 409,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      if (userId !== match.user_a_id && userId !== match.user_b_id) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      if (matchId) {
+        const match = await getMatch(matchId);
+        if (!match) {
+          return new Response(JSON.stringify({ error: 'Match not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (userId !== match.user_a_id && userId !== match.user_b_id) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const ownerId = resolveOwnerId(match);
+        if (!ownerId || ownerId !== userId) {
+          return new Response(JSON.stringify({ error: 'Only the owner can assign rooms' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (assigneeId !== match.user_a_id && assigneeId !== match.user_b_id) {
+          return new Response(JSON.stringify({ error: 'Assignee not in match' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const ownsRoom = await ensureRoomOwnership(roomId, ownerId);
+        if (!ownsRoom) {
+          return new Response(JSON.stringify({ error: 'Room not found or unauthorized' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { data, error } = await supabaseAdmin
+          .from('room_assignments')
+          .upsert(
+            {
+              match_id: matchId,
+              room_id: roomId,
+              assignee_id: assigneeId,
+              status: 'offered',
+            },
+            { onConflict: 'match_id' }
+          )
+          .select(
+            `
+            *,
+            room:rooms(*),
+            assignee:profiles(*)
+          `
+          )
+          .single();
+
+        if (error || !data) {
+          console.error('[room-assignments] Upsert error:', error);
+          return new Response(JSON.stringify({ error: 'Error assigning room' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        await supabaseAdmin
+          .from('matches')
+          .update({ status: 'room_offer' })
+          .eq('id', matchId);
+
+        return new Response(JSON.stringify({ data }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (assigneeId !== userId) {
+        return new Response(JSON.stringify({ error: 'Only the owner can self-assign' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      const ownerId = resolveOwnerId(match);
-      if (!ownerId || ownerId !== userId) {
-        return new Response(JSON.stringify({ error: 'Only the owner can assign rooms' }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      if (assigneeId !== match.user_a_id && assigneeId !== match.user_b_id) {
-        return new Response(JSON.stringify({ error: 'Assignee not in match' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      const ownsRoom = await ensureRoomOwnership(roomId, ownerId);
+      const ownsRoom = await ensureRoomOwnership(roomId, userId);
       if (!ownsRoom) {
         return new Response(JSON.stringify({ error: 'Room not found or unauthorized' }), {
           status: 403,
@@ -187,15 +261,11 @@ serve(
 
       const { data, error } = await supabaseAdmin
         .from('room_assignments')
-        .upsert(
-          {
-            match_id: matchId,
-            room_id: roomId,
-            assignee_id: assigneeId,
-            status: 'offered',
-          },
-          { onConflict: 'match_id' }
-        )
+        .insert({
+          room_id: roomId,
+          assignee_id: assigneeId,
+          status: 'accepted',
+        })
         .select(
           `
           *,
@@ -206,17 +276,12 @@ serve(
         .single();
 
       if (error || !data) {
-        console.error('[room-assignments] Upsert error:', error);
+        console.error('[room-assignments] Insert error:', error);
         return new Response(JSON.stringify({ error: 'Error assigning room' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-
-      await supabaseAdmin
-        .from('matches')
-        .update({ status: 'room_offer' })
-        .eq('id', matchId);
 
       return new Response(JSON.stringify({ data }), {
         status: 200,
