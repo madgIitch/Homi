@@ -11,6 +11,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
+import { profilePhotoService } from '../services/profilePhotoService';
 import type { Chat, Match } from '../types/chat';
 
 export const MatchesScreen: React.FC = () => {
@@ -19,6 +20,9 @@ export const MatchesScreen: React.FC = () => {
   const [matches, setMatches] = useState<Match[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [matchPhotoByProfile, setMatchPhotoByProfile] = useState<
+    Record<string, string>
+  >({});
 
   const loadData = React.useCallback(async () => {
     try {
@@ -57,6 +61,37 @@ export const MatchesScreen: React.FC = () => {
     [matches, chatMatchIds]
   );
 
+  useEffect(() => {
+    const loadMatchPhotos = async () => {
+      const missing = unmatched.filter(
+        (match) => !matchPhotoByProfile[match.profileId]
+      );
+      if (missing.length === 0) return;
+
+      const updates: Record<string, string> = {};
+      await Promise.all(
+        missing.map(async (match) => {
+          try {
+            const photos = await profilePhotoService.getPhotosForProfile(
+              match.profileId
+            );
+            const primary = photos.find((photo) => photo.is_primary) ?? photos[0];
+            updates[match.profileId] = primary?.signedUrl || match.avatarUrl;
+          } catch (error) {
+            console.error('Error cargando foto del match:', error);
+            updates[match.profileId] = match.avatarUrl;
+          }
+        })
+      );
+
+      if (Object.keys(updates).length > 0) {
+        setMatchPhotoByProfile((prev) => ({ ...prev, ...updates }));
+      }
+    };
+
+    void loadMatchPhotos();
+  }, [unmatched, matchPhotoByProfile]);
+
   const emptyMessage = useMemo(() => {
     if (errorMessage) return errorMessage;
     return matches.length === 0 && chats.length === 0
@@ -64,16 +99,19 @@ export const MatchesScreen: React.FC = () => {
       : 'No hay mensajes todavia';
   }, [errorMessage, matches.length, chats.length]);
 
-  const renderMatch = ({ item }: { item: Match }) => (
-    <View style={styles.matchItem}>
-      <View style={styles.avatarWrapper}>
-        <Image source={{ uri: item.avatarUrl }} style={styles.avatar} />
+  const renderMatch = ({ item }: { item: Match }) => {
+    const photoUrl = matchPhotoByProfile[item.profileId] || item.avatarUrl;
+    return (
+      <View style={styles.matchItem}>
+        <View style={styles.avatarWrapper}>
+          <Image source={{ uri: photoUrl }} style={styles.avatar} />
+        </View>
+        <Text style={[styles.matchName, { color: theme.colors.text }]}>
+          {item.name}
+        </Text>
       </View>
-      <Text style={[styles.matchName, { color: theme.colors.text }]}>
-        {item.name}
-      </Text>
-    </View>
-  );
+    );
+  };
 
   const renderChat = ({ item }: { item: Chat }) => (
     <TouchableOpacity

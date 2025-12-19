@@ -23,6 +23,8 @@ import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { authService } from '../services/authService';
+import { chatService } from '../services/chatService';
+import { swipeRejectionService } from '../services/swipeRejectionService';
 import { API_CONFIG } from '../config/api';
 import type { Profile } from '../types/profile';
 import type { SwipeFilters } from '../types/swipeFilters';
@@ -57,6 +59,7 @@ export const SwipeScreen: React.FC = () => {
   const [swipesUsed, setSwipesUsed] = useState(0);
   const [allProfiles, setAllProfiles] = useState<SwipeProfile[]>([]);
   const [profiles, setProfiles] = useState<SwipeProfile[]>([]);
+  const [excludedProfileIds, setExcludedProfileIds] = useState<string[]>([]);
   const [loadingProfiles, setLoadingProfiles] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [photoIndexByProfile, setPhotoIndexByProfile] = useState<
@@ -138,6 +141,14 @@ export const SwipeScreen: React.FC = () => {
     }
   };
 
+  const sendRejection = async (profileId: string) => {
+    try {
+      await swipeRejectionService.createRejection(profileId);
+    } catch (error) {
+      console.error('Error guardando rechazo:', error);
+    }
+  };
+
   const updateSwipeCount = async (nextCount: number) => {
     setSwipesUsed(nextCount);
     await AsyncStorage.setItem(
@@ -157,6 +168,14 @@ export const SwipeScreen: React.FC = () => {
     if (!currentProfile || !canSwipe) return;
     if (direction === 'right') {
       void sendLike(currentProfile.id);
+      setExcludedProfileIds((prev) =>
+        prev.includes(currentProfile.id) ? prev : [...prev, currentProfile.id]
+      );
+    } else {
+      void sendRejection(currentProfile.id);
+      setExcludedProfileIds((prev) =>
+        prev.includes(currentProfile.id) ? prev : [...prev, currentProfile.id]
+      );
     }
     Animated.timing(position, {
       toValue: {
@@ -287,16 +306,29 @@ export const SwipeScreen: React.FC = () => {
       setProfileError(null);
       try {
         console.log('[SwipeScreen] loading recommendations...');
-        const recommendations = await profileService.getProfileRecommendations();
+        const [recommendations, existingMatches, rejections] = await Promise.all(
+          [
+            profileService.getProfileRecommendations(),
+            chatService.getMatches(),
+            swipeRejectionService.getRejections(),
+          ]
+        );
         console.log(
           '[SwipeScreen] recommendations received:',
           recommendations.length
         );
+        const excluded = new Set<string>();
+        existingMatches.forEach((match) => excluded.add(match.profileId));
+        rejections.forEach((rejection) =>
+          excluded.add(rejection.rejectedProfileId)
+        );
         const mapped = recommendations.map((rec) =>
           mapProfileToSwipe(rec.profile)
         );
-        console.log('[SwipeScreen] mapped profiles:', mapped.length);
-        setAllProfiles(mapped);
+        const filtered = mapped.filter((profile) => !excluded.has(profile.id));
+        console.log('[SwipeScreen] mapped profiles:', filtered.length);
+        setAllProfiles(filtered);
+        setExcludedProfileIds(Array.from(excluded));
       } catch (error) {
         console.error('Error cargando recomendaciones:', error);
         setAllProfiles([]);
@@ -310,11 +342,11 @@ export const SwipeScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const next = applyFilters(allProfiles, filters);
+    const next = applyFilters(allProfiles, filters, excludedProfileIds);
     setProfiles(next);
     setCurrentIndex(0);
     position.setValue({ x: 0, y: 0 });
-  }, [allProfiles, filters, position]);
+  }, [allProfiles, filters, excludedProfileIds, position]);
 
   useEffect(() => {
     const loadPhotosForProfile = async () => {
@@ -852,7 +884,12 @@ const getActiveFilterCount = (filters: SwipeFilters) => {
   return count;
 };
 
-const applyFilters = (items: SwipeProfile[], filters: SwipeFilters) => {
+const applyFilters = (
+  items: SwipeProfile[],
+  filters: SwipeFilters,
+  excludedProfileIds: string[]
+) => {
+  const excluded = new Set(excludedProfileIds);
   const lifestyleLabels = filters.lifestyle
     .map((id) => lifestyleLabelById.get(id) ?? id)
     .filter(Boolean);
@@ -861,6 +898,10 @@ const applyFilters = (items: SwipeProfile[], filters: SwipeFilters) => {
     filters.budgetMin > BUDGET_MIN || filters.budgetMax < BUDGET_MAX;
 
   return items.filter((profile) => {
+    if (excluded.has(profile.id)) {
+      return false;
+    }
+
     if (
       filters.housingSituation !== 'any' &&
       profile.housing !== filters.housingSituation
