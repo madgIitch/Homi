@@ -21,6 +21,7 @@ import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
+import { roomAssignmentService } from '../services/roomAssignmentService';
 import { AuthContext } from '../context/AuthContext';
 import type { Profile, ProfilePhoto } from '../types/profile';
 import type { Flat, Room, RoomExtras } from '../types/room';
@@ -166,6 +167,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [flatRooms, setFlatRooms] = useState<Room[]>([]);
   const [flatExtras, setFlatExtras] = useState<Record<string, RoomExtras | null>>({});
   const [flatLoading, setFlatLoading] = useState(false);
+  const [flatAssignments, setFlatAssignments] = useState<Record<string, boolean>>({});
 
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
@@ -243,6 +245,18 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         extras.map((extra) => [extra.room_id, extra])
       );
       setFlatExtras(extrasMap);
+      if (profile.id === currentUserId) {
+        const assignmentsResponse = await roomAssignmentService.getAssignmentsForOwner();
+        const acceptedMap: Record<string, boolean> = {};
+        assignmentsResponse.assignments.forEach((assignment) => {
+          if (assignment.status === 'accepted') {
+            acceptedMap[assignment.room_id] = true;
+          }
+        });
+        setFlatAssignments(acceptedMap);
+      } else {
+        setFlatAssignments({});
+      }
     } catch (error) {
       console.error('Error cargando piso:', error);
     } finally {
@@ -773,12 +787,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                               const typeLabel = extras?.room_type
                                 ? roomTypeLabel.get(extras.room_type) ?? extras.room_type
                                 : '';
-                              const statusLabel =
-                                room.is_available === true
-                                  ? 'Disponible'
-                                  : room.is_available === false
-                                  ? 'Ocupada'
-                                  : 'Sin estado';
+                              const statusLabel = flatAssignments[room.id]
+                                ? 'Ocupada'
+                                : room.is_available === true
+                                ? 'Disponible'
+                                : room.is_available === false
+                                ? 'Ocupada'
+                                : 'Sin estado';
                               return (
                                 <TouchableOpacity
                                   key={room.id}

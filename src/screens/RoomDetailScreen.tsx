@@ -14,6 +14,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { roomExtrasService } from '../services/roomExtrasService';
+import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomService } from '../services/roomService';
 import type { Flat, Room, RoomExtras } from '../types/room';
 
@@ -155,13 +156,17 @@ export const RoomDetailScreen: React.FC = () => {
     extras ?? null
   );
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [isAssigned, setIsAssigned] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
     const refreshRoom = async () => {
       try {
-        const rooms = await roomService.getRoomsByOwner(room.owner_id);
+        const [rooms, assignmentsResponse] = await Promise.all([
+          roomService.getRoomsByOwner(room.owner_id),
+          roomAssignmentService.getAssignmentsForOwner(),
+        ]);
         const updated = rooms.find((item) => item.id === room.id);
         if (updated && isMounted) {
           setRoomState(updated);
@@ -169,6 +174,11 @@ export const RoomDetailScreen: React.FC = () => {
         const extrasData = await roomExtrasService.getExtrasForRooms([room.id]);
         if (isMounted) {
           setExtrasState(extrasData[0] ?? null);
+          const assigned = assignmentsResponse.assignments.some(
+            (assignment) =>
+              assignment.room_id === room.id && assignment.status === 'accepted'
+          );
+          setIsAssigned(assigned);
         }
       } catch (error) {
         console.error('Error cargando detalle de habitacion:', error);
@@ -274,7 +284,9 @@ export const RoomDetailScreen: React.FC = () => {
             {!isCommonArea && (
               <Text style={styles.detailItem}>
                 Estado:{' '}
-                {roomState.is_available === true
+                {isAssigned
+                  ? 'Ocupada'
+                  : roomState.is_available === true
                   ? 'Disponible'
                   : roomState.is_available === false
                   ? 'Ocupada'
