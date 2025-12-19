@@ -8,14 +8,17 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  FlatList,
+  Dimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { profileService } from '../services/profileService';
+import { profilePhotoService } from '../services/profilePhotoService';
 import { AuthContext } from '../context/AuthContext';
-import type { Profile } from '../types/profile';
+import type { Profile, ProfilePhoto } from '../types/profile';
 
 interface ProfileDetailScreenProps {
   userId?: string;
@@ -27,6 +30,8 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const theme = useTheme();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
   const navigation = useNavigation<StackNavigationProp<any>>();
   const authContext = useContext(AuthContext);
@@ -35,6 +40,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 
   useEffect(() => {
     loadProfile();
+    loadPhotos();
   }, [userId]);
 
   const loadProfile = async () => {
@@ -46,6 +52,15 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       Alert.alert('Error', 'No se pudo cargar el perfil');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPhotos = async () => {
+    try {
+      const data = await profilePhotoService.getPhotos();
+      setProfilePhotos(data);
+    } catch (error) {
+      console.error('Error cargando fotos:', error);
     }
   };
 
@@ -125,6 +140,24 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     return 'sparkles';
   };
 
+  const carouselWidth = Dimensions.get('window').width - 40;
+  const carouselPhotos =
+    profilePhotos.length > 0
+      ? profilePhotos
+      : profile.avatar_url
+      ? [
+          {
+            id: 'avatar',
+            profile_id: profile.id,
+            path: profile.avatar_url,
+            position: 1,
+            is_primary: true,
+            signedUrl: profile.avatar_url,
+            created_at: profile.updated_at,
+          },
+        ]
+      : [];
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -149,9 +182,44 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {profile.avatar_url && (
-          <View style={styles.avatarContainer}>
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+        {carouselPhotos.length > 0 && (
+          <View style={styles.carouselContainer}>
+            <FlatList
+              data={carouselPhotos}
+              keyExtractor={(item) => item.id}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={carouselWidth}
+              decelerationRate="fast"
+              onMomentumScrollEnd={(event) => {
+                const index = Math.round(
+                  event.nativeEvent.contentOffset.x / carouselWidth
+                );
+                setActivePhotoIndex(index);
+              }}
+              renderItem={({ item }) => (
+                <View style={{ width: carouselWidth }}>
+                  <Image
+                    source={{ uri: item.signedUrl }}
+                    style={styles.carouselImage}
+                  />
+                </View>
+              )}
+            />
+            {carouselPhotos.length > 1 && (
+              <View style={styles.carouselDots}>
+                {carouselPhotos.map((photo, index) => (
+                  <View
+                    key={photo.id}
+                    style={[
+                      styles.carouselDot,
+                      index === activePhotoIndex && styles.carouselDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
           </View>
         )}
 
@@ -367,16 +435,29 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 24,
   },
-  avatarContainer: {
-    alignItems: 'center',
+  carouselContainer: {
     marginBottom: 24,
   },
-  avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+  carouselImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+  },
+  carouselDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+    gap: 6,
+  },
+  carouselDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#D1D5DB',
+  },
+  carouselDotActive: {
+    backgroundColor: '#7C3AED',
   },
   infoCard: {
     flex: 1,

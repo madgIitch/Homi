@@ -35,6 +35,16 @@ export interface Profile {
   created_at: string;  
   updated_at: string;  
 }  
+
+export interface ProfilePhoto {
+  id: string;
+  profile_id: string;
+  path: string;
+  position: number;
+  is_primary: boolean;
+  signedUrl: string;
+  created_at: string;
+}
   
 export interface ProfileCreateRequest {  
   // Add this missing field  

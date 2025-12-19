@@ -7,7 +7,10 @@ import {
   StyleSheet,
   Alert,
   TouchableOpacity,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
@@ -16,10 +19,14 @@ import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';
 import { ChipGroup } from '../components/ChipGroup';
 import { FormSection } from '../components/FormSection';
-import { ImageUpload } from '../components/ImageUpload';
 import { profileService } from '../services/profileService';
+import { profilePhotoService } from '../services/profilePhotoService';
 import { AuthContext } from '../context/AuthContext';
-import type { ProfileCreateRequest, HousingSituation } from '../types/profile';
+import type {
+  ProfileCreateRequest,
+  HousingSituation,
+  ProfilePhoto,
+} from '../types/profile';
 
 const INTERESES_OPTIONS = [
   { id: 'deportes', label: 'Deportes' },
@@ -89,7 +96,6 @@ export const EditProfileScreen: React.FC = () => {
   // Estados del formulario - solo campos que existen en la tabla profiles
   const [nombre, setNombre] = useState('');
   const [biografia, setBiografia] = useState('');
-  const [ocupacion, setOcupacion] = useState('');
   const [occupationType, setOccupationType] = useState<
     'universidad' | 'trabajo' | 'mixto'
   >('universidad');
@@ -105,7 +111,9 @@ export const EditProfileScreen: React.FC = () => {
   const [numCompaneros, setNumCompaneros] = useState('');
   const [presupuestoMin, setPresupuestoMin] = useState('');
   const [presupuestoMax, setPresupuestoMax] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(true);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -117,8 +125,6 @@ export const EditProfileScreen: React.FC = () => {
       }
 
       // Solo cargar campos que existen en la tabla profiles
-      console.log('[EditProfileScreen] Perfil recibido:', data);
-      console.log('[EditProfileScreen] avatar_url:', data.avatar_url);
       setNombre(data.display_name || '');
       setBiografia(data.bio || '');
       const occupationRaw = data.occupation || '';
@@ -157,7 +163,6 @@ export const EditProfileScreen: React.FC = () => {
 
       setOccupationType(nextType);
       setWorkplace(nextWorkplace);
-      setOcupacion(occupationRaw);
       setUniversidad(data.university || '');
       setCampoEstudio(data.field_of_study || '');
       setIntereses(data.interests || []);
@@ -183,8 +188,6 @@ export const EditProfileScreen: React.FC = () => {
       setPresupuestoMax(
         data.budget_max != null ? String(data.budget_max) : ''
       );
-      setAvatarUrl(data.avatar_url || '');
-      console.log('[EditProfileScreen] avatarUrl state set to:', data.avatar_url || '');
     } catch (error) {
       if (handleAuthError?.(error)) {
         navigation.reset({
@@ -197,9 +200,66 @@ export const EditProfileScreen: React.FC = () => {
     }
   }, [handleAuthError, navigation]);
 
+  const loadPhotos = useCallback(async () => {
+    try {
+      setPhotosLoading(true);
+      const data = await profilePhotoService.getPhotos();
+      setProfilePhotos(data);
+    } catch (error) {
+      console.error('Error cargando fotos:', error);
+    } finally {
+      setPhotosLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadProfile();
-  }, [loadProfile]);
+    loadPhotos();
+  }, [loadProfile, loadPhotos]);
+
+  const handleAddPhoto = async () => {
+    if (profilePhotos.length >= 10 || photoUploading) {
+      Alert.alert('Limite', 'Puedes subir hasta 10 fotos.');
+      return;
+    }
+
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+    });
+
+    if (result.didCancel || !result.assets || result.assets.length === 0) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset.uri) return;
+
+    try {
+      setPhotoUploading(true);
+      await profilePhotoService.uploadPhoto(
+        asset.uri,
+        asset.fileName,
+        asset.type
+      );
+      await loadPhotos();
+    } catch (error) {
+      console.error('Error subiendo foto:', error);
+      Alert.alert('Error', 'No se pudo subir la foto');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const handleSetPrimary = async (photoId: string) => {
+    try {
+      await profilePhotoService.setPrimary(photoId);
+      await loadPhotos();
+    } catch (error) {
+      console.error('Error actualizando foto principal:', error);
+      Alert.alert('Error', 'No se pudo actualizar la foto principal');
+    }
+  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -300,14 +360,47 @@ export const EditProfileScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Foto de perfil */}
-        <FormSection>
-          <View style={styles.avatarSection}>
-            <ImageUpload
-              currentImage={avatarUrl}
-              onImageUploaded={(url) => setAvatarUrl(url)}
-            />
-          </View>
+        {/* Fotos de perfil */}
+        <FormSection title="Fotos de perfil" iconName="images-outline">
+          {photosLoading ? (
+            <ActivityIndicator size="small" color="#7C3AED" />
+          ) : (
+            <View style={styles.photoGrid}>
+              {profilePhotos.map((photo) => (
+                <TouchableOpacity
+                  key={photo.id}
+                  style={styles.photoTile}
+                  onPress={() => {
+                    if (!photo.is_primary) {
+                      handleSetPrimary(photo.id);
+                    }
+                  }}
+                >
+                  <Image source={{ uri: photo.signedUrl }} style={styles.photo} />
+                  {photo.is_primary && (
+                    <View style={styles.primaryBadge}>
+                      <Text style={styles.primaryBadgeText}>Principal</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+              {profilePhotos.length < 10 && (
+                <TouchableOpacity
+                  style={[styles.photoTile, styles.addPhotoTile]}
+                  onPress={handleAddPhoto}
+                >
+                  <Text style={styles.addPhotoText}>+</Text>
+                  <Text style={styles.addPhotoLabel}>Agregar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+          {photoUploading && (
+            <Text style={styles.photoUploadingText}>Subiendo foto...</Text>
+          )}
+          <Text style={styles.photoHint}>
+            {profilePhotos.length}/10 fotos. Toca una foto para hacerla principal.
+          </Text>
         </FormSection>
 
         {/* Informacion Personal - solo campos que existen en profiles */}
@@ -535,9 +628,68 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
-  avatarSection: {
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  photoTile: {
+    width: '31%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'center',
+  },
+  photo: {
+    width: '100%',
+    height: '100%',
+  },
+  addPhotoTile: {
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    borderColor: '#C4B5FD',
+    backgroundColor: '#F5F3FF',
+  },
+  addPhotoText: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  addPhotoLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7C3AED',
+  },
+  primaryBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    right: 6,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(124, 58, 237, 0.85)',
+    borderRadius: 8,
+  },
+  primaryBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  photoHint: {
+    marginTop: 10,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  photoUploadingText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#7C3AED',
+    fontWeight: '600',
   },
   switchLabel: {
     fontSize: 14,
