@@ -1,5 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  TouchableOpacity,
+  TextInput,
+} from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
@@ -8,6 +16,50 @@ import { Input } from '../components/Input';
 import { roomService } from '../services/roomService';
 import type { FlatService } from '../types/room';
 
+const SERVICE_CATEGORIES = [
+  {
+    id: 'suministros',
+    label: 'Suministros',
+    options: [
+      { id: 'luz', label: 'Luz' },
+      { id: 'agua', label: 'Agua' },
+      { id: 'gas', label: 'Gas' },
+      { id: 'calefaccion', label: 'Calefaccion' },
+      { id: 'aire', label: 'Aire acondicionado' },
+      { id: 'otros', label: 'Otros' },
+    ],
+  },
+  {
+    id: 'internet',
+    label: 'Internet y TV',
+    options: [
+      { id: 'wifi', label: 'Internet/WiFi' },
+      { id: 'tv', label: 'TV' },
+      { id: 'streaming', label: 'Streaming incluido' },
+      { id: 'otros', label: 'Otros' },
+    ],
+  },
+  {
+    id: 'limpieza',
+    label: 'Limpieza y mantenimiento',
+    options: [
+      { id: 'limpieza', label: 'Limpieza' },
+      { id: 'basura', label: 'Basura' },
+      { id: 'otros', label: 'Otros' },
+    ],
+  },
+  {
+    id: 'extras',
+    label: 'Extras',
+    options: [
+      { id: 'lavanderia', label: 'Lavanderia' },
+      { id: 'parking', label: 'Parking' },
+      { id: 'gimnasio', label: 'Gimnasio' },
+      { id: 'otros', label: 'Otros' },
+    ],
+  },
+];
+
 export const ServicesManagementScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
@@ -15,9 +67,17 @@ export const ServicesManagementScreen: React.FC = () => {
   const routeParams = route.params as { flatId?: string | null } | undefined;
   const flatId = routeParams?.flatId ?? null;
   const [services, setServices] = useState<FlatService[]>([]);
-  const [serviceName, setServiceName] = useState('');
-  const [servicePrice, setServicePrice] = useState('');
+  const [activeOtherCategories, setActiveOtherCategories] = useState<string[]>([]);
+  const [customByCategory, setCustomByCategory] = useState<
+    Record<string, { name: string; price: string }>
+  >({});
   const [saving, setSaving] = useState(false);
+
+  const serviceByName = useMemo(() => {
+    const map = new Map<string, FlatService>();
+    services.forEach((service) => map.set(service.name.toLowerCase(), service));
+    return map;
+  }, [services]);
 
   const loadServices = useCallback(async () => {
     try {
@@ -55,6 +115,33 @@ export const ServicesManagementScreen: React.FC = () => {
     }
   };
 
+  const toggleService = (name: string) => {
+    setServices((prev) => {
+      const exists = prev.some(
+        (service) => service.name.toLowerCase() === name.toLowerCase()
+      );
+      if (exists) {
+        return prev.filter(
+          (service) => service.name.toLowerCase() !== name.toLowerCase()
+        );
+      }
+      return [...prev, { name }];
+    });
+  };
+
+  const updateServicePrice = (name: string, value: string) => {
+    const trimmed = value.trim();
+    const parsed = trimmed ? parseFloat(trimmed.replace(',', '.')) : NaN;
+    const priceValue = Number.isNaN(parsed) ? undefined : parsed;
+    setServices((prev) =>
+      prev.map((service) =>
+        service.name.toLowerCase() === name.toLowerCase()
+          ? { ...service, price: priceValue }
+          : service
+      )
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -83,44 +170,103 @@ export const ServicesManagementScreen: React.FC = () => {
             No se encontro el piso seleccionado.
           </Text>
         )}
-        <View style={styles.addRow}>
-          <View style={styles.addColumn}>
-            <Input
-              label="Servicio"
-              value={serviceName}
-              onChangeText={setServiceName}
-              placeholder="Wifi, agua..."
-            />
-          </View>
-          <View style={styles.addColumn}>
-            <Input
-              label="Precio aprox. (EUR)"
-              value={servicePrice}
-              onChangeText={setServicePrice}
-              keyboardType="numeric"
-              placeholder="Opcional"
-            />
-          </View>
-          <Button
-            title="Agregar"
-            size="small"
-            onPress={() => {
-              const name = serviceName.trim();
-              if (!name) return;
-              const rawPrice = servicePrice.trim();
-              const parsedPrice = rawPrice
-                ? parseFloat(rawPrice.replace(',', '.'))
-                : NaN;
-              const priceValue = Number.isNaN(parsedPrice) ? undefined : parsedPrice;
-              setServices((prev) => [
-                ...prev,
-                { name, price: priceValue },
-              ]);
-              setServiceName('');
-              setServicePrice('');
-            }}
-          />
-        </View>
+        {SERVICE_CATEGORIES.map((category) => {
+          const isOtherActive = activeOtherCategories.includes(category.id);
+          const custom = customByCategory[category.id] || { name: '', price: '' };
+          return (
+            <View key={category.id} style={styles.categoryBlock}>
+              <Text style={styles.categoryLabel}>{category.label}</Text>
+              <View style={styles.categoryChips}>
+                {category.options.map((option) => {
+                  const isOther = option.id === 'otros';
+                  const isActive = isOther
+                    ? isOtherActive
+                    : serviceByName.has(option.label.toLowerCase());
+                  return (
+                    <TouchableOpacity
+                      key={option.id}
+                      style={[
+                        styles.categoryChip,
+                        isActive && styles.categoryChipActive,
+                      ]}
+                      onPress={() => {
+                        if (isOther) {
+                          setActiveOtherCategories((prev) =>
+                            prev.includes(category.id)
+                              ? prev.filter((id) => id !== category.id)
+                              : [...prev, category.id]
+                          );
+                        } else {
+                          toggleService(option.label);
+                        }
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryChipText,
+                          isActive && styles.categoryChipTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {isOtherActive && (
+                <View style={styles.customRow}>
+                  <View style={styles.customColumn}>
+                    <Input
+                      label="Servicio"
+                      value={custom.name}
+                      onChangeText={(value) =>
+                        setCustomByCategory((prev) => ({
+                          ...prev,
+                          [category.id]: { ...custom, name: value },
+                        }))
+                      }
+                      placeholder="Escribe el servicio"
+                    />
+                  </View>
+                  <View style={styles.customColumn}>
+                    <Input
+                      label="Precio aprox. (EUR)"
+                      value={custom.price}
+                      onChangeText={(value) =>
+                        setCustomByCategory((prev) => ({
+                          ...prev,
+                          [category.id]: { ...custom, price: value },
+                        }))
+                      }
+                      keyboardType="numeric"
+                      placeholder="Opcional"
+                    />
+                  </View>
+                  <Button
+                    title="Agregar"
+                    size="small"
+                    onPress={() => {
+                      const name = custom.name.trim();
+                      if (!name) return;
+                      const rawPrice = custom.price.trim();
+                      const parsedPrice = rawPrice
+                        ? parseFloat(rawPrice.replace(',', '.'))
+                        : NaN;
+                      const priceValue = Number.isNaN(parsedPrice)
+                        ? undefined
+                        : parsedPrice;
+                      setServices((prev) => [...prev, { name, price: priceValue }]);
+                      setCustomByCategory((prev) => ({
+                        ...prev,
+                        [category.id]: { name: '', price: '' },
+                      }));
+                    }}
+                  />
+                </View>
+              )}
+            </View>
+          );
+        })}
 
         {services.length === 0 ? (
           <Text style={styles.emptyText}>Aun no has agregado servicios.</Text>
@@ -130,11 +276,22 @@ export const ServicesManagementScreen: React.FC = () => {
               <View key={`${service.name}-${index}`} style={styles.serviceRow}>
                 <View style={styles.serviceInfo}>
                   <Text style={styles.serviceName}>{service.name}</Text>
-                  {service.price != null ? (
-                    <Text style={styles.servicePrice}>
-                      {service.price} EUR
-                    </Text>
-                  ) : null}
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceLabel}>Precio aprox.</Text>
+                    <TextInput
+                      style={styles.priceInput}
+                      value={
+                        service.price != null ? String(service.price) : ''
+                      }
+                      onChangeText={(value) =>
+                        updateServicePrice(service.name, value)
+                      }
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    <Text style={styles.priceUnit}>EUR</Text>
+                  </View>
                 </View>
                 <TouchableOpacity
                   onPress={() =>
@@ -182,11 +339,47 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
-  addRow: {
-    gap: 12,
-    marginBottom: 12,
+  categoryBlock: {
+    marginBottom: 16,
   },
-  addColumn: {
+  categoryLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  categoryChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  categoryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  categoryChipActive: {
+    borderColor: '#7C3AED',
+    backgroundColor: '#F5F3FF',
+  },
+  categoryChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  categoryChipTextActive: {
+    color: '#7C3AED',
+  },
+  customRow: {
+    marginTop: 12,
+    gap: 10,
+  },
+  customColumn: {
     flex: 1,
   },
   emptyText: {
@@ -216,8 +409,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
-  servicePrice: {
-    marginTop: 4,
+  priceRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priceLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  priceInput: {
+    minWidth: 56,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    fontSize: 12,
+    color: '#111827',
+  },
+  priceUnit: {
     fontSize: 12,
     color: '#6B7280',
   },
