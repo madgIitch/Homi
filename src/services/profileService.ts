@@ -97,16 +97,28 @@ class ProfileService {
         body: JSON.stringify({}),
       });
 
-    let response = await tryFetch(
-      `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`
+    const recommendationsUrl = `${API_CONFIG.FUNCTIONS_URL}/profiles-recommendations`;
+    console.log(
+      '[ProfileService.getProfileRecommendations] url:',
+      recommendationsUrl
+    );
+
+    let response = await tryFetch(recommendationsUrl);
+    console.log(
+      '[ProfileService.getProfileRecommendations] response:',
+      response.status,
+      response.ok
     );
 
     if (response.status === 401) {
       const newToken = await authService.refreshToken();
       if (newToken) {
         headers = await this.getAuthHeaders();
-        response = await tryFetch(
-          `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`
+        response = await tryFetch(recommendationsUrl);
+        console.log(
+          '[ProfileService.getProfileRecommendations] retry:',
+          response.status,
+          response.ok
         );
       }
     }
@@ -116,23 +128,42 @@ class ProfileService {
       try {
         const error = await response.json();
         errorMessage = error?.error || errorMessage;
+        console.log(
+          '[ProfileService.getProfileRecommendations] primary error body:',
+          error
+        );
       } catch {
         // ignore json parse failures
       }
 
-      if (response.status === 404 || errorMessage === 'Profile already exists') {
-        response = await tryFetch(
-          `${API_CONFIG.FUNCTIONS_URL}/profiles-recommendations`
+      if (response.status === 404) {
+        console.log(
+          '[ProfileService.getProfileRecommendations] not found:',
+          recommendationsUrl
         );
       }
     }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error?.error || 'Error al obtener recomendaciones');
+      let errorDetail = 'Error al obtener recomendaciones';
+      try {
+        const error = await response.json();
+        errorDetail = error?.error || errorDetail;
+        console.log(
+          '[ProfileService.getProfileRecommendations] final error body:',
+          error
+        );
+      } catch {
+        // ignore json parse failures
+      }
+      throw new Error(errorDetail);
     }
 
     const data: ProfileRecommendationsResponse = await response.json();
+    console.log(
+      '[ProfileService.getProfileRecommendations] ok count:',
+      data.recommendations?.length ?? 0
+    );
     return data.recommendations ?? [];
   }
 

@@ -213,10 +213,16 @@ export const SwipeScreen: React.FC = () => {
       setLoadingProfiles(true);
       setProfileError(null);
       try {
+        console.log('[SwipeScreen] loading recommendations...');
         const recommendations = await profileService.getProfileRecommendations();
+        console.log(
+          '[SwipeScreen] recommendations received:',
+          recommendations.length
+        );
         const mapped = recommendations.map((rec) =>
           mapProfileToSwipe(rec.profile)
         );
+        console.log('[SwipeScreen] mapped profiles:', mapped.length);
         setProfiles(mapped);
         setCurrentIndex(0);
       } catch (error) {
