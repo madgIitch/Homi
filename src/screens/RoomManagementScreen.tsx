@@ -132,6 +132,23 @@ const getRuleIcon = (rule: string) => {
   return isNegative ? emoji.negative : emoji.positive;
 };
 
+const getServiceIcon = (serviceName: string) => {
+  const normalized = serviceName.toLowerCase();
+  if (normalized.includes('luz') || normalized.includes('electric')) {
+    return '\u{26A1}';
+  }
+  if (normalized.includes('agua')) return '\u{1F4A7}';
+  if (normalized.includes('gas')) return '\u{1F525}';
+  if (normalized.includes('internet') || normalized.includes('wifi')) {
+    return '\u{1F4F6}';
+  }
+  if (normalized.includes('limpieza')) return '\u{1F9F9}';
+  if (normalized.includes('calefaccion') || normalized.includes('calefacción')) {
+    return '\u{1F321}\u{FE0F}';
+  }
+  return '\u{1F527}';
+};
+
 const getRoomStatus = (
   room: Room,
   isAssigned: boolean
@@ -405,7 +422,9 @@ export const RoomManagementScreen: React.FC = () => {
                   <View style={styles.servicesList}>
                     {selectedFlat.services.map((service, index) => (
                       <View key={`${service.name}-${index}`} style={styles.serviceRow}>
-                        <Text style={styles.detailText}>{service.name}</Text>
+                        <Text style={styles.detailText}>
+                          {getServiceIcon(service.name)} {service.name}
+                        </Text>
                         {service.price != null && service.price !== 0 ? (
                           <Text style={styles.detailMeta}>{service.price} EUR</Text>
                         ) : null}

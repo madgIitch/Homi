@@ -128,6 +128,23 @@ const getRuleIcon = (rule: string) => {
   return isNegative ? emoji.negative : emoji.positive;
 };
 
+const getServiceIcon = (serviceName: string) => {
+  const normalized = serviceName.toLowerCase();
+  if (normalized.includes('luz') || normalized.includes('electric')) {
+    return '\u{26A1}';
+  }
+  if (normalized.includes('agua')) return '\u{1F4A7}';
+  if (normalized.includes('gas')) return '\u{1F525}';
+  if (normalized.includes('internet') || normalized.includes('wifi')) {
+    return '\u{1F4F6}';
+  }
+  if (normalized.includes('limpieza')) return '\u{1F9F9}';
+  if (normalized.includes('calefaccion') || normalized.includes('calefacción')) {
+    return '\u{1F321}\u{FE0F}';
+  }
+  return '\u{1F527}';
+};
+
 export const RoomDetailScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
@@ -305,7 +322,7 @@ export const RoomDetailScreen: React.FC = () => {
             <View style={styles.detailCard}>
               {services.map((service) => (
                 <Text key={service.name} style={styles.detailItem}>
-                  - {service.name}
+                  {getServiceIcon(service.name)} {service.name}
                   {service.price != null ? ` (${service.price} EUR)` : ''}
                 </Text>
               ))}
