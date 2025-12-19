@@ -44,11 +44,10 @@ async function getRoomExtras(roomIds: string[]): Promise<RoomExtrasRow[]> {
   return data as RoomExtrasRow[];
 }
 
-async function getOwnedRoomIds(roomIds: string[], userId: string): Promise<string[]> {
+async function getExistingRoomIds(roomIds: string[]): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from('rooms')
     .select('id')
-    .eq('owner_id', userId)
     .in('id', roomIds);
 
   if (error || !data) {
@@ -98,15 +97,15 @@ serve(
         });
       }
 
-      const ownedIds = await getOwnedRoomIds(roomIds, userId);
-      if (ownedIds.length === 0) {
+      const existingIds = await getExistingRoomIds(roomIds);
+      if (existingIds.length === 0) {
         return new Response(JSON.stringify({ data: [] }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      const rows = await getRoomExtras(ownedIds);
+      const rows = await getRoomExtras(existingIds);
       const data = await Promise.all(
         rows.map(async (row) => ({
           ...row,
