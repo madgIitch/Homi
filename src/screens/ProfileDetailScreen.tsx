@@ -201,13 +201,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        {isOwnProfile ? (
-          <View style={styles.headerSpacer} />
-        ) : (
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={22} color="#111827" />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color="#111827" />
+        </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           {profile.display_name}
         </Text>

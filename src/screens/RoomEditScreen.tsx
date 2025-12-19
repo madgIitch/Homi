@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,13 +13,14 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { FormSection } from '../components/FormSection';
 import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';
 import { Button } from '../components/Button';
 import { roomService } from '../services/roomService';
-import type { Room, RoomCreateRequest, RoomExtraDetails } from '../types/room';
+import type { Flat, Room, RoomCreateRequest, RoomExtraDetails } from '../types/room';
 
 const toISODate = (date: Date) => date.toISOString().split('T')[0];
 
@@ -31,17 +32,53 @@ const parseNumber = (value: string) => {
 
 const getExtrasKey = (roomId: string) => `roomExtras:${roomId}`;
 
+const COMMON_AREA_OPTIONS = [
+  { id: 'salon', label: 'Salon' },
+  { id: 'cocina', label: 'Cocina' },
+  { id: 'comedor', label: 'Comedor' },
+  { id: 'bano_compartido', label: 'Bano compartido' },
+  { id: 'terraza', label: 'Terraza' },
+  { id: 'patio', label: 'Patio' },
+  { id: 'lavadero', label: 'Lavadero' },
+  { id: 'pasillo', label: 'Pasillo' },
+  { id: 'recibidor', label: 'Recibidor' },
+  { id: 'trastero', label: 'Trastero' },
+  { id: 'estudio', label: 'Sala de estudio' },
+  { id: 'otros', label: 'Otros' },
+];
+
+const commonAreaLabelById = new Map(
+  COMMON_AREA_OPTIONS.map((option) => [option.id, option.label])
+);
+
 export const RoomEditScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
-  const routeParams = route.params as { room?: Room; roomId?: string } | undefined;
+  const routeParams = route.params as
+    | {
+        room?: Room;
+        roomId?: string;
+        prefill?: {
+          servicesText?: string;
+          rules?: string;
+          availableFrom?: string;
+          isAvailable?: boolean;
+        };
+      }
+    | undefined;
   const initialRoom = routeParams?.room ?? null;
   const roomId = routeParams?.roomId ?? initialRoom?.id ?? null;
+  const isCreateMode = !roomId && !initialRoom;
 
   const [room, setRoom] = useState<Room | null>(initialRoom);
   const [loading, setLoading] = useState(!initialRoom && Boolean(roomId));
   const [saving, setSaving] = useState(false);
+  const [flatsLoading, setFlatsLoading] = useState(false);
+  const [flats, setFlats] = useState<Flat[]>([]);
+  const [selectedFlatId, setSelectedFlatId] = useState<string | null>(
+    initialRoom?.flat_id ?? null
+  );
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -51,9 +88,13 @@ export const RoomEditScreen: React.FC = () => {
   const [isAvailable, setIsAvailable] = useState(true);
 
   const [roomType, setRoomType] = useState<RoomExtraDetails['roomType']>();
-  const [servicesText, setServicesText] = useState('');
-  const [rules, setRules] = useState('');
+  const [roomCategory, setRoomCategory] = useState<
+    RoomExtraDetails['category'] | null
+  >(null);
+  const [commonAreaType, setCommonAreaType] = useState<string | null>(null);
+  const [commonAreaCustom, setCommonAreaCustom] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const lastAutoTitleRef = React.useRef<string>('');
 
   const loadRoom = useCallback(async () => {
     if (!roomId) return;
@@ -70,14 +111,31 @@ export const RoomEditScreen: React.FC = () => {
     }
   }, [roomId]);
 
+  const loadFlats = useCallback(async () => {
+    try {
+      setFlatsLoading(true);
+      const data = await roomService.getMyFlats();
+      setFlats(data);
+      if (data.length === 1) {
+        setSelectedFlatId(data[0].id);
+      }
+    } catch (error) {
+      console.error('Error cargando pisos:', error);
+      Alert.alert('Error', 'No se pudieron cargar los pisos');
+    } finally {
+      setFlatsLoading(false);
+    }
+  }, []);
+
   const loadExtras = useCallback(async (targetRoom: Room) => {
     try {
       const saved = await AsyncStorage.getItem(getExtrasKey(targetRoom.id));
       if (!saved) return;
       const parsed: RoomExtraDetails = JSON.parse(saved);
       setRoomType(parsed.roomType);
-      setServicesText(parsed.services ? parsed.services.join(', ') : '');
-      setRules(parsed.rules ?? '');
+      setRoomCategory(parsed.category ?? null);
+      setCommonAreaType(parsed.commonAreaType ?? null);
+      setCommonAreaCustom(parsed.commonAreaCustom ?? '');
       setPhotos(parsed.photos ?? []);
     } catch (error) {
       console.error('Error cargando extras de habitacion:', error);
@@ -91,6 +149,21 @@ export const RoomEditScreen: React.FC = () => {
   }, [room, roomId, loadRoom]);
 
   useEffect(() => {
+    if (isCreateMode) {
+      loadFlats();
+    }
+  }, [isCreateMode, loadFlats]);
+
+  useEffect(() => {
+    if (!isCreateMode) return;
+    if (!routeParams?.prefill) return;
+    setServicesText(routeParams.prefill.servicesText ?? '');
+    setRules(routeParams.prefill.rules ?? '');
+    setAvailableFrom(routeParams.prefill.availableFrom ?? toISODate(new Date()));
+    setIsAvailable(routeParams.prefill.isAvailable ?? true);
+  }, [isCreateMode, routeParams]);
+
+  useEffect(() => {
     if (!room) return;
     setTitle(room.title ?? '');
     setDescription(room.description ?? '');
@@ -98,13 +171,28 @@ export const RoomEditScreen: React.FC = () => {
     setSize(room.size_m2 ? String(room.size_m2) : '');
     setAvailableFrom(room.available_from ?? toISODate(new Date()));
     setIsAvailable(room.is_available ?? true);
+    setSelectedFlatId(room.flat_id);
     loadExtras(room);
   }, [room, loadExtras]);
 
-  const statusLabel = useMemo(
-    () => (isAvailable ? 'Disponible' : 'Pausada'),
-    [isAvailable]
-  );
+  useEffect(() => {
+    if (roomCategory !== 'area_comun') return;
+    if (!commonAreaType) return;
+
+    const shouldAutoFill =
+      title.trim() === '' || title.trim() === lastAutoTitleRef.current;
+
+    if (!shouldAutoFill) return;
+
+    const nextTitle =
+      commonAreaType === 'otros'
+        ? commonAreaCustom.trim()
+        : commonAreaLabelById.get(commonAreaType) ?? '';
+
+    if (!nextTitle) return;
+    lastAutoTitleRef.current = nextTitle;
+    setTitle(nextTitle);
+  }, [roomCategory, commonAreaType, commonAreaCustom, title]);
 
   const handleAddPhoto = async () => {
     const result = await launchImageLibrary({
@@ -128,16 +216,16 @@ export const RoomEditScreen: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!room) return;
-
     const titleValue = title.trim();
     if (!titleValue) {
       Alert.alert('Error', 'El titulo es obligatorio');
       return;
     }
 
-    const priceValue = parseNumber(price);
-    if (priceValue == null || priceValue <= 0) {
+    let priceValue = parseNumber(price);
+    if (roomCategory === 'area_comun') {
+      priceValue = 0;
+    } else if (priceValue == null || priceValue <= 0) {
       Alert.alert('Error', 'Introduce un precio valido');
       return;
     }
@@ -154,8 +242,14 @@ export const RoomEditScreen: React.FC = () => {
       return;
     }
 
+    const flatId = isCreateMode ? selectedFlatId : room?.flat_id;
+    if (!flatId) {
+      Alert.alert('Error', 'Selecciona un piso para esta habitacion');
+      return;
+    }
+
     const payload: RoomCreateRequest = {
-      flat_id: room.flat_id,
+      flat_id: flatId,
       title: titleValue,
       description: description.trim() || undefined,
       price_per_month: priceValue,
@@ -165,23 +259,30 @@ export const RoomEditScreen: React.FC = () => {
     };
 
     const extraDetails: RoomExtraDetails = {
+      category: roomCategory ?? undefined,
       roomType,
-      services: servicesText
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
-      rules: rules.trim() || undefined,
+      commonAreaType: commonAreaType ?? undefined,
+      commonAreaCustom: commonAreaCustom.trim() || undefined,
       photos,
     };
 
     try {
       setSaving(true);
-      await roomService.updateRoom(room.id, payload);
-      await AsyncStorage.setItem(
-        getExtrasKey(room.id),
-        JSON.stringify(extraDetails)
-      );
-      Alert.alert('Exito', 'Habitacion actualizada');
+      if (isCreateMode) {
+        const createdRoom = await roomService.createRoom(payload);
+        await AsyncStorage.setItem(
+          getExtrasKey(createdRoom.id),
+          JSON.stringify(extraDetails)
+        );
+        Alert.alert('Exito', 'Habitacion creada');
+      } else if (room) {
+        await roomService.updateRoom(room.id, payload);
+        await AsyncStorage.setItem(
+          getExtrasKey(room.id),
+          JSON.stringify(extraDetails)
+        );
+        Alert.alert('Exito', 'Habitacion actualizada');
+      }
       navigation.goBack();
     } catch (error) {
       console.error('Error guardando habitacion:', error);
@@ -191,7 +292,7 @@ export const RoomEditScreen: React.FC = () => {
     }
   };
 
-  if (loading || !room) {
+  if (loading || (!room && !isCreateMode)) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="small" color={theme.colors.primary} />
@@ -200,11 +301,59 @@ export const RoomEditScreen: React.FC = () => {
     );
   }
 
+  if (isCreateMode && !roomCategory) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            Nueva publicacion
+          </Text>
+          <View style={styles.headerActions}>
+            <Button
+              title="Cancelar"
+              onPress={() => navigation.goBack()}
+              variant="tertiary"
+              size="small"
+            />
+          </View>
+        </View>
+        <View style={styles.choiceContainer}>
+          <Text style={styles.choiceTitle}>¿Que quieres publicar?</Text>
+          <Text style={styles.choiceSubtitle}>
+            Elige el tipo de espacio para continuar.
+          </Text>
+          <View style={styles.choiceGrid}>
+            <TouchableOpacity
+              style={styles.choiceCard}
+              onPress={() => setRoomCategory('habitacion')}
+            >
+              <Ionicons name="bed-outline" size={26} color="#7C3AED" />
+              <Text style={styles.choiceCardTitle}>Habitacion</Text>
+              <Text style={styles.choiceCardText}>
+                Una habitacion privada dentro del piso.
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.choiceCard}
+              onPress={() => setRoomCategory('area_comun')}
+            >
+              <Ionicons name="people-outline" size={26} color="#7C3AED" />
+              <Text style={styles.choiceCardTitle}>Area comun</Text>
+              <Text style={styles.choiceCardText}>
+                Zona compartida que quieres mostrar.
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Editar habitacion
+          {isCreateMode ? 'Nueva habitacion' : 'Editar habitacion'}
         </Text>
         <View style={styles.headerActions}>
           <Button
@@ -214,7 +363,7 @@ export const RoomEditScreen: React.FC = () => {
             size="small"
           />
           <Button
-            title="Guardar"
+            title={isCreateMode ? 'Crear' : 'Guardar'}
             onPress={handleSave}
             size="small"
             loading={saving}
@@ -223,7 +372,55 @@ export const RoomEditScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <FormSection title="Fotos de la habitacion" iconName="images-outline">
+        {isCreateMode && (
+          <FormSection title="Piso" iconName="business-outline" required>
+            {flatsLoading ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            ) : flats.length === 0 ? (
+              <Text style={styles.flatEmptyText}>
+                Necesitas crear un piso antes de añadir habitaciones.
+              </Text>
+            ) : (
+              <View style={styles.flatList}>
+                {flats.map((flat) => {
+                  const isActive = selectedFlatId === flat.id;
+                  return (
+                    <TouchableOpacity
+                      key={flat.id}
+                      style={[
+                        styles.flatOption,
+                        isActive && styles.flatOptionActive,
+                      ]}
+                      onPress={() => setSelectedFlatId(flat.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.flatOptionTitle,
+                          isActive && styles.flatOptionTitleActive,
+                        ]}
+                      >
+                        {flat.address}
+                      </Text>
+                      <Text style={styles.flatOptionSubtitle}>
+                        {flat.city}
+                        {flat.district ? ` · ${flat.district}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </FormSection>
+        )}
+
+        <FormSection
+          title={
+            roomCategory === 'area_comun'
+              ? 'Fotos del area comun'
+              : 'Fotos de la habitacion'
+          }
+          iconName="images-outline"
+        >
           <View style={styles.photoGrid}>
             {photos.map((uri) => (
               <View key={uri} style={styles.photoTile}>
@@ -249,22 +446,109 @@ export const RoomEditScreen: React.FC = () => {
           </Text>
         </FormSection>
 
+        {roomCategory !== 'area_comun' && (
+          <FormSection title="Tipo de habitacion" iconName="home-outline">
+            <View style={styles.switchRow}>
+              {[
+                { id: 'individual', label: 'Individual' },
+                { id: 'doble', label: 'Doble' },
+              ].map((option) => {
+                const isActive = roomType === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[
+                      styles.switchButton,
+                      isActive && styles.switchButtonActive,
+                    ]}
+                    onPress={() =>
+                      setRoomType(option.id as RoomExtraDetails['roomType'])
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.switchButtonText,
+                        isActive && styles.switchButtonTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </FormSection>
+        )}
+
+        {roomCategory === 'area_comun' && (
+          <FormSection title="Tipo de area comun" iconName="home-outline" required>
+            <View style={styles.commonAreaGrid}>
+              {COMMON_AREA_OPTIONS.map((option) => {
+                const isActive = commonAreaType === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[
+                      styles.commonAreaChip,
+                      isActive && styles.commonAreaChipActive,
+                    ]}
+                    onPress={() => setCommonAreaType(option.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.commonAreaChipText,
+                        isActive && styles.commonAreaChipTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {commonAreaType === 'otros' && (
+              <Input
+                label="Tipo de area"
+                value={commonAreaCustom}
+                onChangeText={setCommonAreaCustom}
+                placeholder="Escribe el tipo de area"
+                required
+              />
+            )}
+          </FormSection>
+        )}
+
         <FormSection title="Detalle basico" iconName="bed-outline" required>
-          <Input label="Titulo" value={title} onChangeText={setTitle} required />
+          <Input
+            label={roomCategory === 'area_comun' ? 'Titulo del area' : 'Titulo'}
+            value={title}
+            onChangeText={setTitle}
+            required
+          />
           <TextArea
-            label="Descripcion"
+            label={
+              roomCategory === 'area_comun'
+                ? 'Descripcion del area comun'
+                : 'Descripcion'
+            }
             value={description}
             onChangeText={setDescription}
             maxLength={500}
-            placeholder="Describe la habitacion"
+            placeholder={
+              roomCategory === 'area_comun'
+                ? 'Describe el area comun'
+                : 'Describe la habitacion'
+            }
           />
-          <Input
-            label="Precio por mes (EUR)"
-            value={price}
-            onChangeText={setPrice}
-            keyboardType="numeric"
-            required
-          />
+          {roomCategory !== 'area_comun' && (
+            <Input
+              label="Precio por mes (EUR)"
+              value={price}
+              onChangeText={setPrice}
+              keyboardType="numeric"
+              required
+            />
+          )}
           <Input
             label="Metros cuadrados"
             value={size}
@@ -273,77 +557,6 @@ export const RoomEditScreen: React.FC = () => {
           />
         </FormSection>
 
-        <FormSection title="Tipo de habitacion" iconName="home-outline">
-          <View style={styles.switchRow}>
-            {[
-              { id: 'individual', label: 'Individual' },
-              { id: 'doble', label: 'Doble' },
-            ].map((option) => {
-              const isActive = roomType === option.id;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[
-                    styles.switchButton,
-                    isActive && styles.switchButtonActive,
-                  ]}
-                  onPress={() =>
-                    setRoomType(option.id as RoomExtraDetails['roomType'])
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.switchButtonText,
-                      isActive && styles.switchButtonTextActive,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </FormSection>
-
-        <FormSection title="Servicios incluidos" iconName="flash-outline">
-          <Input
-            label="Servicios"
-            value={servicesText}
-            onChangeText={setServicesText}
-            placeholder="Wifi, luz, agua..."
-            helperText="Separalos por coma"
-          />
-        </FormSection>
-
-        <FormSection title="Reglas del piso" iconName="clipboard-outline">
-          <TextArea
-            label="Reglas"
-            value={rules}
-            onChangeText={setRules}
-            maxLength={400}
-            placeholder="Ej: No fumar, visitas hasta las 22:00"
-          />
-        </FormSection>
-
-        <FormSection title="Disponibilidad" iconName="calendar-outline">
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>Estado: {statusLabel}</Text>
-            <TouchableOpacity
-              style={styles.statusToggle}
-              onPress={() => setIsAvailable((prev) => !prev)}
-            >
-              <Text style={styles.statusToggleText}>
-                {isAvailable ? 'Pausar' : 'Activar'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <Input
-            label="Disponible desde"
-            value={availableFrom}
-            onChangeText={setAvailableFrom}
-            placeholder="YYYY-MM-DD"
-          />
-        </FormSection>
       </ScrollView>
     </View>
   );
@@ -429,6 +642,97 @@ const styles = StyleSheet.create({
   photoHint: {
     marginTop: 8,
     fontSize: 12,
+    color: '#6B7280',
+  },
+  choiceContainer: {
+    flex: 1,
+    padding: 24,
+  },
+  choiceTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  choiceSubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  choiceGrid: {
+    marginTop: 24,
+    gap: 16,
+  },
+  choiceCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    gap: 10,
+  },
+  choiceCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  choiceCardText: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  commonAreaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  commonAreaChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  commonAreaChipActive: {
+    borderColor: '#7C3AED',
+    backgroundColor: '#F5F3FF',
+  },
+  commonAreaChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  commonAreaChipTextActive: {
+    color: '#7C3AED',
+  },
+  flatList: {
+    gap: 12,
+  },
+  flatOption: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  flatOptionActive: {
+    borderColor: '#7C3AED',
+    backgroundColor: '#F5F3FF',
+  },
+  flatOptionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  flatOptionTitleActive: {
+    color: '#7C3AED',
+  },
+  flatOptionSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  flatEmptyText: {
+    fontSize: 13,
     color: '#6B7280',
   },
   switchRow: {

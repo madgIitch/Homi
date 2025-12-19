@@ -65,4 +65,7 @@ export interface RoomExtraDetails {
   services?: string[];
   rules?: string;
   photos?: string[];
+  category?: 'habitacion' | 'area_comun';
+  commonAreaType?: string;
+  commonAreaCustom?: string;
 }

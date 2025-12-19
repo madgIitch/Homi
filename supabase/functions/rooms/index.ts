@@ -218,8 +218,8 @@ function validateRoomData(data: RoomValidationData): { isValid: boolean; errors:
     errors.push('Flat ID is required')  
   }  
         
-  if (!data.price_per_month || typeof data.price_per_month !== 'number' || data.price_per_month < 0) {  
-    errors.push('Price per month must be a positive number')  
+  if (data.price_per_month == null || typeof data.price_per_month !== 'number' || data.price_per_month < 0) {  
+    errors.push('Price per month must be a non-negative number')  
   }  
         
   if (!data.available_from) {  
