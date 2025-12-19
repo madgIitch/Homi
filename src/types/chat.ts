@@ -1,10 +1,18 @@
 export type MessageStatus = 'sent' | 'delivered' | 'read';
+export type MatchStatus =
+  | 'pending'
+  | 'accepted'
+  | 'rejected'
+  | 'room_offer'
+  | 'room_assigned'
+  | 'room_declined';
 
 export interface Match {
   id: string;
   profileId: string;
   name: string;
   avatarUrl: string;
+  status?: MatchStatus;
 }
 
 import type { Profile } from './profile';
@@ -19,6 +27,7 @@ export interface Chat {
   unreadCount: number;
   profileId?: string;
   profile?: Profile;
+  matchStatus?: MatchStatus;
 }
 
 export interface Message {

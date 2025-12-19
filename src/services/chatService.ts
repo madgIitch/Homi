@@ -30,6 +30,7 @@ type ApiMatch = {
   id: string;
   user_a_id: string;
   user_b_id: string;
+  status?: string;
   matched_at?: string;
   user_a?: ApiProfile;
   user_b?: ApiProfile;
@@ -200,6 +201,7 @@ class ChatService {
           unreadCount,
           profileId: otherProfile?.id,
           profile: mappedProfile ?? undefined,
+          matchStatus: (chat.match?.status as Match['status']) ?? undefined,
         };
       })
     );
@@ -242,6 +244,46 @@ class ChatService {
       unreadCount: 0,
       profileId: otherProfile?.id,
       profile: mappedProfile ?? undefined,
+      matchStatus: (chat.match?.status as Match['status']) ?? undefined,
+    };
+  }
+
+  async getChatDetails(chatId: string): Promise<Chat | null> {
+    const response = await this.fetchWithAuth(
+      `${CHATS_ENDPOINT}?detail_id=${chatId}`,
+      { method: 'GET' }
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al obtener chat');
+    }
+
+    const payload = (await response.json()) as ApiResponse<ApiChat>;
+    const chat = payload.data;
+    if (!chat) return null;
+
+    const currentUserId = await this.getCurrentUserId();
+    const isUserA =
+      currentUserId && chat.match?.user_a_id === currentUserId;
+    const otherProfile = isUserA ? chat.match?.user_b : chat.match?.user_a;
+    const mappedProfile = mapApiProfileToProfile(otherProfile);
+
+    return {
+      id: chat.id,
+      matchId: chat.match_id,
+      name: otherProfile?.display_name ?? 'Usuario',
+      avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
+      lastMessage: '',
+      lastMessageAt: formatTime(chat.updated_at),
+      unreadCount: 0,
+      profileId: otherProfile?.id,
+      profile: mappedProfile ?? undefined,
+      matchStatus: (chat.match?.status as Match['status']) ?? undefined,
     };
   }
 

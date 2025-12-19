@@ -18,7 +18,7 @@ const supabaseClient = createClient(
 interface MatchValidationData {
   user_a_id: string;
   user_b_id: string;
-  status?: 'pending' | 'accepted' | 'rejected';
+  status?: 'pending' | 'accepted' | 'rejected' | 'room_offer' | 'room_assigned' | 'room_declined';
 }
 
 async function getUserMatches(userId: string): Promise<Match[]> {
@@ -129,7 +129,12 @@ function validateMatchData(
     errors.push('User A and User B cannot be the same');
   }
 
-  if (data.status && !['pending', 'accepted', 'rejected'].includes(data.status)) {
+  if (
+    data.status &&
+    !['pending', 'accepted', 'rejected', 'room_offer', 'room_assigned', 'room_declined'].includes(
+      data.status
+    )
+  ) {
     errors.push('Invalid status value');
   }
 
@@ -159,6 +164,35 @@ const handler = withAuth(
 
     try {
       if (method === 'GET') {
+        const matchId = url.searchParams.get('id');
+
+        if (matchId) {
+          const { data, error } = await supabaseClient
+            .from('matches')
+            .select(
+              `
+              *,
+              user_a:profiles!matches_user_a_id_fkey(*),
+              user_b:profiles!matches_user_b_id_fkey(*)
+            `
+            )
+            .eq('id', matchId)
+            .single();
+
+          if (error || !data) {
+            return new Response(JSON.stringify({ error: 'Match not found' }), {
+              status: 404,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
+          const response: ApiResponse<Match> = { data: data as Match };
+          return new Response(JSON.stringify(response), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         const matches = await getUserMatches(userId);
         const response: ApiResponse<Match[]> = { data: matches };
         return new Response(JSON.stringify(response), {
@@ -224,7 +258,12 @@ const handler = withAuth(
 
         const updates = await req.json();
 
-        if (updates.status && !['pending', 'accepted', 'rejected'].includes(updates.status)) {
+        if (
+          updates.status &&
+          !['pending', 'accepted', 'rejected', 'room_offer', 'room_assigned', 'room_declined'].includes(
+            updates.status
+          )
+        ) {
           return new Response(
             JSON.stringify({ error: 'Invalid status value' }),
             {

@@ -9,6 +9,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -19,9 +20,17 @@ import { useTheme } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
 import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
+import { matchService } from '../services/matchService';
+import { roomAssignmentService } from '../services/roomAssignmentService';
+import { roomService } from '../services/roomService';
+import { roomExtrasService } from '../services/roomExtrasService';
 import { AuthContext } from '../context/AuthContext';
 import type { Message } from '../types/chat';
 import type { Profile } from '../types/profile';
+import type { MatchStatus } from '../types/chat';
+import type { Room } from '../types/room';
+import type { RoomExtras } from '../types/room';
+import type { RoomAssignment } from '../types/roomAssignment';
 
 type RouteParams = {
   chatId: string;
@@ -41,6 +50,17 @@ export const ChatScreen: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [headerAvatarUrl, setHeaderAvatarUrl] = useState(avatarUrl);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const [matchId, setMatchId] = useState<string | null>(null);
+  const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [seekerId, setSeekerId] = useState<string | null>(null);
+  const [assignments, setAssignments] = useState<RoomAssignment[]>([]);
+  const [matchAssignment, setMatchAssignment] = useState<RoomAssignment | null>(null);
+  const [ownerRooms, setOwnerRooms] = useState<Room[]>([]);
+  const [roomExtras, setRoomExtras] = useState<Record<string, RoomExtras | null>>({});
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -62,6 +82,167 @@ export const ChatScreen: React.FC = () => {
       isMounted = false;
     };
   }, [profile?.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMatchDetails = async () => {
+      try {
+        const chatDetail = await chatService.getChatDetails(chatId);
+        if (!chatDetail || !isMounted) return;
+        setMatchId(chatDetail.matchId);
+        setMatchStatus(chatDetail.matchStatus ?? null);
+
+        const match = await matchService.getMatch(chatDetail.matchId);
+        if (!match || !isMounted) return;
+
+        const owner =
+          match.user_a?.housing_situation === 'offering'
+            ? match.user_a_id
+            : match.user_b?.housing_situation === 'offering'
+            ? match.user_b_id
+            : match.user_a_id;
+        const seeker =
+          owner === match.user_a_id ? match.user_b_id : match.user_a_id;
+
+        setOwnerId(owner);
+        setSeekerId(seeker);
+      } catch (error) {
+        console.error('Error cargando detalles del match:', error);
+      }
+    };
+
+    void loadMatchDetails();
+    return () => {
+      isMounted = false;
+    };
+  }, [chatId]);
+
+  useEffect(() => {
+    if (!matchId) return;
+    let isMounted = true;
+
+    const loadAssignments = async () => {
+      try {
+        setLoadingAssignments(true);
+        const data = await roomAssignmentService.getAssignments(matchId);
+        if (!isMounted) return;
+        setOwnerId(data.owner_id);
+        setAssignments(data.assignments);
+        setMatchAssignment(data.match_assignment ?? null);
+      } catch (error) {
+        console.error('Error cargando asignaciones:', error);
+      } finally {
+        if (isMounted) {
+          setLoadingAssignments(false);
+        }
+      }
+    };
+
+    void loadAssignments();
+    return () => {
+      isMounted = false;
+    };
+  }, [matchId]);
+
+  useEffect(() => {
+    if (!ownerId || ownerId !== currentUserId) return;
+    let isMounted = true;
+
+    const loadOwnerRooms = async () => {
+      try {
+        const rooms = await roomService.getMyRooms();
+        if (!isMounted) return;
+        setOwnerRooms(rooms);
+        const extras = await roomExtrasService.getExtrasForRooms(
+          rooms.map((room) => room.id)
+        );
+        const extrasMap = Object.fromEntries(
+          extras.map((extra) => [extra.room_id, extra])
+        );
+        setRoomExtras(extrasMap);
+      } catch (error) {
+        console.error('Error cargando habitaciones del owner:', error);
+      }
+    };
+
+    void loadOwnerRooms();
+    return () => {
+      isMounted = false;
+    };
+  }, [ownerId, currentUserId]);
+
+  const isOwner = Boolean(currentUserId && ownerId === currentUserId);
+  const isSeeker = Boolean(currentUserId && seekerId === currentUserId);
+
+  const acceptedAssignments = useMemo(
+    () => assignments.filter((assignment) => assignment.status === 'accepted'),
+    [assignments]
+  );
+
+  const assignedRoomIds = useMemo(
+    () =>
+      new Set(
+        acceptedAssignments.map((assignment) => assignment.room_id)
+      ),
+    [acceptedAssignments]
+  );
+
+  const availableRooms = useMemo(() => {
+    if (!isOwner) return [];
+    return ownerRooms.filter(
+      (room) => room.is_available && !assignedRoomIds.has(room.id)
+    );
+  }, [isOwner, ownerRooms, assignedRoomIds]);
+
+  const assignRoomToSeeker = async () => {
+    if (!matchId || !selectedRoomId || !seekerId) return;
+    try {
+      await roomAssignmentService.createAssignment({
+        match_id: matchId,
+        room_id: selectedRoomId,
+        assignee_id: seekerId,
+      });
+      setAssignModalVisible(false);
+      setSelectedRoomId(null);
+      const data = await roomAssignmentService.getAssignments(matchId);
+      setAssignments(data.assignments);
+      setMatchAssignment(data.match_assignment ?? null);
+      setOwnerId(data.owner_id);
+      setMatchStatus('room_offer');
+    } catch (error) {
+      console.error('Error asignando habitacion:', error);
+    }
+  };
+
+  const respondToAssignment = async (status: 'accepted' | 'rejected') => {
+    if (!matchAssignment || !matchId) return;
+    try {
+      await roomAssignmentService.updateAssignment({
+        assignment_id: matchAssignment.id,
+        status,
+      });
+      const data = await roomAssignmentService.getAssignments(matchId);
+      setAssignments(data.assignments);
+      setMatchAssignment(data.match_assignment ?? null);
+      setMatchStatus(status === 'accepted' ? 'room_assigned' : 'room_declined');
+    } catch (error) {
+      console.error('Error respondiendo a asignacion:', error);
+    }
+  };
+
+  const renderRoomTitle = (room: Room) => {
+    const extras = roomExtras[room.id];
+    if (!extras) return room.title;
+    const typeLabel =
+      extras.category === 'area_comun'
+        ? extras.common_area_type === 'otros'
+          ? extras.common_area_custom
+          : extras.common_area_type
+        : extras.room_type;
+    if (!typeLabel) return room.title;
+    return `${room.title} · ${typeLabel}`;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -198,6 +379,71 @@ export const ChatScreen: React.FC = () => {
         <View style={styles.headerSpacer} />
       </View>
 
+      {(isOwner || isSeeker) && (
+        <View style={styles.assignmentPanel}>
+          <View style={styles.assignmentHeader}>
+            <Text style={styles.assignmentTitle}>Gestion de habitacion</Text>
+            {matchStatus && (
+              <Text style={styles.assignmentStatus}>
+                Estado: {matchStatusLabel(matchStatus)}
+              </Text>
+            )}
+          </View>
+          {isOwner && (
+            <TouchableOpacity
+              style={styles.assignButton}
+              onPress={() => setAssignModalVisible(true)}
+            >
+              <Text style={styles.assignButtonText}>Asignar habitacion</Text>
+            </TouchableOpacity>
+          )}
+          {isSeeker && matchAssignment?.status === 'offered' && (
+            <View style={styles.offerCard}>
+              <Text style={styles.offerTitle}>Propuesta de habitacion</Text>
+              <Text style={styles.offerSubtitle}>
+                {matchAssignment.room?.title ?? 'Habitacion asignada'}
+              </Text>
+              <View style={styles.offerActions}>
+                <TouchableOpacity
+                  style={[styles.offerButton, styles.offerAccept]}
+                  onPress={() => respondToAssignment('accepted')}
+                >
+                  <Text style={styles.offerButtonText}>Aceptar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.offerButton, styles.offerReject]}
+                  onPress={() => respondToAssignment('rejected')}
+                >
+                  <Text style={styles.offerRejectText}>Rechazar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+
+      <View style={styles.roommatesPanel}>
+        <Text style={styles.roommatesTitle}>Companeros y habitaciones</Text>
+        {loadingAssignments ? (
+          <Text style={styles.roommatesEmpty}>Cargando...</Text>
+        ) : acceptedAssignments.length === 0 ? (
+          <Text style={styles.roommatesEmpty}>Aun no hay asignaciones.</Text>
+        ) : (
+          <View style={styles.roommatesList}>
+            {acceptedAssignments.map((assignment) => (
+              <View key={assignment.id} style={styles.roommateRow}>
+                <Text style={styles.roommateName}>
+                  {assignment.assignee?.display_name ?? 'Companero'}
+                </Text>
+                <Text style={styles.roommateRoom}>
+                  {assignment.room?.title ?? 'Habitacion'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
       <FlatList
         data={orderedMessages}
         keyExtractor={(item) => item.id}
@@ -223,6 +469,72 @@ export const ChatScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal visible={assignModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Asignar habitacion</Text>
+            <Text style={styles.modalSubtitle}>
+              Selecciona una habitacion disponible.
+            </Text>
+            <ScrollView style={styles.modalList}>
+              {availableRooms.length === 0 ? (
+                <Text style={styles.roommatesEmpty}>
+                  No hay habitaciones disponibles.
+                </Text>
+              ) : (
+                availableRooms.map((room) => {
+                  const isSelected = selectedRoomId === room.id;
+                  return (
+                    <TouchableOpacity
+                      key={room.id}
+                      style={[
+                        styles.modalRoomItem,
+                        isSelected && styles.modalRoomItemActive,
+                      ]}
+                      onPress={() => setSelectedRoomId(room.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.modalRoomTitle,
+                          isSelected && styles.modalRoomTitleActive,
+                        ]}
+                      >
+                        {renderRoomTitle(room)}
+                      </Text>
+                      <Text style={styles.modalRoomMeta}>
+                        {room.price_per_month} EUR/mes
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => {
+                  setAssignModalVisible(false);
+                  setSelectedRoomId(null);
+                }}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.modalConfirm,
+                  !selectedRoomId && styles.modalButtonDisabled,
+                ]}
+                onPress={assignRoomToSeeker}
+                disabled={!selectedRoomId}
+              >
+                <Text style={styles.modalConfirmText}>Asignar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -235,6 +547,21 @@ const statusLabel = (status: Message['status']) => {
       return 'Leido';
     default:
       return 'Enviado';
+  }
+};
+
+const matchStatusLabel = (status: MatchStatus) => {
+  switch (status) {
+    case 'room_offer':
+      return 'Propuesta enviada';
+    case 'room_assigned':
+      return 'Habitacion asignada';
+    case 'room_declined':
+      return 'Propuesta rechazada';
+    case 'accepted':
+      return 'Match';
+    default:
+      return 'Pendiente';
   }
 };
 
@@ -292,6 +619,118 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 22,
+  },
+  assignmentPanel: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    gap: 10,
+  },
+  assignmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  assignmentTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  assignmentStatus: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  assignButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
+  },
+  assignButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  offerCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+  },
+  offerTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  offerSubtitle: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  offerActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  offerButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  offerAccept: {
+    backgroundColor: '#7C3AED',
+  },
+  offerReject: {
+    backgroundColor: '#FEE2E2',
+  },
+  offerButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  offerRejectText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#EF4444',
+  },
+  roommatesPanel: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  roommatesTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  roommatesEmpty: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  roommatesList: {
+    marginTop: 10,
+    gap: 6,
+  },
+  roommateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  roommateName: {
+    fontSize: 12,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  roommateRoom: {
+    fontSize: 12,
+    color: '#6B7280',
   },
   messagesList: {
     paddingHorizontal: 16,
@@ -366,5 +805,85 @@ const styles = StyleSheet.create({
     backgroundColor: '#7C3AED',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '70%',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modalSubtitle: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  modalList: {
+    marginTop: 12,
+  },
+  modalRoomItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 10,
+  },
+  modalRoomItemActive: {
+    borderColor: '#7C3AED',
+    backgroundColor: '#F5F3FF',
+  },
+  modalRoomTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modalRoomTitleActive: {
+    color: '#7C3AED',
+  },
+  modalRoomMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  modalCancel: {
+    backgroundColor: '#F3F4F6',
+  },
+  modalCancelText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modalConfirmText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  modalConfirm: {
+    backgroundColor: '#7C3AED',
+  },
+  modalButtonDisabled: {
+    backgroundColor: '#C4B5FD',
   },
 });

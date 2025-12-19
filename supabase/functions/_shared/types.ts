@@ -234,7 +234,13 @@ export interface PaginatedResponse<T> {
   
 export type DatabaseEntity = User | Profile | Flat | Room | RoomInterest | Match | Chat | Message    
   
-export type MatchStatus = 'pending' | 'accepted' | 'rejected'    
+export type MatchStatus =
+  | 'pending'
+  | 'accepted'
+  | 'rejected'
+  | 'room_offer'
+  | 'room_assigned'
+  | 'room_declined'
   
 // ====================    
 // Tipos para Errores    

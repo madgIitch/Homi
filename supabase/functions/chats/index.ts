@@ -87,6 +87,37 @@ async function getChatByMatchId(
   return data as Chat;
 }
 
+async function getChatById(chatId: string, userId: string): Promise<Chat | null> {
+  const { data, error } = await supabaseClient
+    .from('chats')
+    .select(
+      `
+      *,
+      match:matches(
+        *,
+        user_a:profiles!matches_user_a_id_fkey(*),
+        user_b:profiles!matches_user_b_id_fkey(*)
+      )
+    `
+    )
+    .eq('id', chatId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  const match = data.match as MatchWithProfiles;
+  const userAId = match.user_a_id;
+  const userBId = match.user_b_id;
+
+  if (userId !== userAId && userId !== userBId) {
+    throw new Error('Unauthorized: You can only access chats you participate in');
+  }
+
+  return data as Chat;
+}
+
 async function createChat(matchId: string): Promise<Chat> {
   const { data, error } = await supabaseClient
     .from('chats')
@@ -227,10 +258,26 @@ const handler = withAuth(
       if (method === 'GET') {
         const chatId = url.searchParams.get('chat_id');
         const matchId = url.searchParams.get('match_id');
+        const detailId = url.searchParams.get('detail_id');
 
         if (chatId) {
           const messages = await getChatMessages(chatId, userId);
           const response: ApiResponse<Message[]> = { data: messages };
+          return new Response(JSON.stringify(response), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (detailId) {
+          const chat = await getChatById(detailId, userId);
+          if (!chat) {
+            return new Response(JSON.stringify({ error: 'Chat not found' }), {
+              status: 404,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+          const response: ApiResponse<Chat> = { data: chat };
           return new Response(JSON.stringify(response), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
