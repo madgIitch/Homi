@@ -99,17 +99,34 @@ export const MatchesScreen: React.FC = () => {
       : 'No hay mensajes todavia';
   }, [errorMessage, matches.length, chats.length]);
 
+  const handleOpenMatch = async (match: Match) => {
+    try {
+      const chat = await chatService.getOrCreateChat(match.id);
+      navigation.navigate('Chat', {
+        chatId: chat.id,
+        name: chat.name,
+        avatarUrl: chat.avatarUrl,
+        profile: chat.profile,
+      });
+    } catch (error) {
+      console.error('Error abriendo chat del match:', error);
+    }
+  };
+
   const renderMatch = ({ item }: { item: Match }) => {
     const photoUrl = matchPhotoByProfile[item.profileId] || item.avatarUrl;
     return (
-      <View style={styles.matchItem}>
+      <TouchableOpacity
+        style={styles.matchItem}
+        onPress={() => void handleOpenMatch(item)}
+      >
         <View style={styles.avatarWrapper}>
           <Image source={{ uri: photoUrl }} style={styles.avatar} />
         </View>
         <Text style={[styles.matchName, { color: theme.colors.text }]}>
           {item.name}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -121,6 +138,7 @@ export const MatchesScreen: React.FC = () => {
           chatId: item.id,
           name: item.name,
           avatarUrl: item.avatarUrl,
+          profile: item.profile,
         })
       }
     >

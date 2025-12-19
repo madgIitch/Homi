@@ -16,18 +16,20 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
 import type { Message } from '../types/chat';
+import type { Profile } from '../types/profile';
 
 type RouteParams = {
   chatId: string;
   name: string;
   avatarUrl: string;
+  profile?: Profile;
 };
 
 export const ChatScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
-  const { chatId, name, avatarUrl } = route.params as RouteParams;
+  const { chatId, name, avatarUrl, profile } = route.params as RouteParams;
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
 
@@ -96,12 +98,20 @@ export const ChatScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
         </TouchableOpacity>
-        <View style={styles.headerProfile}>
+        <TouchableOpacity
+          style={styles.headerProfile}
+          onPress={() => {
+            if (profile) {
+              navigation.navigate('ProfileDetail', { profile });
+            }
+          }}
+          disabled={!profile}
+        >
           <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
           <Text style={[styles.headerName, { color: theme.colors.text }]}>
             {name}
           </Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.headerSpacer} />
       </View>
 

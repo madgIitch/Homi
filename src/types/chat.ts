@@ -7,6 +7,8 @@ export interface Match {
   avatarUrl: string;
 }
 
+import type { Profile } from './profile';
+
 export interface Chat {
   id: string;
   matchId: string;
@@ -15,6 +17,8 @@ export interface Chat {
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;
+  profileId?: string;
+  profile?: Profile;
 }
 
 export interface Message {
