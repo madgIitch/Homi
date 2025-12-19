@@ -1,28 +1,31 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/ThemeContext';
 import { Button } from '../components/Button';
 import { TextArea } from '../components/TextArea';
-
-const RULES_STORAGE_KEY = 'flatRules';
+import { roomService } from '../services/roomService';
 
 export const RulesManagementScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const route = useRoute();
+  const routeParams = route.params as { flatId?: string | null } | undefined;
+  const flatId = routeParams?.flatId ?? null;
   const [rules, setRules] = useState('');
   const [saving, setSaving] = useState(false);
 
   const loadRules = useCallback(async () => {
     try {
-      const stored = await AsyncStorage.getItem(RULES_STORAGE_KEY);
-      setRules(stored || '');
+      if (!flatId) return;
+      const flats = await roomService.getMyFlats();
+      const flat = flats.find((item) => item.id === flatId);
+      setRules(flat?.rules || '');
     } catch (error) {
       console.error('Error cargando reglas:', error);
     }
-  }, []);
+  }, [flatId]);
 
   useEffect(() => {
     loadRules();
@@ -31,7 +34,12 @@ export const RulesManagementScreen: React.FC = () => {
   const handleSave = async () => {
     try {
       setSaving(true);
-      await AsyncStorage.setItem(RULES_STORAGE_KEY, rules.trim());
+      if (!flatId) {
+        Alert.alert('Error', 'No se encontro el piso');
+        setSaving(false);
+        return;
+      }
+      await roomService.updateFlat(flatId, { rules: rules.trim() });
       Alert.alert('Exito', 'Reglas guardadas');
       navigation.goBack();
     } catch (error) {
@@ -65,6 +73,11 @@ export const RulesManagementScreen: React.FC = () => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {!flatId && (
+          <Text style={styles.emptyText}>
+            No se encontro el piso seleccionado.
+          </Text>
+        )}
         <TextArea
           label="Reglas"
           value={rules}
@@ -103,5 +116,10 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 20,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 12,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,15 +15,14 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { FormSection } from '../components/FormSection';
 import { roomService } from '../services/roomService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Room, RoomExtraDetails } from '../types/room';
+import { roomExtrasService } from '../services/roomExtrasService';
+import type { Flat, Room, RoomExtras } from '../types/room';
 
 type RoomStatus = 'available' | 'paused';
 
-type RoomExtrasMap = Record<string, RoomExtraDetails | null>;
+type RoomExtrasMap = Record<string, RoomExtras | null>;
 
-const RULES_STORAGE_KEY = 'flatRules';
-const SERVICES_STORAGE_KEY = 'flatServices';
+const toISODate = (date: Date) => date.toISOString().split('T')[0];
 
 const roomTypeLabel = new Map([
   ['individual', 'Individual'],
@@ -56,11 +55,10 @@ export const RoomManagementScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const [loading, setLoading] = useState(true);
+  const [flats, setFlats] = useState<Flat[]>([]);
+  const [selectedFlatId, setSelectedFlatId] = useState<string | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomExtras, setRoomExtras] = useState<RoomExtrasMap>({});
-  const [rules, setRules] = useState('');
-  const [servicesText, setServicesText] = useState('');
-  const [servicesPrice, setServicesPrice] = useState('');
 
   const loadRooms = useCallback(async () => {
     try {
@@ -68,18 +66,12 @@ export const RoomManagementScreen: React.FC = () => {
       const data = await roomService.getMyRooms();
       setRooms(data);
 
-      const extrasEntries = await Promise.all(
-        data.map(async (room) => {
-          try {
-            const stored = await AsyncStorage.getItem(`roomExtras:${room.id}`);
-            return [room.id, stored ? (JSON.parse(stored) as RoomExtraDetails) : null] as const;
-          } catch (error) {
-            console.error('Error cargando extras:', error);
-            return [room.id, null] as const;
-          }
-        })
+      const extras = await roomExtrasService.getExtrasForRooms(
+        data.map((room) => room.id)
       );
-      setRoomExtras(Object.fromEntries(extrasEntries));
+      setRoomExtras(
+        Object.fromEntries(extras.map((item) => [item.room_id, item]))
+      );
     } catch (error) {
       console.error('Error cargando habitaciones:', error);
       Alert.alert('Error', 'No se pudieron cargar las habitaciones');
@@ -88,37 +80,32 @@ export const RoomManagementScreen: React.FC = () => {
     }
   }, []);
 
-  const loadFlatDetails = useCallback(async () => {
+  const loadFlats = useCallback(async () => {
     try {
-      const [rulesStored, servicesStored] = await Promise.all([
-        AsyncStorage.getItem(RULES_STORAGE_KEY),
-        AsyncStorage.getItem(SERVICES_STORAGE_KEY),
-      ]);
-
-      setRules(rulesStored || '');
-
-      if (servicesStored) {
-        const parsed = JSON.parse(servicesStored) as {
-          servicesText?: string;
-          servicesPrice?: string;
-        };
-        setServicesText(parsed.servicesText || '');
-        setServicesPrice(parsed.servicesPrice || '');
-      } else {
-        setServicesText('');
-        setServicesPrice('');
-      }
+      const data = await roomService.getMyFlats();
+      setFlats(data);
     } catch (error) {
-      console.error('Error cargando reglas/servicios:', error);
+      console.error('Error cargando pisos:', error);
+      Alert.alert('Error', 'No se pudieron cargar los pisos');
     }
-  }, []);
+  }, [selectedFlatId]);
 
   useFocusEffect(
     useCallback(() => {
+      loadFlats();
       loadRooms();
-      loadFlatDetails();
-    }, [loadRooms, loadFlatDetails])
+    }, [loadRooms, loadFlats])
   );
+
+  useEffect(() => {
+    if (flats.length === 0) {
+      setSelectedFlatId(null);
+      return;
+    }
+    if (!selectedFlatId || !flats.some((flat) => flat.id === selectedFlatId)) {
+      setSelectedFlatId(flats[0].id);
+    }
+  }, [flats, selectedFlatId]);
 
   const handleToggleAvailability = async (room: Room) => {
     const nextAvailable = !room.is_available;
@@ -154,8 +141,17 @@ export const RoomManagementScreen: React.FC = () => {
   };
 
   const handleCreateRoom = () => {
-    navigation.navigate('RoomEdit');
+    if (!selectedFlatId) {
+      Alert.alert('Aviso', 'Debes crear un piso antes de añadir habitaciones.');
+      return;
+    }
+    navigation.navigate('RoomEdit', { flatId: selectedFlatId });
   };
+
+  const selectedFlat = flats.find((flat) => flat.id === selectedFlatId) || null;
+  const filteredRooms = selectedFlatId
+    ? rooms.filter((room) => room.flat_id === selectedFlatId)
+    : rooms;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -182,9 +178,45 @@ export const RoomManagementScreen: React.FC = () => {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
+          <View style={styles.flatSelector}>
+            <Text style={styles.flatSelectorLabel}>Pisos</Text>
+            {flats.length === 0 ? (
+              <Text style={styles.detailEmpty}>
+                Aun no tienes pisos creados.
+              </Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.flatChips}>
+                  {flats.map((flat) => {
+                    const isActive = flat.id === selectedFlatId;
+                    return (
+                      <TouchableOpacity
+                        key={flat.id}
+                        style={[
+                          styles.flatChip,
+                          isActive && styles.flatChipActive,
+                        ]}
+                        onPress={() => setSelectedFlatId(flat.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.flatChipText,
+                            isActive && styles.flatChipTextActive,
+                          ]}
+                        >
+                          {flat.address}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            )}
+          </View>
+
           <FormSection title="Reglas" iconName="clipboard-outline">
-            {rules ? (
-              <Text style={styles.detailText}>{rules}</Text>
+            {selectedFlat?.rules ? (
+              <Text style={styles.detailText}>{selectedFlat.rules}</Text>
             ) : (
               <Text style={styles.detailEmpty}>
                 Aun no has definido reglas del piso.
@@ -192,24 +224,32 @@ export const RoomManagementScreen: React.FC = () => {
             )}
             <TouchableOpacity
               style={styles.inlineAction}
-              onPress={() => navigation.navigate('RulesManagement')}
+              onPress={() =>
+                selectedFlatId
+                  ? navigation.navigate('RulesManagement', {
+                      flatId: selectedFlatId,
+                    })
+                  : Alert.alert('Aviso', 'Selecciona un piso primero.')
+              }
             >
               <Text style={styles.inlineActionText}>
-                {rules ? 'Editar reglas' : 'Agregar reglas'}
+                {selectedFlat?.rules ? 'Editar reglas' : 'Agregar reglas'}
               </Text>
             </TouchableOpacity>
           </FormSection>
 
           <FormSection title="Servicios" iconName="flash-outline">
-            {servicesText ? (
-              <>
-                <Text style={styles.detailText}>{servicesText}</Text>
-                {servicesPrice ? (
-                  <Text style={styles.detailMeta}>
-                    Precio aprox.: {servicesPrice} EUR
-                  </Text>
-                ) : null}
-              </>
+            {selectedFlat?.services && selectedFlat.services.length > 0 ? (
+              <View style={styles.servicesList}>
+                {selectedFlat.services.map((service, index) => (
+                  <View key={`${service.name}-${index}`} style={styles.serviceRow}>
+                    <Text style={styles.detailText}>{service.name}</Text>
+                    {service.price != null && service.price !== 0 ? (
+                      <Text style={styles.detailMeta}>{service.price} EUR</Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
             ) : (
               <Text style={styles.detailEmpty}>
                 Aun no has definido servicios incluidos.
@@ -217,10 +257,18 @@ export const RoomManagementScreen: React.FC = () => {
             )}
             <TouchableOpacity
               style={styles.inlineAction}
-              onPress={() => navigation.navigate('ServicesManagement')}
+              onPress={() =>
+                selectedFlatId
+                  ? navigation.navigate('ServicesManagement', {
+                      flatId: selectedFlatId,
+                    })
+                  : Alert.alert('Aviso', 'Selecciona un piso primero.')
+              }
             >
               <Text style={styles.inlineActionText}>
-                {servicesText ? 'Editar servicios' : 'Agregar servicios'}
+                {selectedFlat?.services?.length
+                  ? 'Editar servicios'
+                  : 'Agregar servicios'}
               </Text>
             </TouchableOpacity>
           </FormSection>
@@ -233,7 +281,7 @@ export const RoomManagementScreen: React.FC = () => {
               <Text style={styles.inlineActionText}>Agregar habitacion</Text>
             </TouchableOpacity>
 
-            {rooms.length === 0 ? (
+            {filteredRooms.length === 0 ? (
               <View style={styles.emptyStateInline}>
                 <Ionicons name="bed-outline" size={42} color="#9CA3AF" />
                 <Text style={styles.emptyTitle}>
@@ -245,23 +293,23 @@ export const RoomManagementScreen: React.FC = () => {
               </View>
             ) : null}
 
-            {rooms.map((room) => {
+            {filteredRooms.map((room) => {
               const status = getRoomStatus(room);
               const extras = roomExtras[room.id];
               const isCommonArea = extras?.category === 'area_comun';
               const photo = extras?.photos?.[0];
               const typeLabel =
                 extras?.category === 'area_comun'
-                  ? extras?.commonAreaType === 'otros'
-                    ? extras?.commonAreaCustom
-                    : commonAreaLabel.get(extras?.commonAreaType || '')
-                  : roomTypeLabel.get(extras?.roomType || '');
+                  ? extras?.common_area_type === 'otros'
+                    ? extras?.common_area_custom
+                    : commonAreaLabel.get(extras?.common_area_type || '')
+                  : roomTypeLabel.get(extras?.room_type || '');
               const typeText = typeLabel
                 ? isCommonArea
                   ? `Area comun: ${typeLabel}`
                   : `Tipo: ${typeLabel}`
                 : null;
-              const resolvedPhoto = photo || null;
+              const resolvedPhoto = photo?.signedUrl || null;
 
               return (
                 <View key={room.id} style={styles.roomCard}>
@@ -293,7 +341,6 @@ export const RoomManagementScreen: React.FC = () => {
                         styles.statusBadge,
                         status.key === 'available' && styles.statusAvailable,
                         status.key === 'paused' && styles.statusPaused,
-                        status.key === 'reserved' && styles.statusReserved,
                       ]}
                     >
                       <Text style={styles.statusText}>{status.label}</Text>
@@ -377,6 +424,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
   },
+  flatSelector: {
+    marginBottom: 8,
+  },
+  flatSelectorLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  flatChips: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  flatChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  flatChipActive: {
+    borderColor: '#7C3AED',
+    backgroundColor: '#F5F3FF',
+  },
+  flatChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  flatChipTextActive: {
+    color: '#7C3AED',
+  },
   emptyStateInline: {
     alignItems: 'center',
     paddingHorizontal: 32,
@@ -407,6 +489,14 @@ const styles = StyleSheet.create({
   detailEmpty: {
     fontSize: 13,
     color: '#6B7280',
+  },
+  servicesList: {
+    gap: 8,
+  },
+  serviceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   inlineAction: {
     marginTop: 12,

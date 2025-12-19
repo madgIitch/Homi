@@ -70,8 +70,15 @@ export interface Flat {
   district?: string    
   total_rooms?: number    
   common_areas_description?: string    
+  rules?: string
+  services?: FlatService[]
   created_at: string    
 }  
+
+export interface FlatService {
+  name: string
+  price?: number
+}
   
 export interface Room {    
   id: string    
@@ -178,6 +185,8 @@ export interface FlatCreateRequest {
   district?: string    
   total_rooms?: number    
   common_areas_description?: string    
+  rules?: string
+  services?: FlatService[]
 }  
   
 export interface RoomCreateRequest {    

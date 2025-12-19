@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -20,7 +19,14 @@ import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';
 import { Button } from '../components/Button';
 import { roomService } from '../services/roomService';
-import type { Flat, Room, RoomCreateRequest, RoomExtraDetails } from '../types/room';
+import { roomExtrasService } from '../services/roomExtrasService';
+import { roomPhotoService } from '../services/roomPhotoService';
+import type {
+  Flat,
+  Room,
+  RoomCreateRequest,
+  RoomExtraDetails,
+} from '../types/room';
 
 const toISODate = (date: Date) => date.toISOString().split('T')[0];
 
@@ -30,7 +36,13 @@ const parseNumber = (value: string) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
-const getExtrasKey = (roomId: string) => `roomExtras:${roomId}`;
+type RoomPhotoItem = {
+  uri: string;
+  path?: string;
+  isLocal: boolean;
+  fileName?: string;
+  mimeType?: string;
+};
 
 const COMMON_AREA_OPTIONS = [
   { id: 'salon', label: 'Salon' },
@@ -59,12 +71,7 @@ export const RoomEditScreen: React.FC = () => {
     | {
         room?: Room;
         roomId?: string;
-        prefill?: {
-          servicesText?: string;
-          rules?: string;
-          availableFrom?: string;
-          isAvailable?: boolean;
-        };
+        flatId?: string | null;
       }
     | undefined;
   const initialRoom = routeParams?.room ?? null;
@@ -93,7 +100,7 @@ export const RoomEditScreen: React.FC = () => {
   >(null);
   const [commonAreaType, setCommonAreaType] = useState<string | null>(null);
   const [commonAreaCustom, setCommonAreaCustom] = useState('');
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<RoomPhotoItem[]>([]);
   const lastAutoTitleRef = React.useRef<string>('');
 
   const loadRoom = useCallback(async () => {
@@ -129,14 +136,26 @@ export const RoomEditScreen: React.FC = () => {
 
   const loadExtras = useCallback(async (targetRoom: Room) => {
     try {
-      const saved = await AsyncStorage.getItem(getExtrasKey(targetRoom.id));
-      if (!saved) return;
-      const parsed: RoomExtraDetails = JSON.parse(saved);
-      setRoomType(parsed.roomType);
-      setRoomCategory(parsed.category ?? null);
-      setCommonAreaType(parsed.commonAreaType ?? null);
-      setCommonAreaCustom(parsed.commonAreaCustom ?? '');
-      setPhotos(parsed.photos ?? []);
+      const extras = await roomExtrasService.getExtras(targetRoom.id);
+      if (!extras) {
+        setRoomCategory('habitacion');
+        return;
+      }
+      setRoomCategory(
+        (extras.category as RoomExtraDetails['category']) ?? 'habitacion'
+      );
+      setRoomType(
+        (extras.room_type as RoomExtraDetails['roomType']) ?? undefined
+      );
+      setCommonAreaType(extras.common_area_type ?? null);
+      setCommonAreaCustom(extras.common_area_custom ?? '');
+      setPhotos(
+        extras.photos.map((photo) => ({
+          uri: photo.signedUrl,
+          path: photo.path,
+          isLocal: false,
+        }))
+      );
     } catch (error) {
       console.error('Error cargando extras de habitacion:', error);
     }
@@ -155,15 +174,6 @@ export const RoomEditScreen: React.FC = () => {
   }, [isCreateMode, loadFlats]);
 
   useEffect(() => {
-    if (!isCreateMode) return;
-    if (!routeParams?.prefill) return;
-    setServicesText(routeParams.prefill.servicesText ?? '');
-    setRules(routeParams.prefill.rules ?? '');
-    setAvailableFrom(routeParams.prefill.availableFrom ?? toISODate(new Date()));
-    setIsAvailable(routeParams.prefill.isAvailable ?? true);
-  }, [isCreateMode, routeParams]);
-
-  useEffect(() => {
     if (!room) return;
     setTitle(room.title ?? '');
     setDescription(room.description ?? '');
@@ -174,6 +184,13 @@ export const RoomEditScreen: React.FC = () => {
     setSelectedFlatId(room.flat_id);
     loadExtras(room);
   }, [room, loadExtras]);
+
+  useEffect(() => {
+    if (!isCreateMode) return;
+    if (routeParams?.flatId) {
+      setSelectedFlatId(routeParams.flatId);
+    }
+  }, [isCreateMode, routeParams]);
 
   useEffect(() => {
     if (roomCategory !== 'area_comun') return;
@@ -208,11 +225,19 @@ export const RoomEditScreen: React.FC = () => {
     const asset = result.assets[0];
     if (!asset.uri) return;
 
-    setPhotos((prev) => [...prev, asset.uri as string]);
+    setPhotos((prev) => [
+      ...prev,
+      {
+        uri: asset.uri as string,
+        isLocal: true,
+        fileName: asset.fileName,
+        mimeType: asset.type,
+      },
+    ]);
   };
 
   const handleRemovePhoto = (uri: string) => {
-    setPhotos((prev) => prev.filter((item) => item !== uri));
+    setPhotos((prev) => prev.filter((item) => item.uri !== uri));
   };
 
   const handleSave = async () => {
@@ -232,7 +257,7 @@ export const RoomEditScreen: React.FC = () => {
 
     const sizeValue = size ? parseNumber(size) : null;
     if (size && sizeValue == null) {
-      Alert.alert('Error', 'Introduce un tamaño valido');
+      Alert.alert('Error', 'Introduce un tamano valido');
       return;
     }
 
@@ -240,6 +265,22 @@ export const RoomEditScreen: React.FC = () => {
     if (!availableValue) {
       Alert.alert('Error', 'Introduce la fecha de disponibilidad');
       return;
+    }
+
+    if (!roomCategory) {
+      Alert.alert('Error', 'Selecciona el tipo de publicacion');
+      return;
+    }
+
+    if (roomCategory === 'area_comun') {
+      if (!commonAreaType) {
+        Alert.alert('Error', 'Selecciona el tipo de area comun');
+        return;
+      }
+      if (commonAreaType === 'otros' && !commonAreaCustom.trim()) {
+        Alert.alert('Error', 'Escribe el tipo de area');
+        return;
+      }
     }
 
     const flatId = isCreateMode ? selectedFlatId : room?.flat_id;
@@ -258,29 +299,58 @@ export const RoomEditScreen: React.FC = () => {
       available_from: availableValue,
     };
 
-    const extraDetails: RoomExtraDetails = {
-      category: roomCategory ?? undefined,
-      roomType,
-      commonAreaType: commonAreaType ?? undefined,
-      commonAreaCustom: commonAreaCustom.trim() || undefined,
-      photos,
-    };
-
     try {
       setSaving(true);
       if (isCreateMode) {
         const createdRoom = await roomService.createRoom(payload);
-        await AsyncStorage.setItem(
-          getExtrasKey(createdRoom.id),
-          JSON.stringify(extraDetails)
+        const uploaded = await Promise.all(
+          photos
+            .filter((photo) => photo.isLocal)
+            .map((photo) =>
+              roomPhotoService.uploadPhoto(
+                createdRoom.id,
+                photo.uri,
+                photo.fileName,
+                photo.mimeType
+              )
+            )
         );
+        const photoPaths = uploaded.map((item) => item.path);
+        await roomExtrasService.upsertExtras({
+          room_id: createdRoom.id,
+          category: roomCategory,
+          room_type: roomType ?? null,
+          common_area_type: commonAreaType ?? null,
+          common_area_custom: commonAreaCustom.trim() || null,
+          photos: photoPaths,
+        });
         Alert.alert('Exito', 'Habitacion creada');
       } else if (room) {
         await roomService.updateRoom(room.id, payload);
-        await AsyncStorage.setItem(
-          getExtrasKey(room.id),
-          JSON.stringify(extraDetails)
+        const existingPaths = photos
+          .filter((photo) => !photo.isLocal && photo.path)
+          .map((photo) => photo.path as string);
+        const uploaded = await Promise.all(
+          photos
+            .filter((photo) => photo.isLocal)
+            .map((photo) =>
+              roomPhotoService.uploadPhoto(
+                room.id,
+                photo.uri,
+                photo.fileName,
+                photo.mimeType
+              )
+            )
         );
+        const allPaths = [...existingPaths, ...uploaded.map((item) => item.path)];
+        await roomExtrasService.upsertExtras({
+          room_id: room.id,
+          category: roomCategory,
+          room_type: roomType ?? null,
+          common_area_type: commonAreaType ?? null,
+          common_area_custom: commonAreaCustom.trim() || null,
+          photos: allPaths,
+        });
         Alert.alert('Exito', 'Habitacion actualizada');
       }
       navigation.goBack();
@@ -318,7 +388,7 @@ export const RoomEditScreen: React.FC = () => {
           </View>
         </View>
         <View style={styles.choiceContainer}>
-          <Text style={styles.choiceTitle}>¿Que quieres publicar?</Text>
+          <Text style={styles.choiceTitle}>Que quieres publicar?</Text>
           <Text style={styles.choiceSubtitle}>
             Elige el tipo de espacio para continuar.
           </Text>
@@ -378,7 +448,7 @@ export const RoomEditScreen: React.FC = () => {
               <ActivityIndicator size="small" color={theme.colors.primary} />
             ) : flats.length === 0 ? (
               <Text style={styles.flatEmptyText}>
-                Necesitas crear un piso antes de añadir habitaciones.
+                Necesitas crear un piso antes de anadir habitaciones.
               </Text>
             ) : (
               <View style={styles.flatList}>
@@ -422,12 +492,12 @@ export const RoomEditScreen: React.FC = () => {
           iconName="images-outline"
         >
           <View style={styles.photoGrid}>
-            {photos.map((uri) => (
-              <View key={uri} style={styles.photoTile}>
-                <Image source={{ uri }} style={styles.photo} />
+            {photos.map((photo) => (
+              <View key={photo.uri} style={styles.photoTile}>
+                <Image source={{ uri: photo.uri }} style={styles.photo} />
                 <TouchableOpacity
                   style={styles.photoRemove}
-                  onPress={() => handleRemovePhoto(uri)}
+                  onPress={() => handleRemovePhoto(photo.uri)}
                 >
                   <Text style={styles.photoRemoveText}>X</Text>
                 </TouchableOpacity>
@@ -442,7 +512,7 @@ export const RoomEditScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
           <Text style={styles.photoHint}>
-            Las fotos se guardan en este dispositivo.
+            Las fotos se suben al guardar la habitacion.
           </Text>
         </FormSection>
 

@@ -190,12 +190,16 @@ async function updateRoom(roomId: string, userId: string, updates: Partial<Room>
 function validateFlatData(data: FlatValidationData): { isValid: boolean; errors: string[] } {  
   const errors: string[] = []  
         
-  if (!data.address || typeof data.address !== 'string' || data.address.trim().length < 5) {  
-    errors.push('Address must be at least 5 characters long')  
+  if (data.address !== undefined) {  
+    if (typeof data.address !== 'string' || data.address.trim().length < 5) {  
+      errors.push('Address must be at least 5 characters long')  
+    }  
   }  
         
-  if (!data.city || typeof data.city !== 'string' || data.city.trim().length < 2) {  
-    errors.push('City is required')  
+  if (data.city !== undefined) {  
+    if (typeof data.city !== 'string' || data.city.trim().length < 2) {  
+      errors.push('City is required')  
+    }  
   }  
         
   if (data.total_rooms && (typeof data.total_rooms !== 'number' || data.total_rooms < 1 || data.total_rooms > 20)) {  

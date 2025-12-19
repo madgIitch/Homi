@@ -8,7 +8,14 @@ export interface Flat {
   district?: string;
   total_rooms?: number;
   common_areas_description?: string;
+  rules?: string;
+  services?: FlatService[];
   created_at: string;
+}
+
+export interface FlatService {
+  name: string;
+  price?: number;
 }
 
 export interface Room {
@@ -41,6 +48,8 @@ export interface FlatCreateRequest {
   district?: string;
   total_rooms?: number;
   common_areas_description?: string;
+  rules?: string;
+  services?: FlatService[];
 }
 
 export interface RoomCreateRequest {
@@ -68,4 +77,21 @@ export interface RoomExtraDetails {
   category?: 'habitacion' | 'area_comun';
   commonAreaType?: string;
   commonAreaCustom?: string;
+}
+
+export interface RoomExtraPhoto {
+  path: string;
+  signedUrl: string;
+}
+
+export interface RoomExtras {
+  id: string;
+  room_id: string;
+  category?: 'habitacion' | 'area_comun';
+  room_type?: 'individual' | 'doble';
+  common_area_type?: string;
+  common_area_custom?: string;
+  photos: RoomExtraPhoto[];
+  created_at: string;
+  updated_at: string;
 }
