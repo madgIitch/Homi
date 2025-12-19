@@ -38,103 +38,6 @@ const SWIPE_STORAGE_KEY = 'swipeDaily';
 const FALLBACK_PHOTO =
   'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=900&q=80';
 
-const SAMPLE_PROFILES: SwipeProfile[] = [
-  {
-    id: 'p1',
-    name: 'Alex',
-    age: 27,
-    photoUrl:
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=900&q=80',
-    housing: 'seeking',
-    budgetMin: 450,
-    budgetMax: 650,
-    bio: 'Disenador, fan de los cafes y las series.',
-    lifestyle: ['No fumador', 'Ordenado', 'Early bird'],
-    profile: {
-      id: 'p1',
-      user_id: 'p1',
-      display_name: 'Alex',
-      bio: 'Disenador, fan de los cafes y las series.',
-      occupation: null,
-      university: null,
-      field_of_study: null,
-      interests: [],
-      lifestyle_preferences: null,
-      housing_situation: 'seeking',
-      preferred_zones: [],
-      budget_min: 450,
-      budget_max: 650,
-      num_roommates_wanted: null,
-      avatar_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  },
-  {
-    id: 'p2',
-    name: 'Maria',
-    age: 25,
-    photoUrl:
-      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=900&q=80',
-    housing: 'offering',
-    zone: 'Malasana',
-    budgetMin: 500,
-    budgetMax: 700,
-    bio: 'Busco companera para piso luminoso y chill.',
-    lifestyle: ['Mascotas ok', 'Gym lover', 'No fiestas'],
-    profile: {
-      id: 'p2',
-      user_id: 'p2',
-      display_name: 'Maria',
-      bio: 'Busco companera para piso luminoso y chill.',
-      occupation: null,
-      university: null,
-      field_of_study: null,
-      interests: [],
-      lifestyle_preferences: null,
-      housing_situation: 'offering',
-      preferred_zones: ['Malasana'],
-      budget_min: 500,
-      budget_max: 700,
-      num_roommates_wanted: null,
-      avatar_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  },
-  {
-    id: 'p3',
-    name: 'Javi',
-    age: 29,
-    photoUrl:
-      'https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?auto=format&fit=crop&w=900&q=80',
-    housing: 'seeking',
-    budgetMin: 400,
-    budgetMax: 600,
-    bio: 'Developer remoto, busco ambiente tranquilo.',
-    lifestyle: ['Flexible', 'Cocino', 'Musica suave'],
-    profile: {
-      id: 'p3',
-      user_id: 'p3',
-      display_name: 'Javi',
-      bio: 'Developer remoto, busco ambiente tranquilo.',
-      occupation: null,
-      university: null,
-      field_of_study: null,
-      interests: [],
-      lifestyle_preferences: null,
-      housing_situation: 'seeking',
-      preferred_zones: [],
-      budget_min: 400,
-      budget_max: 600,
-      num_roommates_wanted: null,
-      avatar_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  },
-];
-
 export const SwipeScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<any>>();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -318,7 +221,7 @@ export const SwipeScreen: React.FC = () => {
         setCurrentIndex(0);
       } catch (error) {
         console.error('Error cargando recomendaciones:', error);
-        setProfiles(SAMPLE_PROFILES);
+        setProfiles([]);
         setProfileError('No se pudieron cargar perfiles reales.');
       } finally {
         setLoadingProfiles(false);

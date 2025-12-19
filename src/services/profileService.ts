@@ -90,26 +90,39 @@ class ProfileService {
   async getProfileRecommendations(): Promise<ProfileRecommendation[]> {
     let headers = await this.getAuthHeaders();
 
-    let response = await fetch(
-      `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`,
-      {
+    const tryFetch = async (url: string) =>
+      fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({}),
-      }
+      });
+
+    let response = await tryFetch(
+      `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`
     );
 
     if (response.status === 401) {
       const newToken = await authService.refreshToken();
       if (newToken) {
         headers = await this.getAuthHeaders();
-        response = await fetch(
-          `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`,
-          {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({}),
-          }
+        response = await tryFetch(
+          `${API_CONFIG.FUNCTIONS_URL}/profiles/recommendations`
+        );
+      }
+    }
+
+    if (!response.ok) {
+      let errorMessage = 'Error al obtener recomendaciones';
+      try {
+        const error = await response.json();
+        errorMessage = error?.error || errorMessage;
+      } catch {
+        // ignore json parse failures
+      }
+
+      if (response.status === 404 || errorMessage === 'Profile already exists') {
+        response = await tryFetch(
+          `${API_CONFIG.FUNCTIONS_URL}/profiles-recommendations`
         );
       }
     }

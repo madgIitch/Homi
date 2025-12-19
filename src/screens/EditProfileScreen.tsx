@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  PanResponder,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
@@ -83,6 +84,19 @@ const lifestyleIdByLabel = new Map(
   ESTILO_VIDA_OPTIONS.map((option) => [option.label, option.id])
 );
 
+const BUDGET_MIN = 0;
+const BUDGET_MAX = 1200;
+const BUDGET_STEP = 25;
+const DEFAULT_BUDGET_MIN = 300;
+const DEFAULT_BUDGET_MAX = 600;
+const DEFAULT_ROOMMATES = 1;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const snapToStep = (value: number) =>
+  Math.round(value / BUDGET_STEP) * BUDGET_STEP;
+
 export const EditProfileScreen: React.FC = () => {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
@@ -109,8 +123,8 @@ export const EditProfileScreen: React.FC = () => {
   >('busco_piso');
   const [zonas, setZonas] = useState<string[]>([]);
   const [numCompaneros, setNumCompaneros] = useState('');
-  const [presupuestoMin, setPresupuestoMin] = useState('');
-  const [presupuestoMax, setPresupuestoMax] = useState('');
+  const [presupuestoMin, setPresupuestoMin] = useState(DEFAULT_BUDGET_MIN);
+  const [presupuestoMax, setPresupuestoMax] = useState(DEFAULT_BUDGET_MAX);
   const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
   const [photosLoading, setPhotosLoading] = useState(true);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -182,11 +196,15 @@ export const EditProfileScreen: React.FC = () => {
           ? String(data.num_roommates_wanted)
           : ''
       );
+      const nextMin =
+        data.budget_min != null ? data.budget_min : DEFAULT_BUDGET_MIN;
+      const nextMax =
+        data.budget_max != null ? data.budget_max : DEFAULT_BUDGET_MAX;
       setPresupuestoMin(
-        data.budget_min != null ? String(data.budget_min) : ''
+        clamp(snapToStep(nextMin), BUDGET_MIN, BUDGET_MAX)
       );
       setPresupuestoMax(
-        data.budget_max != null ? String(data.budget_max) : ''
+        clamp(snapToStep(nextMax), BUDGET_MIN, BUDGET_MAX)
       );
     } catch (error) {
       if (handleAuthError?.(error)) {
@@ -264,6 +282,51 @@ export const EditProfileScreen: React.FC = () => {
   const handleSave = async () => {
     setLoading(true);
     try {
+      const warnings: string[] = [];
+      const defaultNombre = 'Usuario';
+      const defaultInteres = INTERESES_OPTIONS[0]?.id || 'musica';
+
+      const nombreFinal = nombre.trim() ? nombre.trim() : defaultNombre;
+      if (nombreFinal === defaultNombre) {
+        warnings.push('Nombre: se uso "Usuario" por defecto.');
+      }
+
+      const interesesFinal =
+        intereses.length > 0 ? intereses : [defaultInteres];
+      if (interesesFinal.length === 1 && intereses.length === 0) {
+        warnings.push('Intereses: se selecciono un interes por defecto.');
+      }
+
+      let presupuestoMinValue = presupuestoMin ?? DEFAULT_BUDGET_MIN;
+      let presupuestoMaxValue = presupuestoMax ?? DEFAULT_BUDGET_MAX;
+      if (presupuestoMinValue === DEFAULT_BUDGET_MIN && presupuestoMin == null) {
+        warnings.push(
+          `Presupuesto minimo: se uso ${DEFAULT_BUDGET_MIN} por defecto.`
+        );
+      }
+      if (presupuestoMaxValue === DEFAULT_BUDGET_MAX && presupuestoMax == null) {
+        warnings.push(
+          `Presupuesto maximo: se uso ${DEFAULT_BUDGET_MAX} por defecto.`
+        );
+      }
+      if (presupuestoMinValue > presupuestoMaxValue) {
+        warnings.push('Presupuesto: el minimo era mayor al maximo, se ajusto.');
+        const temp = presupuestoMinValue;
+        presupuestoMinValue = presupuestoMaxValue;
+        presupuestoMaxValue = temp;
+      }
+
+      let numCompanerosValue =
+        numCompaneros && numCompaneros.trim()
+          ? parseInt(numCompaneros, 10)
+          : DEFAULT_ROOMMATES;
+      if (!numCompaneros || Number.isNaN(numCompanerosValue)) {
+        numCompanerosValue = DEFAULT_ROOMMATES;
+        warnings.push(
+          `Numero de companeros: se uso ${DEFAULT_ROOMMATES} por defecto.`
+        );
+      }
+
       const housingSituation: HousingSituation =
         situacionVivienda === 'busco_piso' ? 'seeking' : 'offering';
 
@@ -283,7 +346,7 @@ export const EditProfileScreen: React.FC = () => {
           : 'Mixto';
 
       const profileData: Partial<ProfileCreateRequest> = {
-        display_name: nombre,
+        display_name: nombreFinal,
         bio: biografia || undefined,
         occupation: occupationValue || undefined,
         university:
@@ -294,7 +357,7 @@ export const EditProfileScreen: React.FC = () => {
           occupationType === 'universidad' || occupationType === 'mixto'
             ? campoEstudio || undefined
             : undefined,
-        interests: intereses,
+        interests: interesesFinal,
         lifestyle_preferences: {
           schedule: scheduleId ? lifestyleLabelById.get(scheduleId) : undefined,
           cleaning: cleaningId ? lifestyleLabelById.get(cleaningId) : undefined,
@@ -302,19 +365,14 @@ export const EditProfileScreen: React.FC = () => {
         },
         housing_situation: housingSituation,
         preferred_zones: zonas,
-        budget_min:
-          presupuestoMin && presupuestoMin.trim()
-            ? parseInt(presupuestoMin, 10)
-            : undefined,
-        budget_max:
-          presupuestoMax && presupuestoMax.trim()
-            ? parseInt(presupuestoMax, 10)
-            : undefined,
-        num_roommates_wanted:
-          numCompaneros && numCompaneros.trim()
-            ? parseInt(numCompaneros, 10)
-            : undefined,
+        budget_min: presupuestoMinValue,
+        budget_max: presupuestoMaxValue,
+        num_roommates_wanted: numCompanerosValue,
       };
+
+      if (warnings.length > 0) {
+        Alert.alert('Aviso', warnings.join('\n'));
+      }
 
       await profileService.updateProfile(profileData);
 
@@ -570,20 +628,21 @@ export const EditProfileScreen: React.FC = () => {
             onChangeText={setNumCompaneros}
             keyboardType="numeric"
           />
-          <View style={styles.presupuestoRow}>
-            <Input
-              label="Presupuesto minimo"
-              value={presupuestoMin}
-              onChangeText={setPresupuestoMin}
-              keyboardType="numeric"
-              placeholder="200 EUR"
-            />
-            <Input
-              label="Presupuesto maximo"
-              value={presupuestoMax}
-              onChangeText={setPresupuestoMax}
-              keyboardType="numeric"
-              placeholder="300 EUR"
+          <View style={styles.budgetContainer}>
+            <Text style={styles.label}>Presupuesto mensual</Text>
+            <View style={styles.budgetValues}>
+              <Text style={styles.budgetValue}>
+                Min: {presupuestoMin} EUR
+              </Text>
+              <Text style={styles.budgetValue}>
+                Max: {presupuestoMax} EUR
+              </Text>
+            </View>
+            <BudgetRange
+              minValue={presupuestoMin}
+              maxValue={presupuestoMax}
+              onChangeMin={setPresupuestoMin}
+              onChangeMax={setPresupuestoMax}
             />
           </View>
           <ChipGroup
@@ -723,9 +782,19 @@ const styles = StyleSheet.create({
   switchButtonTextActive: {
     color: '#FFFFFF',
   },
-  presupuestoRow: {
+  budgetContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  budgetValues: {
     flexDirection: 'row',
-    gap: 16,
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  budgetValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
   },
   situacionContainer: {
     marginBottom: 16,
@@ -761,4 +830,144 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
+  sliderTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E5E7EB',
+  },
+  sliderTrackActive: {
+    position: 'absolute',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#7C3AED',
+  },
+  sliderThumb: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#7C3AED',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    top: -7,
+  },
+  sliderTicks: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  sliderTick: {
+    width: 2,
+    height: 6,
+    backgroundColor: '#D1D5DB',
+  },
+  sliderLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  sliderLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
 });
+
+const BudgetRange: React.FC<{
+  minValue: number;
+  maxValue: number;
+  onChangeMin: (value: number) => void;
+  onChangeMax: (value: number) => void;
+}> = ({ minValue, maxValue, onChangeMin, onChangeMax }) => {
+  const [trackWidth, setTrackWidth] = useState(0);
+  const minStartRef = React.useRef(0);
+  const maxStartRef = React.useRef(0);
+  const minValueRef = React.useRef(minValue);
+  const maxValueRef = React.useRef(maxValue);
+
+  useEffect(() => {
+    minValueRef.current = minValue;
+    maxValueRef.current = maxValue;
+  }, [minValue, maxValue]);
+
+  const valueToX = (value: number) => {
+    if (!trackWidth) return 0;
+    return ((value - BUDGET_MIN) / (BUDGET_MAX - BUDGET_MIN)) * trackWidth;
+  };
+
+  const xToValue = (x: number) => {
+    const raw = BUDGET_MIN + (x / trackWidth) * (BUDGET_MAX - BUDGET_MIN);
+    return clamp(snapToStep(raw), BUDGET_MIN, BUDGET_MAX);
+  };
+
+  const minPanResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        minStartRef.current = valueToX(minValueRef.current);
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (!trackWidth) return;
+        const nextX = clamp(
+          minStartRef.current + gesture.dx,
+          0,
+          valueToX(maxValueRef.current)
+        );
+        onChangeMin(xToValue(nextX));
+      },
+    })
+  ).current;
+
+  const maxPanResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        maxStartRef.current = valueToX(maxValueRef.current);
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (!trackWidth) return;
+        const nextX = clamp(
+          maxStartRef.current + gesture.dx,
+          valueToX(minValueRef.current),
+          trackWidth
+        );
+        onChangeMax(xToValue(nextX));
+      },
+    })
+  ).current;
+
+  const minX = valueToX(minValue);
+  const maxX = valueToX(maxValue);
+  const ticks = Math.floor((BUDGET_MAX - BUDGET_MIN) / BUDGET_STEP);
+
+  return (
+    <View
+      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+    >
+      <View style={styles.sliderTrack} />
+      <View
+        style={[
+          styles.sliderTrackActive,
+          { left: minX, width: Math.max(0, maxX - minX) },
+        ]}
+      />
+      <View
+        style={[styles.sliderThumb, { left: minX - 10 }]}
+        {...minPanResponder.panHandlers}
+      />
+      <View
+        style={[styles.sliderThumb, { left: maxX - 10 }]}
+        {...maxPanResponder.panHandlers}
+      />
+      <View style={styles.sliderTicks}>
+        {Array.from({ length: ticks + 1 }).map((_, index) => (
+          <View key={`tick-${index}`} style={styles.sliderTick} />
+        ))}
+      </View>
+      <View style={styles.sliderLabels}>
+        <Text style={styles.sliderLabel}>0</Text>
+        <Text style={styles.sliderLabel}>600</Text>
+        <Text style={styles.sliderLabel}>1200+</Text>
+      </View>
+    </View>
+  );
+};

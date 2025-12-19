@@ -162,28 +162,23 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       )  
   
       // Solo incluir recomendaciones con score mínimo  
-      if (compatibilityScore >= 0.2) {  
-        const matchReasons = generateProfileMatchReasons(  
-          seekerProfile,     
-          profile  
-        )  
+      const matchReasons = generateProfileMatchReasons(  
+        seekerProfile,     
+        profile  
+      )  
   
-        recommendations.push({  
-          profile: profile,  
-          compatibility_score: compatibilityScore,  
-          match_reasons: matchReasons  
-        })  
-      }  
+      recommendations.push({  
+        profile: profile,  
+        compatibility_score: compatibilityScore,  
+        match_reasons: matchReasons  
+      })  
     }  
   
     // Ordenar por score de compatibilidad (descendente)  
     recommendations.sort((a, b) => b.compatibility_score - a.compatibility_score)  
   
-    // Limitar a 20 recomendaciones para swipe interface  
-    const limitedRecommendations = recommendations.slice(0, 20)  
-  
     const response: RecommendationResponse = {  
-      recommendations: limitedRecommendations  
+      recommendations  
     }  
   
     return new Response(  

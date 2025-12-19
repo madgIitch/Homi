@@ -15,6 +15,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
+import { API_CONFIG } from '../config/api';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { AuthContext } from '../context/AuthContext';
@@ -164,18 +165,22 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   );
 
   const carouselWidth = Dimensions.get('window').width - 40;
+  const resolvedAvatarUrl =
+    profile.avatar_url && !profile.avatar_url.startsWith('http')
+      ? `${API_CONFIG.SUPABASE_URL}/storage/v1/object/public/avatars/${profile.avatar_url}`
+      : profile.avatar_url;
   const carouselPhotos =
     profilePhotos.length > 0
       ? profilePhotos
-      : profile.avatar_url
+      : resolvedAvatarUrl
       ? [
           {
             id: 'avatar',
             profile_id: profile.id,
-            path: profile.avatar_url,
+            path: resolvedAvatarUrl,
             position: 1,
             is_primary: true,
-            signedUrl: profile.avatar_url,
+            signedUrl: resolvedAvatarUrl,
             created_at: profile.updated_at,
           },
         ]
