@@ -283,6 +283,11 @@ serve(
         });
       }
 
+      await supabaseAdmin
+        .from('rooms')
+        .update({ is_available: false })
+        .eq('id', roomId);
+
       return new Response(JSON.stringify({ data }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -362,6 +367,13 @@ serve(
           .from('matches')
           .update({ status: status === 'accepted' ? 'room_assigned' : 'room_declined' })
           .eq('id', existing.match_id);
+      }
+
+      if (status === 'accepted') {
+        await supabaseAdmin
+          .from('rooms')
+          .update({ is_available: false })
+          .eq('id', existing.room_id);
       }
 
       return new Response(JSON.stringify({ data }), {
