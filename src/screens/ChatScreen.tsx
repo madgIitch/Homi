@@ -15,6 +15,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
+import { profilePhotoService } from '../services/profilePhotoService';
 import type { Message } from '../types/chat';
 import type { Profile } from '../types/profile';
 
@@ -32,6 +33,28 @@ export const ChatScreen: React.FC = () => {
   const { chatId, name, avatarUrl, profile } = route.params as RouteParams;
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [headerAvatarUrl, setHeaderAvatarUrl] = useState(avatarUrl);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadHeaderAvatar = async () => {
+      if (!profile?.id) return;
+      try {
+        const photos = await profilePhotoService.getPhotosForProfile(profile.id);
+        const primary = photos.find((photo) => photo.is_primary) ?? photos[0];
+        if (primary?.signedUrl && isMounted) {
+          setHeaderAvatarUrl(primary.signedUrl);
+        }
+      } catch (error) {
+        console.error('Error cargando avatar del chat:', error);
+      }
+    };
+
+    void loadHeaderAvatar();
+    return () => {
+      isMounted = false;
+    };
+  }, [profile?.id]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -107,7 +130,7 @@ export const ChatScreen: React.FC = () => {
           }}
           disabled={!profile}
         >
-          <Image source={{ uri: avatarUrl }} style={styles.headerAvatar} />
+          <Image source={{ uri: headerAvatarUrl }} style={styles.headerAvatar} />
           <Text style={[styles.headerName, { color: theme.colors.text }]}>
             {name}
           </Text>
