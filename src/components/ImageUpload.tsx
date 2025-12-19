@@ -1,5 +1,5 @@
 // src/components/ImageUpload.tsx  
-import React, { useState } from 'react';  
+import React, { useState, useEffect } from 'react';  
 import { View, Button, Image, ActivityIndicator, Alert, StyleSheet } from 'react-native';  
 import { launchImageLibrary } from 'react-native-image-picker';  
 import AsyncStorage from '@react-native-async-storage/async-storage';  
@@ -17,6 +17,12 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
 }) => {  
   const [imageUri, setImageUri] = useState<string | null>(currentImage || null);  
   const [uploading, setUploading] = useState(false);  
+  
+  useEffect(() => {  
+    console.log('[ImageUpload] currentImage prop changed:', currentImage);
+    setImageUri(currentImage || null);  
+    console.log('[ImageUpload] imageUri state set to:', currentImage || null);
+  }, [currentImage]);  
   
   const pickImage = async () => {  
     const result = await launchImageLibrary({  
@@ -112,12 +118,24 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
   
   return (  
     <View style={styles.container}>  
-      {imageUri && (  
-        <Image  
-          source={{ uri: imageUri }}  
-          style={styles.avatar}  
-        />  
-      )}  
+      {imageUri && (
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.avatar}
+          onLoadStart={() => {
+            console.log('[ImageUpload] Image load start:', imageUri);
+          }}
+          onLoad={() => {
+            console.log('[ImageUpload] Image loaded:', imageUri);
+          }}
+          onError={(event) => {
+            console.log('[ImageUpload] Image load error:', {
+              uri: imageUri,
+              error: event.nativeEvent?.error,
+            });
+          }}
+        />
+      )}
   
       {uploading ? (  
         <ActivityIndicator size="small" color="#6B46C1" />  

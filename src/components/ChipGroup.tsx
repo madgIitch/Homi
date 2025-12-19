@@ -49,9 +49,7 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
               style={[  
                 styles.chip,  
                 {  
-                  backgroundColor: isSelected  
-                    ? theme.colors.chipSelected  
-                    : theme.colors.chipUnselected,  
+                  backgroundColor: isSelected ? '#7C3AED' : '#E5E7EB',  
                   borderRadius: theme.borderRadius.full,  
                   paddingHorizontal: theme.spacing.md,  
                   paddingVertical: theme.spacing.sm,  
@@ -62,11 +60,7 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
               <Text  
                 style={[  
                   theme.typography.caption,  
-                  {  
-                    color: isSelected  
-                      ? theme.colors.background  
-                      : theme.colors.text,  
-                  },  
+                  { color: isSelected ? '#FFFFFF' : '#374151' },  
                 ]}  
               >  
                 {option.label}  
