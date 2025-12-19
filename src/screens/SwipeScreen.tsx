@@ -14,10 +14,17 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { borderRadius, colors, shadows, spacing, typography } from '../theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  BUDGET_MAX,
+  BUDGET_MIN,
+  lifestyleLabelById,
+} from '../constants/swipeFilters';
+import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { API_CONFIG } from '../config/api';
 import type { Profile } from '../types/profile';
+import type { SwipeFilters } from '../types/swipeFilters';
 
 type SwipeProfile = {
   id: string;
@@ -30,6 +37,9 @@ type SwipeProfile = {
   budgetMax?: number;
   bio: string;
   lifestyle: string[];
+  interests: string[];
+  preferredZones: string[];
+  roommates: number | null;
   profile: Profile;
 };
 
@@ -41,8 +51,10 @@ const FALLBACK_PHOTO =
 
 export const SwipeScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const { filters, resetFilters } = useSwipeFilters();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipesUsed, setSwipesUsed] = useState(0);
+  const [allProfiles, setAllProfiles] = useState<SwipeProfile[]>([]);
   const [profiles, setProfiles] = useState<SwipeProfile[]>([]);
   const [loadingProfiles, setLoadingProfiles] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -77,6 +89,8 @@ export const SwipeScreen: React.FC = () => {
 
   const currentProfile = profiles[currentIndex];
   const canSwipe = swipesUsed < SWIPE_LIMIT;
+  const activeFilterCount = getActiveFilterCount(filters);
+  const hasActiveFilters = activeFilterCount > 0;
 
   const getTodayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -137,11 +151,11 @@ export const SwipeScreen: React.FC = () => {
   ).current;
 
   const formatBudget = (profile: SwipeProfile) => {
-    if (profile.budgetMin && profile.budgetMax) {
+    if (profile.budgetMin != null && profile.budgetMax != null) {
       return `${profile.budgetMin}-${profile.budgetMax} EUR`;
     }
-    if (profile.budgetMin) return `Desde ${profile.budgetMin} EUR`;
-    if (profile.budgetMax) return `Hasta ${profile.budgetMax} EUR`;
+    if (profile.budgetMin != null) return `Desde ${profile.budgetMin} EUR`;
+    if (profile.budgetMax != null) return `Hasta ${profile.budgetMax} EUR`;
     return 'Presupuesto flexible';
   };
 
@@ -172,6 +186,9 @@ export const SwipeScreen: React.FC = () => {
       budgetMin: profile.budget_min ?? undefined,
       budgetMax: profile.budget_max ?? undefined,
       bio: profile.bio ?? 'Sin descripcion por ahora.',
+      interests: profile.interests ?? [],
+      preferredZones: profile.preferred_zones ?? [],
+      roommates: profile.num_roommates_wanted ?? null,
       lifestyle: profile.lifestyle_preferences
         ? Object.values(profile.lifestyle_preferences).filter(
             (item): item is string => Boolean(item)
@@ -232,11 +249,10 @@ export const SwipeScreen: React.FC = () => {
           mapProfileToSwipe(rec.profile)
         );
         console.log('[SwipeScreen] mapped profiles:', mapped.length);
-        setProfiles(mapped);
-        setCurrentIndex(0);
+        setAllProfiles(mapped);
       } catch (error) {
         console.error('Error cargando recomendaciones:', error);
-        setProfiles([]);
+        setAllProfiles([]);
         setProfileError('No se pudieron cargar perfiles reales.');
       } finally {
         setLoadingProfiles(false);
@@ -245,6 +261,13 @@ export const SwipeScreen: React.FC = () => {
 
     void loadProfiles();
   }, []);
+
+  useEffect(() => {
+    const next = applyFilters(allProfiles, filters);
+    setProfiles(next);
+    setCurrentIndex(0);
+    position.setValue({ x: 0, y: 0 });
+  }, [allProfiles, filters, position]);
 
   useEffect(() => {
     const loadPhotosForProfile = async () => {
@@ -424,9 +447,26 @@ export const SwipeScreen: React.FC = () => {
         <View>
           <Text style={styles.title}>Explorar</Text>
         </View>
-        <View style={styles.counterPill}>
-          <Ionicons name="flash" size={16} color={colors.primary} />
-          <Text style={styles.counterText}>{SWIPE_LIMIT - swipesUsed} libres</Text>
+        <View style={styles.headerActions}>
+          <View style={styles.counterPill}>
+            <Ionicons name="flash" size={16} color={colors.primary} />
+            <Text style={styles.counterText}>
+              {SWIPE_LIMIT - swipesUsed} libres
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={() => navigation.navigate('Filters')}
+          >
+            <Ionicons name="options-outline" size={18} color={colors.text} />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>
+                  {activeFilterCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -444,10 +484,24 @@ export const SwipeScreen: React.FC = () => {
         ) : (
           <View style={styles.emptyState}>
             <Ionicons name="heart-dislike" size={42} color={colors.textTertiary} />
-            <Text style={styles.emptyTitle}>No hay mas perfiles</Text>
-            <Text style={styles.emptySubtitle}>
-              Vuelve manana para mas swipes.
+            <Text style={styles.emptyTitle}>
+              {hasActiveFilters
+                ? 'Sin resultados con estos filtros'
+                : 'No hay mas perfiles'}
             </Text>
+            <Text style={styles.emptySubtitle}>
+              {hasActiveFilters
+                ? 'Prueba a ajustar los filtros para ver mas perfiles.'
+                : 'Vuelve manana para mas swipes.'}
+            </Text>
+            {hasActiveFilters && (
+              <TouchableOpacity
+                style={styles.clearFiltersButton}
+                onPress={() => void resetFilters()}
+              >
+                <Text style={styles.clearFiltersText}>Limpiar filtros</Text>
+              </TouchableOpacity>
+            )}
             {profileError && (
               <Text style={styles.emptySubtitle}>{profileError}</Text>
             )}
@@ -493,6 +547,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   title: {
     ...typography.h3,
     color: colors.text,
@@ -514,6 +573,31 @@ const styles = StyleSheet.create({
   counterText: {
     ...typography.smallMedium,
     color: colors.textSecondary,
+  },
+  filterButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceLight,
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  filterBadgeText: {
+    ...typography.smallMedium,
+    color: '#FFFFFF',
+    fontSize: 10,
   },
   stack: {
     flex: 1,
@@ -668,6 +752,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
+  clearFiltersButton: {
+    marginTop: spacing.md,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceLight,
+  },
+  clearFiltersText: {
+    ...typography.smallMedium,
+    color: colors.primaryDark,
+  },
   limitOverlay: {
     position: 'absolute',
     bottom: 20,
@@ -697,3 +792,73 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
   },
 });
+
+const getActiveFilterCount = (filters: SwipeFilters) => {
+  let count = 0;
+  if (filters.housingSituation !== 'any') count += 1;
+  if (filters.budgetMin > BUDGET_MIN || filters.budgetMax < BUDGET_MAX)
+    count += 1;
+  if (filters.zones.length > 0) count += 1;
+  if (filters.roommates != null) count += 1;
+  if (filters.lifestyle.length > 0) count += 1;
+  if (filters.interests.length > 0) count += 1;
+  return count;
+};
+
+const applyFilters = (items: SwipeProfile[], filters: SwipeFilters) => {
+  const lifestyleLabels = filters.lifestyle
+    .map((id) => lifestyleLabelById.get(id) ?? id)
+    .filter(Boolean);
+
+  const hasBudgetFilter =
+    filters.budgetMin > BUDGET_MIN || filters.budgetMax < BUDGET_MAX;
+
+  return items.filter((profile) => {
+    if (
+      filters.housingSituation !== 'any' &&
+      profile.housing !== filters.housingSituation
+    ) {
+      return false;
+    }
+
+    if (filters.zones.length > 0) {
+      const matchesZone = profile.preferredZones.some((zone) =>
+        filters.zones.includes(zone)
+      );
+      if (!matchesZone) return false;
+    }
+
+    if (filters.roommates != null) {
+      if (profile.roommates == null || profile.roommates !== filters.roommates) {
+        return false;
+      }
+    }
+
+    if (filters.interests.length > 0) {
+      const matchesInterest = profile.interests.some((interest) =>
+        filters.interests.includes(interest)
+      );
+      if (!matchesInterest) return false;
+    }
+
+    if (lifestyleLabels.length > 0) {
+      const matchesLifestyle = profile.lifestyle.some((chip) =>
+        lifestyleLabels.includes(chip)
+      );
+      if (!matchesLifestyle) return false;
+    }
+
+    if (hasBudgetFilter) {
+      if (profile.budgetMin == null && profile.budgetMax == null) {
+        return false;
+      }
+      const profileMin = profile.budgetMin ?? BUDGET_MIN;
+      const profileMax = profile.budgetMax ?? BUDGET_MAX;
+      if (profileMax < filters.budgetMin || profileMin > filters.budgetMax) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+};

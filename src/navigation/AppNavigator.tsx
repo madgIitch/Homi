@@ -9,6 +9,7 @@ import { RegisterScreen } from '../screens/RegisterScreen';
 import { MainNavigator } from './MainNavigator';    
 import { ProfileDetailScreen } from '../screens/ProfileDetailScreen';    
 import { EditProfileScreen } from '../screens/EditProfileScreen';    
+import { FiltersScreen } from '../screens/FiltersScreen';
 import { useTheme } from '../theme/ThemeContext';    
     
 const Stack = createStackNavigator();    
@@ -47,6 +48,7 @@ export const AppNavigator: React.FC = () => {
             <Stack.Screen name="Main" component={MainNavigator} />    
             <Stack.Screen name="ProfileDetail" component={ProfileDetailScreen} />    
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />    
+            <Stack.Screen name="Filters" component={FiltersScreen} />
           </>    
         ) : (    
           <>    
