@@ -162,10 +162,14 @@ export const RoomManagementScreen: React.FC = () => {
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Gestion de habitaciones
         </Text>
-        <TouchableOpacity onPress={handleCreateRoom} style={styles.headerAction}>
-          <Ionicons name="add" size={20} color={theme.colors.primary} />
-          <Text style={styles.headerActionText}>Nueva</Text>
-        </TouchableOpacity>
+        {flats.length > 0 ? (
+          <TouchableOpacity onPress={handleCreateRoom} style={styles.headerAction}>
+            <Ionicons name="add" size={20} color={theme.colors.primary} />
+            <Text style={styles.headerActionText}>Nueva</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       {loading ? (
@@ -178,14 +182,25 @@ export const RoomManagementScreen: React.FC = () => {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.flatSelector}>
-            <Text style={styles.flatSelectorLabel}>Pisos</Text>
-            {flats.length === 0 ? (
-              <Text style={styles.detailEmpty}>
-                Aun no tienes pisos creados.
+          {flats.length === 0 ? (
+            <View style={styles.createFlatCard}>
+              <Ionicons name="home-outline" size={42} color="#9CA3AF" />
+              <Text style={styles.emptyTitle}>Aun no tienes un piso creado</Text>
+              <Text style={styles.emptySubtitle}>
+                Crea tu primer piso para empezar a publicar habitaciones.
               </Text>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity
+                style={styles.createFlatButton}
+                onPress={() => navigation.navigate('CreateFlat')}
+              >
+                <Text style={styles.createFlatButtonText}>Crear piso</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <View style={styles.flatSelector}>
+                <Text style={styles.flatSelectorLabel}>Pisos</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.flatChips}>
                   {flats.map((flat) => {
                     const isActive = flat.id === selectedFlatId;
@@ -209,177 +224,185 @@ export const RoomManagementScreen: React.FC = () => {
                       </TouchableOpacity>
                     );
                   })}
+                  <TouchableOpacity
+                    style={[styles.flatChip, styles.flatChipAdd]}
+                    onPress={() => navigation.navigate('CreateFlat')}
+                  >
+                    <Ionicons name="add" size={14} color="#7C3AED" />
+                    <Text style={styles.flatChipAddText}>Nuevo piso</Text>
+                  </TouchableOpacity>
                 </View>
               </ScrollView>
-            )}
-          </View>
+            </View>
 
-          <FormSection title="Reglas" iconName="clipboard-outline">
-            {selectedFlat?.rules ? (
-              <Text style={styles.detailText}>{selectedFlat.rules}</Text>
-            ) : (
-              <Text style={styles.detailEmpty}>
-                Aun no has definido reglas del piso.
-              </Text>
-            )}
-            <TouchableOpacity
-              style={styles.inlineAction}
-              onPress={() =>
-                selectedFlatId
-                  ? navigation.navigate('RulesManagement', {
-                      flatId: selectedFlatId,
-                    })
-                  : Alert.alert('Aviso', 'Selecciona un piso primero.')
-              }
-            >
-              <Text style={styles.inlineActionText}>
-                {selectedFlat?.rules ? 'Editar reglas' : 'Agregar reglas'}
-              </Text>
-            </TouchableOpacity>
-          </FormSection>
+              <FormSection title="Reglas" iconName="clipboard-outline">
+                {selectedFlat?.rules ? (
+                  <Text style={styles.detailText}>{selectedFlat.rules}</Text>
+                ) : (
+                  <Text style={styles.detailEmpty}>
+                    Aun no has definido reglas del piso.
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={styles.inlineAction}
+                  onPress={() =>
+                    selectedFlatId
+                      ? navigation.navigate('RulesManagement', {
+                          flatId: selectedFlatId,
+                        })
+                      : Alert.alert('Aviso', 'Selecciona un piso primero.')
+                  }
+                >
+                  <Text style={styles.inlineActionText}>
+                    {selectedFlat?.rules ? 'Editar reglas' : 'Agregar reglas'}
+                  </Text>
+                </TouchableOpacity>
+              </FormSection>
 
-          <FormSection title="Servicios" iconName="flash-outline">
-            {selectedFlat?.services && selectedFlat.services.length > 0 ? (
-              <View style={styles.servicesList}>
-                {selectedFlat.services.map((service, index) => (
-                  <View key={`${service.name}-${index}`} style={styles.serviceRow}>
-                    <Text style={styles.detailText}>{service.name}</Text>
-                    {service.price != null && service.price !== 0 ? (
-                      <Text style={styles.detailMeta}>{service.price} EUR</Text>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.detailEmpty}>
-                Aun no has definido servicios incluidos.
-              </Text>
-            )}
-            <TouchableOpacity
-              style={styles.inlineAction}
-              onPress={() =>
-                selectedFlatId
-                  ? navigation.navigate('ServicesManagement', {
-                      flatId: selectedFlatId,
-                    })
-                  : Alert.alert('Aviso', 'Selecciona un piso primero.')
-              }
-            >
-              <Text style={styles.inlineActionText}>
-                {selectedFlat?.services?.length
-                  ? 'Editar servicios'
-                  : 'Agregar servicios'}
-              </Text>
-            </TouchableOpacity>
-          </FormSection>
-
-          <FormSection title="Habitaciones" iconName="bed-outline">
-            <TouchableOpacity
-              style={styles.inlineAction}
-              onPress={handleCreateRoom}
-            >
-              <Text style={styles.inlineActionText}>Agregar habitacion</Text>
-            </TouchableOpacity>
-
-            {filteredRooms.length === 0 ? (
-              <View style={styles.emptyStateInline}>
-                <Ionicons name="bed-outline" size={42} color="#9CA3AF" />
-                <Text style={styles.emptyTitle}>
-                  No tienes habitaciones publicadas
-                </Text>
-                <Text style={styles.emptySubtitle}>
-                  Crea una habitacion para empezar a recibir interesados.
-                </Text>
-              </View>
-            ) : null}
-
-            {filteredRooms.map((room) => {
-              const status = getRoomStatus(room);
-              const extras = roomExtras[room.id];
-              const isCommonArea = extras?.category === 'area_comun';
-              const photo = extras?.photos?.[0];
-              const typeLabel =
-                extras?.category === 'area_comun'
-                  ? extras?.common_area_type === 'otros'
-                    ? extras?.common_area_custom
-                    : commonAreaLabel.get(extras?.common_area_type || '')
-                  : roomTypeLabel.get(extras?.room_type || '');
-              const typeText = typeLabel
-                ? isCommonArea
-                  ? `Area comun: ${typeLabel}`
-                  : `Tipo: ${typeLabel}`
-                : null;
-              const resolvedPhoto = photo?.signedUrl || null;
-
-              return (
-                <View key={room.id} style={styles.roomCard}>
-                  <View style={styles.roomCardHeader}>
-                    {resolvedPhoto ? (
-                      <Image source={{ uri: resolvedPhoto }} style={styles.roomPhoto} />
-                    ) : (
-                      <View style={styles.roomPhotoPlaceholder}>
-                        <Ionicons name="image-outline" size={22} color="#9CA3AF" />
+              <FormSection title="Servicios" iconName="flash-outline">
+                {selectedFlat?.services && selectedFlat.services.length > 0 ? (
+                  <View style={styles.servicesList}>
+                    {selectedFlat.services.map((service, index) => (
+                      <View key={`${service.name}-${index}`} style={styles.serviceRow}>
+                        <Text style={styles.detailText}>{service.name}</Text>
+                        {service.price != null && service.price !== 0 ? (
+                          <Text style={styles.detailMeta}>{service.price} EUR</Text>
+                        ) : null}
                       </View>
-                    )}
-                    <View style={styles.roomInfo}>
-                      <Text style={styles.roomTitle}>{room.title}</Text>
-                      {!isCommonArea && room.price_per_month ? (
-                        <Text style={styles.roomMeta}>
-                          {room.price_per_month} EUR/mes
-                        </Text>
-                      ) : null}
-                      <Text style={styles.roomMeta}>
-                        Disponible desde:{' '}
-                        {room.available_from ? room.available_from : 'Sin fecha'}
-                      </Text>
-                      {typeText ? (
-                        <Text style={styles.roomMeta}>{typeText}</Text>
-                      ) : null}
-                    </View>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        status.key === 'available' && styles.statusAvailable,
-                        status.key === 'paused' && styles.statusPaused,
-                      ]}
-                    >
-                      <Text style={styles.statusText}>{status.label}</Text>
-                    </View>
+                    ))}
                   </View>
+                ) : (
+                  <Text style={styles.detailEmpty}>
+                    Aun no has definido servicios incluidos.
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={styles.inlineAction}
+                  onPress={() =>
+                    selectedFlatId
+                      ? navigation.navigate('ServicesManagement', {
+                          flatId: selectedFlatId,
+                        })
+                      : Alert.alert('Aviso', 'Selecciona un piso primero.')
+                  }
+                >
+                  <Text style={styles.inlineActionText}>
+                    {selectedFlat?.services?.length
+                      ? 'Editar servicios'
+                      : 'Agregar servicios'}
+                  </Text>
+                </TouchableOpacity>
+              </FormSection>
 
-                  <View style={styles.actionsRow}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleEditRoom(room)}
-                    >
-                      <Ionicons name="create-outline" size={16} color="#111827" />
-                      <Text style={styles.actionText}>Editar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleToggleAvailability(room)}
-                    >
-                      <Ionicons
-                        name={room.is_available ? 'pause' : 'play'}
-                        size={16}
-                        color="#111827"
-                      />
-                      <Text style={styles.actionText}>
-                        {room.is_available ? 'Pausar' : 'Activar'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleViewInterests(room)}
-                    >
-                      <Ionicons name="heart-outline" size={16} color="#111827" />
-                      <Text style={styles.actionText}>Interesados</Text>
-                    </TouchableOpacity>
+              <FormSection title="Habitaciones" iconName="bed-outline">
+                <TouchableOpacity
+                  style={styles.inlineAction}
+                  onPress={handleCreateRoom}
+                >
+                  <Text style={styles.inlineActionText}>Agregar habitacion</Text>
+                </TouchableOpacity>
+
+                {filteredRooms.length === 0 ? (
+                  <View style={styles.emptyStateInline}>
+                    <Ionicons name="bed-outline" size={42} color="#9CA3AF" />
+                    <Text style={styles.emptyTitle}>
+                      No tienes habitaciones publicadas
+                    </Text>
+                    <Text style={styles.emptySubtitle}>
+                      Crea una habitacion para empezar a recibir interesados.
+                    </Text>
                   </View>
-                </View>
-              );
-            })}
-          </FormSection>
+                ) : null}
+
+                {filteredRooms.map((room) => {
+                  const status = getRoomStatus(room);
+                  const extras = roomExtras[room.id];
+                  const isCommonArea = extras?.category === 'area_comun';
+                  const photo = extras?.photos?.[0];
+                  const typeLabel =
+                    extras?.category === 'area_comun'
+                      ? extras?.common_area_type === 'otros'
+                        ? extras?.common_area_custom
+                        : commonAreaLabel.get(extras?.common_area_type || '')
+                      : roomTypeLabel.get(extras?.room_type || '');
+                  const typeText = typeLabel
+                    ? isCommonArea
+                      ? `Area comun: ${typeLabel}`
+                      : `Tipo: ${typeLabel}`
+                    : null;
+                  const resolvedPhoto = photo?.signedUrl || null;
+
+                  return (
+                    <View key={room.id} style={styles.roomCard}>
+                      <View style={styles.roomCardHeader}>
+                        {resolvedPhoto ? (
+                          <Image source={{ uri: resolvedPhoto }} style={styles.roomPhoto} />
+                        ) : (
+                          <View style={styles.roomPhotoPlaceholder}>
+                            <Ionicons name="image-outline" size={22} color="#9CA3AF" />
+                          </View>
+                        )}
+                        <View style={styles.roomInfo}>
+                          <Text style={styles.roomTitle}>{room.title}</Text>
+                          {!isCommonArea && room.price_per_month ? (
+                            <Text style={styles.roomMeta}>
+                              {room.price_per_month} EUR/mes
+                            </Text>
+                          ) : null}
+                          <Text style={styles.roomMeta}>
+                            Disponible desde:{' '}
+                            {room.available_from ? room.available_from : 'Sin fecha'}
+                          </Text>
+                          {typeText ? (
+                            <Text style={styles.roomMeta}>{typeText}</Text>
+                          ) : null}
+                        </View>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            status.key === 'available' && styles.statusAvailable,
+                            status.key === 'paused' && styles.statusPaused,
+                          ]}
+                        >
+                          <Text style={styles.statusText}>{status.label}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.actionsRow}>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={() => handleEditRoom(room)}
+                        >
+                          <Ionicons name="create-outline" size={16} color="#111827" />
+                          <Text style={styles.actionText}>Editar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={() => handleToggleAvailability(room)}
+                        >
+                          <Ionicons
+                            name={room.is_available ? 'pause' : 'play'}
+                            size={16}
+                            color="#111827"
+                          />
+                          <Text style={styles.actionText}>
+                            {room.is_available ? 'Pausar' : 'Activar'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={() => handleViewInterests(room)}
+                        >
+                          <Ionicons name="heart-outline" size={16} color="#111827" />
+                          <Text style={styles.actionText}>Interesados</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </FormSection>
+            </>
+          )}
         </ScrollView>
       )}
     </View>
@@ -413,6 +436,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#7C3AED',
+  },
+  headerSpacer: {
+    width: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -458,6 +484,40 @@ const styles = StyleSheet.create({
   },
   flatChipTextActive: {
     color: '#7C3AED',
+  },
+  flatChipAdd: {
+    borderStyle: 'dashed',
+    borderColor: '#C4B5FD',
+    backgroundColor: '#F5F3FF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  flatChipAddText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7C3AED',
+  },
+  createFlatCard: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 40,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  createFlatButton: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
+  },
+  createFlatButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   emptyStateInline: {
     alignItems: 'center',

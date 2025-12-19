@@ -1,0 +1,132 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { useTheme } from '../theme/ThemeContext';
+import { Input } from '../components/Input';
+import { TextArea } from '../components/TextArea';
+import { Button } from '../components/Button';
+import { roomService } from '../services/roomService';
+
+export const CreateFlatScreen: React.FC = () => {
+  const theme = useTheme();
+  const navigation = useNavigation<StackNavigationProp<any>>();
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [district, setDistrict] = useState('');
+  const [totalRooms, setTotalRooms] = useState('');
+  const [commonAreas, setCommonAreas] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    const addressValue = address.trim();
+    const cityValue = city.trim();
+    if (!addressValue || !cityValue) {
+      Alert.alert('Error', 'Direccion y ciudad son obligatorias');
+      return;
+    }
+
+    const totalRoomsValue = totalRooms.trim()
+      ? parseInt(totalRooms.trim(), 10)
+      : undefined;
+    if (totalRoomsValue != null && Number.isNaN(totalRoomsValue)) {
+      Alert.alert('Error', 'Numero de habitaciones invalido');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await roomService.createFlat({
+        address: addressValue,
+        city: cityValue,
+        district: district.trim() || undefined,
+        total_rooms: totalRoomsValue,
+        common_areas_description: commonAreas.trim() || undefined,
+      });
+      Alert.alert('Exito', 'Piso creado');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error creando piso:', error);
+      Alert.alert('Error', 'No se pudo crear el piso');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+          Crear piso
+        </Text>
+        <View style={styles.headerActions}>
+          <Button
+            title="Cancelar"
+            onPress={() => navigation.goBack()}
+            variant="tertiary"
+            size="small"
+          />
+          <Button
+            title="Guardar"
+            onPress={handleSave}
+            size="small"
+            loading={saving}
+          />
+        </View>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <Input
+          label="Direccion"
+          value={address}
+          onChangeText={setAddress}
+          required
+        />
+        <Input label="Ciudad" value={city} onChangeText={setCity} required />
+        <Input label="Distrito" value={district} onChangeText={setDistrict} />
+        <Input
+          label="Numero de habitaciones"
+          value={totalRooms}
+          onChangeText={setTotalRooms}
+          keyboardType="numeric"
+        />
+        <TextArea
+          label="Zonas comunes"
+          value={commonAreas}
+          onChangeText={setCommonAreas}
+          maxLength={400}
+          placeholder="Describe las zonas comunes del piso"
+        />
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+});
