@@ -63,6 +63,7 @@ export const ChatScreen: React.FC = () => {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [assignTarget, setAssignTarget] = useState<'seeker' | 'owner'>('seeker');
   const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [loadingRooms, setLoadingRooms] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -148,12 +149,15 @@ export const ChatScreen: React.FC = () => {
   }, [matchId]);
 
   useEffect(() => {
-    if (!ownerId || ownerId !== currentUserId) return;
+    if (!ownerId) return;
     let isMounted = true;
 
     const loadOwnerRooms = async () => {
       try {
-        const rooms = await roomService.getMyRooms();
+        setLoadingRooms(true);
+        const rooms = isOwner
+          ? await roomService.getMyRooms()
+          : await roomService.getRoomsByOwner(ownerId);
         if (!isMounted) return;
         setOwnerRooms(rooms);
         const extras = await roomExtrasService.getExtrasForRooms(
@@ -165,6 +169,10 @@ export const ChatScreen: React.FC = () => {
         setRoomExtras(extrasMap);
       } catch (error) {
         console.error('Error cargando habitaciones del owner:', error);
+      } finally {
+        if (isMounted) {
+          setLoadingRooms(false);
+        }
       }
     };
 
@@ -172,7 +180,7 @@ export const ChatScreen: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [ownerId, currentUserId]);
+  }, [ownerId, isOwner, canSeeAssignees]);
 
   const isOwner = Boolean(currentUserId && ownerId === currentUserId);
   const isSeeker = Boolean(currentUserId && seekerId === currentUserId);
@@ -181,6 +189,14 @@ export const ChatScreen: React.FC = () => {
     () => assignments.filter((assignment) => assignment.status === 'accepted'),
     [assignments]
   );
+
+  const canSeeAssignees = useMemo(() => {
+    if (isOwner) return true;
+    if (matchAssignment?.status === 'accepted') return true;
+    return acceptedAssignments.some(
+      (assignment) => assignment.assignee_id === currentUserId
+    );
+  }, [acceptedAssignments, currentUserId, isOwner, matchAssignment?.status]);
 
   const ownerHasRoom = useMemo(
     () => acceptedAssignments.some((assignment) => assignment.assignee_id === ownerId),
@@ -195,12 +211,17 @@ export const ChatScreen: React.FC = () => {
     [acceptedAssignments]
   );
 
+  const privateRooms = useMemo(
+    () => ownerRooms.filter((room) => roomExtras[room.id]?.category !== 'area_comun'),
+    [ownerRooms, roomExtras]
+  );
+
   const availableRooms = useMemo(() => {
     if (!isOwner) return [];
-    return ownerRooms.filter(
+    return privateRooms.filter(
       (room) => room.is_available && !assignedRoomIds.has(room.id)
     );
-  }, [isOwner, ownerRooms, assignedRoomIds]);
+  }, [isOwner, privateRooms, assignedRoomIds]);
 
   const assignRoom = async () => {
     if (!selectedRoomId) return;
@@ -400,11 +421,18 @@ export const ChatScreen: React.FC = () => {
       {(isOwner || isSeeker) && (
         <View style={styles.assignmentPanel}>
           <View style={styles.assignmentHeader}>
-            <Text style={styles.assignmentTitle}>Gestion de habitacion</Text>
-            {matchStatus && (
-              <Text style={styles.assignmentStatus}>
-                Estado: {matchStatusLabel(matchStatus)}
+            <View>
+              <Text style={styles.assignmentTitle}>Gestion de habitacion</Text>
+              <Text style={styles.assignmentSubtitle}>
+                {isOwner ? 'Asigna habitaciones y gestiona ofertas.' : 'Revisa tu estado de habitacion.'}
               </Text>
+            </View>
+            {matchStatus && (
+              <View style={styles.assignmentStatusPill}>
+                <Text style={styles.assignmentStatusText}>
+                  {matchStatusLabel(matchStatus)}
+                </Text>
+              </View>
             )}
           </View>
           {isOwner && (
@@ -466,20 +494,44 @@ export const ChatScreen: React.FC = () => {
       )}
 
       <View style={styles.roommatesPanel}>
-        <Text style={styles.roommatesTitle}>Companeros y habitaciones</Text>
-        {loadingAssignments ? (
+        <View style={styles.roommatesHeader}>
+          <Text style={styles.roommatesTitle}>Companeros y habitaciones</Text>
+          <View style={styles.roommatesBadge}>
+            <Text style={styles.roommatesBadgeText}>
+              {privateRooms.length}
+            </Text>
+          </View>
+        </View>
+        {loadingAssignments || loadingRooms ? (
           <Text style={styles.roommatesEmpty}>Cargando...</Text>
-        ) : acceptedAssignments.length === 0 ? (
-          <Text style={styles.roommatesEmpty}>Aun no hay asignaciones.</Text>
+        ) : canSeeAssignees ? (
+          <>
+            {acceptedAssignments.length === 0 ? (
+              <Text style={styles.roommatesEmpty}>Aun no hay asignaciones.</Text>
+            ) : (
+              <View style={styles.roommatesList}>
+                {acceptedAssignments.map((assignment) => (
+                  <View key={assignment.id} style={styles.roommateRow}>
+                    <Text style={styles.roommateName}>
+                      {assignment.assignee?.display_name ?? 'Companero'}
+                    </Text>
+                    <Text style={styles.roommateRoom}>
+                      {assignment.room?.title ?? 'Habitacion'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        ) : privateRooms.length === 0 ? (
+          <Text style={styles.roommatesEmpty}>No hay habitaciones.</Text>
         ) : (
           <View style={styles.roommatesList}>
-            {acceptedAssignments.map((assignment) => (
-              <View key={assignment.id} style={styles.roommateRow}>
-                <Text style={styles.roommateName}>
-                  {assignment.assignee?.display_name ?? 'Companero'}
-                </Text>
+            {privateRooms.map((room) => (
+              <View key={room.id} style={styles.roommateRow}>
+                <Text style={styles.roommateName}>{renderRoomTitle(room)}</Text>
                 <Text style={styles.roommateRoom}>
-                  {assignment.room?.title ?? 'Habitacion'}
+                  {assignedRoomIds.has(room.id) ? 'Ocupada' : 'Disponible'}
                 </Text>
               </View>
             ))}
@@ -668,11 +720,19 @@ const styles = StyleSheet.create({
     width: 22,
   },
   assignmentPanel: {
+    marginHorizontal: 16,
+    marginTop: 8,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingVertical: 14,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#111827',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 2,
     gap: 10,
   },
   assignmentHeader: {
@@ -681,23 +741,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   assignmentTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
   },
-  assignmentStatus: {
+  assignmentSubtitle: {
+    marginTop: 4,
     fontSize: 12,
     color: '#6B7280',
+  },
+  assignmentStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+  },
+  assignmentStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   assignActions: {
     flexDirection: 'row',
     gap: 10,
     flexWrap: 'wrap',
+    marginTop: 6,
   },
   assignButton: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 999,
     backgroundColor: '#7C3AED',
   },
@@ -754,16 +827,44 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   roommatesPanel: {
+    marginHorizontal: 16,
+    marginTop: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingVertical: 14,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#111827',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  roommatesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   roommatesTitle: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: '#111827',
+  },
+  roommatesBadge: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F3E8FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  roommatesBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
   roommatesEmpty: {
     marginTop: 8,

@@ -6,8 +6,6 @@ export interface Flat {
   address: string;
   city: string;
   district?: string;
-  total_rooms?: number;
-  common_areas_description?: string;
   rules?: string;
   services?: FlatService[];
   created_at: string;
@@ -46,8 +44,6 @@ export interface FlatCreateRequest {
   address: string;
   city: string;
   district?: string;
-  total_rooms?: number;
-  common_areas_description?: string;
   rules?: string;
   services?: FlatService[];
 }

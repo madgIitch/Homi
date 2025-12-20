@@ -26,9 +26,7 @@ const supabaseClient = createClient(
 interface FlatValidationData {  
   address?: string  
   city?: string  
-  total_rooms?: number  
   district?: string  
-  common_areas_description?: string  
 }  
   
 interface RoomValidationData {  
@@ -260,10 +258,6 @@ function validateFlatData(data: FlatValidationData): { isValid: boolean; errors:
     if (typeof data.city !== 'string' || data.city.trim().length < 2) {  
       errors.push('City is required')  
     }  
-  }  
-        
-  if (data.total_rooms && (typeof data.total_rooms !== 'number' || data.total_rooms < 1 || data.total_rooms > 20)) {  
-    errors.push('Total rooms must be between 1 and 20')  
   }  
         
   return {  

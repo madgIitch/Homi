@@ -4,7 +4,6 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
 import { Input } from '../components/Input';
-import { TextArea } from '../components/TextArea';
 import { Button } from '../components/Button';
 import { ChipGroup } from '../components/ChipGroup';
 import { roomService } from '../services/roomService';
@@ -16,8 +15,6 @@ export const CreateFlatScreen: React.FC = () => {
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [district, setDistrict] = useState<string | null>(null);
-  const [totalRooms, setTotalRooms] = useState('');
-  const [commonAreas, setCommonAreas] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -32,22 +29,12 @@ export const CreateFlatScreen: React.FC = () => {
       return;
     }
 
-    const totalRoomsValue = totalRooms.trim()
-      ? parseInt(totalRooms.trim(), 10)
-      : undefined;
-    if (totalRoomsValue != null && Number.isNaN(totalRoomsValue)) {
-      Alert.alert('Error', 'Numero de habitaciones invalido');
-      return;
-    }
-
     try {
       setSaving(true);
       await roomService.createFlat({
         address: addressValue,
         city: cityValue,
         district: district,
-        total_rooms: totalRoomsValue,
-        common_areas_description: commonAreas.trim() || undefined,
       });
       Alert.alert('Exito', 'Piso creado');
       navigation.goBack();
@@ -97,19 +84,6 @@ export const CreateFlatScreen: React.FC = () => {
             setDistrict((prev) => (prev === id ? null : id));
           }}
           multiline
-        />
-        <Input
-          label="Numero de habitaciones"
-          value={totalRooms}
-          onChangeText={setTotalRooms}
-          keyboardType="numeric"
-        />
-        <TextArea
-          label="Zonas comunes"
-          value={commonAreas}
-          onChangeText={setCommonAreas}
-          maxLength={400}
-          placeholder="Describe las zonas comunes del piso"
         />
       </ScrollView>
     </View>

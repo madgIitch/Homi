@@ -645,8 +645,6 @@ CREATE TABLE public.flats (
   address text NOT NULL,
   city text NOT NULL,
   district text,
-  total_rooms integer,
-  common_areas_description text,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   rules text,
   services jsonb DEFAULT '[]'::jsonb,
