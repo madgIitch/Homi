@@ -23,34 +23,12 @@ import { FormSection } from '../components/FormSection';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { AuthContext } from '../context/AuthContext';
-import { ZONES_OPTIONS } from '../constants/zones';
+import { INTERESES_OPTIONS, ZONAS_OPTIONS } from '../constants/swipeFilters';
 import type {
   ProfileCreateRequest,
   HousingSituation,
   ProfilePhoto,
 } from '../types/profile';
-
-const INTERESES_OPTIONS = [
-  { id: 'deportes', label: 'Deportes' },
-  { id: 'musica', label: 'Musica' },
-  { id: 'cine', label: 'Cine' },
-  { id: 'arte', label: 'Arte' },
-  { id: 'videojuegos', label: 'Videojuegos' },
-  { id: 'gastronomia', label: 'Gastronomia' },
-  { id: 'viajes', label: 'Viajes' },
-  { id: 'literatura', label: 'Literatura' },
-  { id: 'tecnologia', label: 'Tecnologia' },
-  { id: 'moda', label: 'Moda' },
-  { id: 'fotografia', label: 'Fotografia' },
-  { id: 'naturaleza', label: 'Naturaleza' },
-  { id: 'fiesta', label: 'Fiesta' },
-  { id: 'series', label: 'Series' },
-  { id: 'cocina', label: 'Cocina' },
-  { id: 'teatro', label: 'Teatro' },
-  { id: 'politica', label: 'Politica' },
-  { id: 'activismo', label: 'Activismo' },
-  { id: 'emprendimiento', label: 'Emprendimiento' },
-];
 
 const ESTILO_VIDA_OPTIONS = [
   { id: 'schedule_flexible', label: 'Flexible' },
@@ -629,7 +607,7 @@ export const EditProfileScreen: React.FC = () => {
           </View>
           <ChipGroup
             label="Zonas de interes"
-            options={ZONES_OPTIONS}
+            options={ZONAS_OPTIONS}
             selectedIds={zonas}
             onSelect={(id) => {
               setZonas((prev) =>

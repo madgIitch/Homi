@@ -7,7 +7,7 @@ import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { ChipGroup } from '../components/ChipGroup';
 import { roomService } from '../services/roomService';
-import { ZONES_OPTIONS } from '../constants/zones';
+import { ZONAS_OPTIONS } from '../constants/swipeFilters';
 
 export const CreateFlatScreen: React.FC = () => {
   const theme = useTheme();
@@ -78,7 +78,7 @@ export const CreateFlatScreen: React.FC = () => {
         <Input label="Ciudad" value={city} onChangeText={setCity} required />
         <ChipGroup
           label="Distrito"
-          options={ZONES_OPTIONS}
+            options={ZONAS_OPTIONS}
           selectedIds={district ? [district] : []}
           onSelect={(id) => {
             setDistrict((prev) => (prev === id ? null : id));
