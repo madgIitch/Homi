@@ -20,6 +20,83 @@ const supabaseClient = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
+type RecommendationFilters = {
+  housingSituation?: 'any' | 'seeking' | 'offering';
+  budgetMin?: number;
+  budgetMax?: number;
+  zones?: string[];
+  roommates?: number | null;
+  lifestyle?: string[];
+  interests?: string[];
+};
+
+const lifestyleLabelById = new Map<string, string>([
+  ['schedule_flexible', 'Flexible'],
+  ['cleaning_muy_limpio', 'Muy limpio'],
+  ['guests_algunos', 'Algunos invitados'],
+]);
+
+function matchesFilters(profile: Profile, filters?: RecommendationFilters): boolean {
+  if (!filters) return true;
+
+  if (
+    filters.housingSituation &&
+    filters.housingSituation !== 'any' &&
+    profile.housing_situation !== filters.housingSituation
+  ) {
+    return false;
+  }
+
+  if (filters.zones && filters.zones.length > 0) {
+    const profileZones = profile.preferred_zones ?? [];
+    const matchesZone = profileZones.some((zone) => filters.zones?.includes(zone));
+    if (!matchesZone) return false;
+  }
+
+  if (filters.roommates != null) {
+    if (profile.num_roommates_wanted == null) return false;
+    if (profile.num_roommates_wanted !== filters.roommates) return false;
+  }
+
+  if (filters.interests && filters.interests.length > 0) {
+    const profileInterests = profile.interests ?? [];
+    const matchesInterest = profileInterests.some((interest) =>
+      filters.interests?.includes(interest)
+    );
+    if (!matchesInterest) return false;
+  }
+
+  if (filters.lifestyle && filters.lifestyle.length > 0) {
+    const profileLifestyle = profile.lifestyle_preferences
+      ? Object.values(profile.lifestyle_preferences).filter(
+          (item): item is string => Boolean(item)
+        )
+      : [];
+    const lifestyleLabels = filters.lifestyle
+      .map((id) => lifestyleLabelById.get(id) ?? id)
+      .filter(Boolean);
+    const matchesLifestyle = profileLifestyle.some((chip) =>
+      lifestyleLabels.includes(chip)
+    );
+    if (!matchesLifestyle) return false;
+  }
+
+  const hasBudgetFilter =
+    typeof filters.budgetMin === 'number' || typeof filters.budgetMax === 'number';
+  if (hasBudgetFilter) {
+    const profileMin = profile.budget_min ?? null;
+    const profileMax = profile.budget_max ?? null;
+    if (profileMin == null && profileMax == null) return false;
+    const min = typeof filters.budgetMin === 'number' ? filters.budgetMin : -Infinity;
+    const max = typeof filters.budgetMax === 'number' ? filters.budgetMax : Infinity;
+    const effectiveMin = profileMin ?? min;
+    const effectiveMax = profileMax ?? max;
+    if (effectiveMax < min || effectiveMin > max) return false;
+  }
+
+  return true;
+}
+
 function extractAvatarPath(avatarUrl: string): string | null {
   if (!avatarUrl) return null;
   if (!avatarUrl.startsWith('http')) return avatarUrl;
@@ -155,6 +232,9 @@ const handler = withAuth(
         });
       }
 
+      const body = await req.json().catch(() => ({}));
+      const filters = (body?.filters ?? undefined) as RecommendationFilters | undefined;
+
       const { data: profiles, error: profilesError } = await supabaseClient
         .from('profiles')
         .select('*')
@@ -173,7 +253,11 @@ const handler = withAuth(
 
       const recommendations: RoomRecommendation[] = [];
 
-      for (const profile of profiles || []) {
+      const filteredProfiles = (profiles || []).filter((profile) =>
+        matchesFilters(profile, filters)
+      );
+
+      for (const profile of filteredProfiles) {
         if (profile.avatar_url) {
           const signedUrl = await getSignedAvatarUrl(profile.avatar_url);
           if (signedUrl) {

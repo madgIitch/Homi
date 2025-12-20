@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   BUDGET_MAX,
   BUDGET_MIN,
+  ESTILO_VIDA_OPTIONS,
   lifestyleLabelById,
 } from '../constants/swipeFilters';
 import { useSwipeFilters } from '../context/SwipeFiltersContext';
@@ -54,7 +55,7 @@ const FALLBACK_PHOTO =
 
 export const SwipeScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<any>>();
-  const { filters, resetFilters } = useSwipeFilters();
+  const { filters, resetFilters, setFilters } = useSwipeFilters();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipesUsed, setSwipesUsed] = useState(0);
   const [allProfiles, setAllProfiles] = useState<SwipeProfile[]>([]);
@@ -68,6 +69,7 @@ export const SwipeScreen: React.FC = () => {
   const [profilePhotosById, setProfilePhotosById] = useState<
     Record<string, string[]>
   >({});
+  const [profileFiltersApplied, setProfileFiltersApplied] = useState(false);
   const position = useRef(new Animated.ValueXY()).current;
 
   const screenWidth = Dimensions.get('window').width;
@@ -97,6 +99,10 @@ export const SwipeScreen: React.FC = () => {
   const canSwipe = swipesUsed < SWIPE_LIMIT;
   const activeFilterCount = getActiveFilterCount(filters);
   const hasActiveFilters = activeFilterCount > 0;
+  const lifestyleIdByLabel = useMemo(
+    () => new Map(ESTILO_VIDA_OPTIONS.map((option) => [option.label, option.id])),
+    []
+  );
 
   const getTodayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -303,6 +309,47 @@ export const SwipeScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const applyProfileFilters = async () => {
+      if (profileFiltersApplied) return;
+      if (activeFilterCount > 0) {
+        setProfileFiltersApplied(true);
+        return;
+      }
+      try {
+        const profile = await profileService.getProfile();
+        if (!profile) {
+          setProfileFiltersApplied(true);
+          return;
+        }
+        const lifestyleValues = profile.lifestyle_preferences
+          ? Object.values(profile.lifestyle_preferences).filter(
+              (item): item is string => Boolean(item)
+            )
+          : [];
+        const mappedLifestyle = lifestyleValues
+          .map((label) => lifestyleIdByLabel.get(label))
+          .filter((id): id is string => Boolean(id));
+
+        await setFilters({
+          housingSituation: profile.housing_situation ?? 'any',
+          budgetMin: profile.budget_min ?? BUDGET_MIN,
+          budgetMax: profile.budget_max ?? BUDGET_MAX,
+          zones: profile.preferred_zones ?? [],
+          roommates: profile.num_roommates_wanted ?? null,
+          lifestyle: mappedLifestyle,
+          interests: profile.interests ?? [],
+        });
+      } catch (error) {
+        console.warn('[SwipeScreen] Error syncing filters with profile:', error);
+      } finally {
+        setProfileFiltersApplied(true);
+      }
+    };
+
+    void applyProfileFilters();
+  }, [activeFilterCount, lifestyleIdByLabel, profileFiltersApplied, setFilters]);
+
+  useEffect(() => {
     const loadProfiles = async () => {
       setLoadingProfiles(true);
       setProfileError(null);
@@ -310,7 +357,9 @@ export const SwipeScreen: React.FC = () => {
         console.log('[SwipeScreen] loading recommendations...');
         const [recommendations, existingMatches, rejections] = await Promise.all(
           [
-            profileService.getProfileRecommendations(),
+            profileService.getProfileRecommendations(
+              activeFilterCount > 0 ? filters : undefined
+            ),
             chatService.getMatches(),
             swipeRejectionService.getRejections(),
           ]
@@ -340,8 +389,10 @@ export const SwipeScreen: React.FC = () => {
       }
     };
 
-    void loadProfiles();
-  }, []);
+    if (profileFiltersApplied) {
+      void loadProfiles();
+    }
+  }, [activeFilterCount, filters, profileFiltersApplied]);
 
   useEffect(() => {
     const next = applyFilters(allProfiles, filters, excludedProfileIds);

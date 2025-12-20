@@ -87,14 +87,14 @@ class ProfileService {
     return data.data;
   }
 
-  async getProfileRecommendations(): Promise<ProfileRecommendation[]> {
+  async getProfileRecommendations(filters?: unknown): Promise<ProfileRecommendation[]> {
     let headers = await this.getAuthHeaders();
 
     const tryFetch = async (url: string) =>
       fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({}),
+        body: JSON.stringify(filters ? { filters } : {}),
       });
 
     const recommendationsUrl = `${API_CONFIG.FUNCTIONS_URL}/profiles-recommendations`;

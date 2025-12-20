@@ -46,6 +46,7 @@ export const FiltersScreen: React.FC = () => {
   const [roommatesText, setRoommatesText] = useState(
     filters.roommates != null ? String(filters.roommates) : ''
   );
+  const [isDraggingBudget, setIsDraggingBudget] = useState(false);
 
   useEffect(() => {
     setDraft(filters);
@@ -116,7 +117,11 @@ export const FiltersScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={!isDraggingBudget}
+      >
         <FormSection title="Situacion vivienda" iconName="home-outline">
           <Text style={styles.label}>Actual: {housingLabel}</Text>
           <View style={styles.segmentRow}>
@@ -158,6 +163,7 @@ export const FiltersScreen: React.FC = () => {
           <BudgetRange
             minValue={draft.budgetMin}
             maxValue={draft.budgetMax}
+            onDragStateChange={setIsDraggingBudget}
             onChangeMin={(value) =>
               setDraft((prev) => ({ ...prev, budgetMin: value }))
             }
@@ -317,6 +323,14 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#E5E7EB',
   },
+  sliderContainer: {
+    paddingVertical: 12,
+    position: 'relative',
+  },
+  sliderTouchLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+  },
   sliderTrackActive: {
     position: 'absolute',
     height: 6,
@@ -357,14 +371,16 @@ const styles = StyleSheet.create({
 const BudgetRange: React.FC<{
   minValue: number;
   maxValue: number;
+  onDragStateChange: (isDragging: boolean) => void;
   onChangeMin: (value: number) => void;
   onChangeMax: (value: number) => void;
-}> = ({ minValue, maxValue, onChangeMin, onChangeMax }) => {
+}> = ({ minValue, maxValue, onDragStateChange, onChangeMin, onChangeMax }) => {
   const [trackWidth, setTrackWidth] = useState(0);
   const minStartRef = React.useRef(0);
   const maxStartRef = React.useRef(0);
   const minValueRef = React.useRef(minValue);
   const maxValueRef = React.useRef(maxValue);
+  const startTouchRef = React.useRef(0);
 
   useEffect(() => {
     minValueRef.current = minValue;
@@ -381,38 +397,64 @@ const BudgetRange: React.FC<{
     return clamp(snapToStep(raw), BUDGET_MIN, BUDGET_MAX);
   };
 
-  const minPanResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        minStartRef.current = valueToX(minValueRef.current);
-      },
-      onPanResponderMove: (_, gesture) => {
-        if (!trackWidth) return;
-        const nextX = clamp(
-          minStartRef.current + gesture.dx,
-          0,
-          valueToX(maxValueRef.current)
-        );
-        onChangeMin(xToValue(nextX));
-      },
-    })
-  ).current;
+  const activeThumbRef = React.useRef<'min' | 'max' | null>(null);
 
-  const maxPanResponder = React.useRef(
+  const panResponder = React.useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        maxStartRef.current = valueToX(maxValueRef.current);
+      onStartShouldSetPanResponder: () => trackWidth > 0,
+      onMoveShouldSetPanResponder: () => trackWidth > 0,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: (event) => {
+        if (!trackWidth) return;
+        onDragStateChange(true);
+        const touchX = event.nativeEvent.locationX;
+        console.log('[BudgetRange] grant', {
+          trackWidth,
+          touchX,
+          minValue: minValueRef.current,
+          maxValue: maxValueRef.current,
+        });
+        startTouchRef.current = touchX;
+        const minX = valueToX(minValueRef.current);
+        const maxX = valueToX(maxValueRef.current);
+        activeThumbRef.current =
+          Math.abs(touchX - minX) <= Math.abs(touchX - maxX) ? 'min' : 'max';
+        console.log('[BudgetRange] activeThumb', activeThumbRef.current, {
+          minX,
+          maxX,
+        });
+        minStartRef.current = minX;
+        maxStartRef.current = maxX;
       },
       onPanResponderMove: (_, gesture) => {
-        if (!trackWidth) return;
+        if (!trackWidth || !activeThumbRef.current) return;
+        console.log('[BudgetRange] move', {
+          dx: gesture.dx,
+          active: activeThumbRef.current,
+        });
         const nextX = clamp(
-          maxStartRef.current + gesture.dx,
-          valueToX(minValueRef.current),
+          startTouchRef.current + gesture.dx,
+          0,
           trackWidth
         );
-        onChangeMax(xToValue(nextX));
+        if (activeThumbRef.current === 'min') {
+          const bounded = clamp(nextX, 0, valueToX(maxValueRef.current));
+          onChangeMin(xToValue(bounded));
+        } else {
+          const bounded = clamp(nextX, valueToX(minValueRef.current), trackWidth);
+          onChangeMax(xToValue(bounded));
+        }
+      },
+      onPanResponderRelease: () => {
+        activeThumbRef.current = null;
+        onDragStateChange(false);
+      },
+      onPanResponderTerminate: () => {
+        activeThumbRef.current = null;
+        onDragStateChange(false);
       },
     })
   ).current;
@@ -422,7 +464,11 @@ const BudgetRange: React.FC<{
   const ticks = Math.floor((BUDGET_MAX - BUDGET_MIN) / BUDGET_STEP);
 
   return (
-    <View onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}>
+    <View
+      style={styles.sliderContainer}
+      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+    >
+      <View style={styles.sliderTouchLayer} {...panResponder.panHandlers} />
       <View style={styles.sliderTrack} />
       <View
         style={[
@@ -432,11 +478,11 @@ const BudgetRange: React.FC<{
       />
       <View
         style={[styles.sliderThumb, { left: minX - 10 }]}
-        {...minPanResponder.panHandlers}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       />
       <View
         style={[styles.sliderThumb, { left: maxX - 10 }]}
-        {...maxPanResponder.panHandlers}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       />
       <View style={styles.sliderTicks}>
         {Array.from({ length: ticks + 1 }).map((_, index) => (
