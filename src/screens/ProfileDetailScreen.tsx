@@ -198,7 +198,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 
     loadProfile();
     loadPhotos();
-  }, [userId, routeProfile]);
+  }, [userId, routeProfile, currentUserId]);
 
   const loadProfile = async () => {
     try {
@@ -277,13 +277,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   }, [profile?.id, profile?.housing_situation]);
 
   useEffect(() => {
-    void loadFlatData();
+    loadFlatData();
   }, [loadFlatData]);
 
   useFocusEffect(
     useCallback(() => {
       if (activeTab !== 'piso') return;
-      void loadFlatData();
+      loadFlatData();
     }, [activeTab, loadFlatData])
   );
 

@@ -206,7 +206,7 @@ export const RoomDetailScreen: React.FC = () => {
       }
     };
 
-    void refreshRoom();
+    refreshRoom();
     return () => {
       isMounted = false;
     };
@@ -387,7 +387,7 @@ export const RoomDetailScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>Reglas</Text>
             <View style={styles.detailCard}>
               {rules.map((rule) => (
-                <Text key={rule} style={styles.detailItem}>
+                <Text key={rule} style={styles.detailNoteText}>
                   {getRuleIcon(rule)} {rule}
                 </Text>
               ))}
@@ -400,7 +400,7 @@ export const RoomDetailScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>Servicios</Text>
             <View style={styles.detailCard}>
               {services.map((service) => (
-                <Text key={service.name} style={styles.detailItem}>
+                <Text key={service.name} style={styles.detailNoteText}>
                   {getServiceIcon(service.name)} {service.name}
                   {service.price != null ? ` (${service.price} EUR)` : ''}
                 </Text>

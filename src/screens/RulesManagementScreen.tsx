@@ -153,7 +153,7 @@ export const RulesManagementScreen: React.FC = () => {
     } catch (error) {
       console.error('Error cargando reglas:', error);
     }
-  }, [flatId]);
+  }, [flatId, ruleLabelById, subOptionLabelMap]);
 
   useEffect(() => {
     loadRules();
