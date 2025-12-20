@@ -23,6 +23,7 @@ import { FormSection } from '../components/FormSection';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { AuthContext } from '../context/AuthContext';
+import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import { INTERESES_OPTIONS, ZONAS_OPTIONS } from '../constants/swipeFilters';
 import type {
   ProfileCreateRequest,
@@ -66,6 +67,7 @@ export const EditProfileScreen: React.FC = () => {
   const handleAuthError = authContext?.handleAuthError;
 
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const { setFilters } = useSwipeFilters();
 
   // Estados del formulario - solo campos que existen en la tabla profiles
   const [nombre, setNombre] = useState('');
@@ -335,6 +337,15 @@ export const EditProfileScreen: React.FC = () => {
       }
 
       await profileService.updateProfile(profileData);
+      await setFilters({
+        housingSituation,
+        budgetMin: presupuestoMinValue,
+        budgetMax: presupuestoMaxValue,
+        zones: zonas,
+        roommates: numCompanerosValue,
+        lifestyle: estiloVida,
+        interests: interesesFinal,
+      });
 
       Alert.alert('Exito', 'Perfil actualizado correctamente', [
         {

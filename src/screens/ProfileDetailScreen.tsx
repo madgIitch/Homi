@@ -23,6 +23,7 @@ import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import { AuthContext } from '../context/AuthContext';
+import { INTERESES_OPTIONS, ZONAS_OPTIONS } from '../constants/swipeFilters';
 import type { Profile, ProfilePhoto } from '../types/profile';
 import type { Flat, Room, RoomExtras } from '../types/room';
 
@@ -48,6 +49,14 @@ const commonAreaLabel = new Map([
   ['trastero', 'Trastero'],
   ['estudio', 'Sala de estudio'],
 ]);
+
+const interestLabelById = new Map(
+  INTERESES_OPTIONS.map((option) => [option.id, option.label])
+);
+
+const zoneLabelById = new Map(
+  ZONAS_OPTIONS.map((option) => [option.id, option.label])
+);
 
 const SUB_RULE_TYPE_MAP = new Map<
   string,
@@ -310,6 +319,12 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   ).filter((item): item is string => Boolean(item));
   const interests = profile.interests ?? [];
   const preferredZones = profile.preferred_zones ?? [];
+  const interestLabels = interests.map(
+    (interest) => interestLabelById.get(interest) ?? interest
+  );
+  const preferredZoneLabels = preferredZones.map(
+    (zone) => zoneLabelById.get(zone) ?? zone
+  );
   const hasStudyInfo = Boolean(profile.university || profile.occupation);
   const convivenciaItems = [
     {
@@ -368,7 +383,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     profile.housing_situation === 'seeking'
       ? 'Busco piso'
       : profile.housing_situation === 'offering'
-      ? `Tengo piso en ${preferredZones[0] ?? 'zona preferida'}`
+      ? `Tengo piso en ${preferredZoneLabels[0] ?? 'zona preferida'}`
       : null;
   const aboutBadges = [housingBadge].filter(
     (badge): badge is string => Boolean(badge)
@@ -651,7 +666,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         )}
 
-        {interests.length > 0 && (
+        {interestLabels.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Ionicons name="sparkles" size={20} color="#111827" />
@@ -660,7 +675,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               </Text>
             </View>
             <View style={styles.chipsContainer}>
-              {interests.map((interest, index) => (
+              {interestLabels.map((interest, index) => (
                 <View key={`${interest}-${index}`} style={styles.outlineChip}>
                   <Text style={styles.outlineChipText}>{interest}</Text>
                 </View>
@@ -669,7 +684,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         )}
 
-        {preferredZones.length > 0 && (
+        {preferredZoneLabels.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Ionicons name="location" size={20} color="#111827" />
@@ -678,7 +693,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               </Text>
             </View>
             <View style={styles.chipsContainer}>
-              {preferredZones.map((zone, index) => (
+              {preferredZoneLabels.map((zone, index) => (
                 <View key={`${zone}-${index}`} style={styles.outlineChip}>
                   <Text style={styles.outlineChipText}>{zone}</Text>
                 </View>
