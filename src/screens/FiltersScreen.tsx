@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   View,
-  PanResponder,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
@@ -326,10 +325,7 @@ const styles = StyleSheet.create({
   sliderContainer: {
     paddingVertical: 12,
     position: 'relative',
-  },
-  sliderTouchLayer: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
+    minHeight: 36,
   },
   sliderTrackActive: {
     position: 'absolute',
@@ -393,22 +389,33 @@ const BudgetRange: React.FC<{
   };
 
   const xToValue = (x: number) => {
+    if (!trackWidth) return BUDGET_MIN;
     const raw = BUDGET_MIN + (x / trackWidth) * (BUDGET_MAX - BUDGET_MIN);
     return clamp(snapToStep(raw), BUDGET_MIN, BUDGET_MAX);
   };
 
   const activeThumbRef = React.useRef<'min' | 'max' | null>(null);
 
-  const panResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => trackWidth > 0,
-      onMoveShouldSetPanResponder: () => trackWidth > 0,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponderCapture: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onShouldBlockNativeResponder: () => true,
-      onPanResponderGrant: (event) => {
-        if (!trackWidth) return;
+  const minX = valueToX(minValue);
+  const maxX = valueToX(maxValue);
+  const ticks = Math.floor((BUDGET_MAX - BUDGET_MIN) / BUDGET_STEP);
+
+  return (
+    <View
+      style={styles.sliderContainer}
+      onLayout={(event) => {
+        const width = event.nativeEvent.layout.width;
+        console.log('[BudgetRange] layout width', width);
+        setTrackWidth(width);
+      }}
+      pointerEvents="box-only"
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={(event) => {
+        if (!trackWidth) {
+          console.log('[BudgetRange] grant blocked, trackWidth=0');
+          return;
+        }
         onDragStateChange(true);
         const touchX = event.nativeEvent.locationX;
         console.log('[BudgetRange] grant', {
@@ -418,28 +425,20 @@ const BudgetRange: React.FC<{
           maxValue: maxValueRef.current,
         });
         startTouchRef.current = touchX;
-        const minX = valueToX(minValueRef.current);
-        const maxX = valueToX(maxValueRef.current);
+        const minPos = valueToX(minValueRef.current);
+        const maxPos = valueToX(maxValueRef.current);
         activeThumbRef.current =
-          Math.abs(touchX - minX) <= Math.abs(touchX - maxX) ? 'min' : 'max';
+          Math.abs(touchX - minPos) <= Math.abs(touchX - maxPos) ? 'min' : 'max';
         console.log('[BudgetRange] activeThumb', activeThumbRef.current, {
-          minX,
-          maxX,
+          minPos,
+          maxPos,
         });
-        minStartRef.current = minX;
-        maxStartRef.current = maxX;
-      },
-      onPanResponderMove: (_, gesture) => {
+        minStartRef.current = minPos;
+        maxStartRef.current = maxPos;
+      }}
+      onResponderMove={(event) => {
         if (!trackWidth || !activeThumbRef.current) return;
-        console.log('[BudgetRange] move', {
-          dx: gesture.dx,
-          active: activeThumbRef.current,
-        });
-        const nextX = clamp(
-          startTouchRef.current + gesture.dx,
-          0,
-          trackWidth
-        );
+        const nextX = clamp(event.nativeEvent.locationX, 0, trackWidth);
         if (activeThumbRef.current === 'min') {
           const bounded = clamp(nextX, 0, valueToX(maxValueRef.current));
           onChangeMin(xToValue(bounded));
@@ -447,28 +446,16 @@ const BudgetRange: React.FC<{
           const bounded = clamp(nextX, valueToX(minValueRef.current), trackWidth);
           onChangeMax(xToValue(bounded));
         }
-      },
-      onPanResponderRelease: () => {
+      }}
+      onResponderRelease={() => {
         activeThumbRef.current = null;
         onDragStateChange(false);
-      },
-      onPanResponderTerminate: () => {
+      }}
+      onResponderTerminate={() => {
         activeThumbRef.current = null;
         onDragStateChange(false);
-      },
-    })
-  ).current;
-
-  const minX = valueToX(minValue);
-  const maxX = valueToX(maxValue);
-  const ticks = Math.floor((BUDGET_MAX - BUDGET_MIN) / BUDGET_STEP);
-
-  return (
-    <View
-      style={styles.sliderContainer}
-      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+      }}
     >
-      <View style={styles.sliderTouchLayer} {...panResponder.panHandlers} />
       <View style={styles.sliderTrack} />
       <View
         style={[
