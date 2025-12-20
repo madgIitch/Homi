@@ -1,6 +1,6 @@
 // src/screens/RegisterScreen.tsx  
 import React, { useState, useContext } from 'react';  
-import { View, StyleSheet, Alert, Text } from 'react-native';  
+import { View, StyleSheet, Alert, Text, Image } from 'react-native';  
 import { useNavigation } from '@react-navigation/native';  
 import { StackNavigationProp } from '@react-navigation/stack';  
 import { AuthContext } from '../context/AuthContext';  
@@ -141,6 +141,12 @@ export const RegisterScreen: React.FC = () => {
   return (  
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
       <View style={styles.header}>  
+        <Image
+          source={require('../assets/homiLogo.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
+  
         <Text style={[styles.logo, { color: theme.colors.primary }]}>HomiMatch</Text>  
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
           Crea tu cuenta - Paso {currentPhase} de 3  
@@ -192,6 +198,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',  
     marginTop: 60,  
     marginBottom: 40,  
+  },  
+  logoImage: {  
+    width: 84,  
+    height: 84,  
+    marginBottom: 12,  
   },  
   logo: {  
     fontSize: 32,  

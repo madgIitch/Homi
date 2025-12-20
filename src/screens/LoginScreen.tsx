@@ -1,6 +1,6 @@
 // src/screens/LoginScreen.tsx  
 import React, { useState, useContext } from 'react';  
-import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';  
+import { View, Text, TextInput, StyleSheet, Alert, Image } from 'react-native';  
 import { useNavigation } from '@react-navigation/native';  
 import { StackNavigationProp } from '@react-navigation/stack';  
 import { AuthContext } from '../context/AuthContext';  
@@ -67,6 +67,12 @@ export const LoginScreen: React.FC = () => {
   return (  
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
       <View style={styles.header}>  
+        <Image
+          source={require('../assets/homiLogo.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
+  
         <Text style={[styles.logo, { color: theme.colors.primary }]}>HomiMatch</Text>  
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
           Encuentra tu compañero ideal  
@@ -139,6 +145,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',  
     marginTop: 80,  
     marginBottom: 80,  
+  },  
+  logoImage: {  
+    width: 84,  
+    height: 84,  
+    marginBottom: 12,  
   },  
   logo: {  
     fontSize: 32,  
