@@ -182,6 +182,25 @@ class RoomService {
     return data.data;  
   }  
 
+  async getRoomById(roomId: string): Promise<Room> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/rooms/${roomId}?type=room`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || 'Error al obtener la habitacion');
+    }
+
+    const data: SingleRoomResponse = await response.json();
+    return data.data;
+  }
+
   async deleteRoom(roomId: string): Promise<void> {  
     const headers = await this.getAuthHeaders();  
   

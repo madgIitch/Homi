@@ -28,7 +28,25 @@ interface MessageValidationData {
   body?: string;
 }
 
+async function getUserMatchIds(userId: string): Promise<string[]> {
+  const { data, error } = await supabaseClient
+    .from('matches')
+    .select('id')
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+
+  if (error || !data) {
+    return [];
+  }
+
+  return data.map((row) => row.id);
+}
+
 async function getUserChats(userId: string): Promise<Chat[]> {
+  const matchIds = await getUserMatchIds(userId);
+  if (matchIds.length === 0) {
+    return [];
+  }
+
   const { data, error } = await supabaseClient
     .from('chats')
     .select(
@@ -41,9 +59,7 @@ async function getUserChats(userId: string): Promise<Chat[]> {
       )
     `
     )
-    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`, {
-      foreignTable: 'match',
-    })
+    .in('match_id', matchIds)
     .order('created_at', { ascending: false });
 
   if (error) {

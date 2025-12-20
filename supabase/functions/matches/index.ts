@@ -186,6 +186,13 @@ const handler = withAuth(
             });
           }
 
+          if (userId !== data.user_a_id && userId !== data.user_b_id) {
+            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+              status: 403,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
           const response: ApiResponse<Match> = { data: data as Match };
           return new Response(JSON.stringify(response), {
             status: 200,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
+import { AuthContext } from '../context/AuthContext';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomService } from '../services/roomService';
@@ -148,6 +149,8 @@ const getServiceIcon = (serviceName: string) => {
 
 export const RoomDetailScreen: React.FC = () => {
   const theme = useTheme();
+  const authContext = useContext(AuthContext);
+  const currentUserId = authContext?.user?.id ?? '';
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
   const { room, extras, flat } = route.params as RouteParams;
@@ -163,21 +166,39 @@ export const RoomDetailScreen: React.FC = () => {
 
     const refreshRoom = async () => {
       try {
-        const [rooms, assignmentsResponse] = await Promise.all([
-          roomService.getRoomsByOwner(room.owner_id),
-          roomAssignmentService.getAssignmentsForOwner(),
-        ]);
-        const updated = rooms.find((item) => item.id === room.id);
-        if (updated && isMounted) {
-          setRoomState(updated);
+        const isOwner = room.owner_id === currentUserId;
+        const assignmentsResponse =
+          await roomAssignmentService.getAssignmentsForRoom(room.id);
+
+        if (isOwner) {
+          const rooms = await roomService.getRoomsByOwner(room.owner_id);
+          const updated = rooms.find((item) => item.id === room.id);
+          if (updated && isMounted) {
+            setRoomState(updated);
+          }
+        } else {
+          try {
+            const updated = await roomService.getRoomById(room.id);
+            if (updated && isMounted) {
+              setRoomState(updated);
+            }
+          } catch (error) {
+            console.warn(
+              'No se pudo refrescar la habitacion para no-dueno:',
+              room.id,
+              error
+            );
+          }
         }
+
         const extrasData = await roomExtrasService.getExtrasForRooms([room.id]);
         if (isMounted) {
           setExtrasState(extrasData[0] ?? null);
-          const assigned = assignmentsResponse.assignments.some(
-            (assignment) =>
-              assignment.room_id === room.id && assignment.status === 'accepted'
-          );
+          const assigned =
+            assignmentsResponse.assignments.some(
+              (assignment) =>
+                assignment.room_id === room.id && assignment.status === 'accepted'
+            ) || assignmentsResponse.match_assignment?.status === 'accepted';
           setIsAssigned(assigned);
         }
       } catch (error) {
@@ -189,7 +210,7 @@ export const RoomDetailScreen: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [room.id, room.owner_id]);
+  }, [room.id, room.owner_id, currentUserId]);
 
   const photos = extrasState?.photos ?? [];
   const carouselWidth = Dimensions.get('window').width - 40;

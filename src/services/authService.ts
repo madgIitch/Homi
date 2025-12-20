@@ -89,6 +89,8 @@ class AuthService {
       return;
     }
 
+    await AsyncStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
+
     const { data, error } = await supabaseClient.auth.setSession({
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -96,7 +98,17 @@ class AuthService {
 
     if (error || !data.session) {
       console.log('[AuthService.persistSession] setSession failed:', error?.message);
-      await AsyncStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
+      const refreshAttempt = await supabaseClient.auth.refreshSession(refreshToken);
+      if (refreshAttempt.data.session) {
+        await AsyncStorage.setItem(
+          'authToken',
+          refreshAttempt.data.session.access_token
+        );
+        await AsyncStorage.setItem(
+          AUTH_REFRESH_TOKEN_KEY,
+          refreshAttempt.data.session.refresh_token
+        );
+      }
       return;
     }
 
@@ -115,6 +127,17 @@ class AuthService {
       return;
     }
 
+    const { data, error } = await supabaseClient.auth.refreshSession(refreshToken);
+    if (data.session) {
+      await AsyncStorage.setItem('authToken', data.session.access_token);
+      await AsyncStorage.setItem(
+        AUTH_REFRESH_TOKEN_KEY,
+        data.session.refresh_token
+      );
+      return;
+    }
+
+    console.log('[AuthService.bootstrapSession] refresh failed:', error?.message);
     await this.persistSession(accessToken, refreshToken);
   }
 
@@ -241,8 +264,12 @@ class AuthService {
     console.log('[AuthService.refreshToken] Attempting refreshSession');
 
     try {
-      await this.bootstrapSession();
-      const { data, error } = await supabaseClient.auth.refreshSession();
+      const refreshToken = await AsyncStorage.getItem(AUTH_REFRESH_TOKEN_KEY);
+      if (!refreshToken) {
+        console.log('[AuthService.refreshToken] Missing refresh token');
+        return null;
+      }
+      const { data, error } = await supabaseClient.auth.refreshSession(refreshToken);
 
       console.log('[AuthService.refreshToken] Supabase response:', {
         hasSession: !!data?.session,

@@ -245,18 +245,30 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         extras.map((extra) => [extra.room_id, extra])
       );
       setFlatExtras(extrasMap);
-      if (profile.id === currentUserId) {
-        const assignmentsResponse = await roomAssignmentService.getAssignmentsForOwner();
-        const acceptedMap: Record<string, boolean> = {};
-        assignmentsResponse.assignments.forEach((assignment) => {
-          if (assignment.status === 'accepted') {
-            acceptedMap[assignment.room_id] = true;
+      const acceptedMap: Record<string, boolean> = {};
+      await Promise.all(
+        roomsData.map(async (roomItem) => {
+          try {
+            const assignmentsResponse =
+              await roomAssignmentService.getAssignmentsForRoom(roomItem.id);
+            const hasAcceptedAssignment =
+              assignmentsResponse.assignments.some(
+                (assignment) => assignment.status === 'accepted'
+              ) ||
+              assignmentsResponse.match_assignment?.status === 'accepted';
+            if (hasAcceptedAssignment) {
+              acceptedMap[roomItem.id] = true;
+            }
+          } catch (error) {
+            console.warn(
+              'No se pudo cargar asignaciones para la habitacion:',
+              roomItem.id,
+              error
+            );
           }
-        });
-        setFlatAssignments(acceptedMap);
-      } else {
-        setFlatAssignments({});
-      }
+        })
+      );
+      setFlatAssignments(acceptedMap);
     } catch (error) {
       console.error('Error cargando piso:', error);
     } finally {

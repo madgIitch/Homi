@@ -77,6 +77,25 @@ async function getUserRooms(userId: string): Promise<Room[]> {
         
   return data as Room[]  
 }  
+
+async function getRoomById(roomId: string): Promise<Room | null> {
+  const { data, error } = await supabaseClient
+    .from('rooms')
+    .select(
+      `
+      *,
+      flat:flats(*)
+    `
+    )
+    .eq('id', roomId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data as Room;
+}
   
 /**      
  * Crear nuevo flat      
@@ -296,6 +315,30 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       const type = url.searchParams.get('type') // 'flats' or 'rooms'  
       const ownerIdParam = url.searchParams.get('owner_id')?.trim()
       const targetOwnerId = ownerIdParam || userId
+      const resourceId = pathParts[pathParts.length - 1]
+      const isResourceRequest = resourceId && resourceId !== 'rooms'
+
+      if (isResourceRequest && type === 'room') {
+        const room = await getRoomById(resourceId)
+        if (!room) {
+          return new Response(
+            JSON.stringify({ error: 'Room not found or unauthorized' }),
+            {       
+              status: 404,       
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+            }  
+          )
+        }
+
+        const response: ApiResponse<Room> = { data: room }
+        return new Response(
+          JSON.stringify(response),
+          {       
+            status: 200,       
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+          }  
+        )
+      }
             
       if (type === 'flats') {  
         const flats = await getUserFlats(targetOwnerId)  

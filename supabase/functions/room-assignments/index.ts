@@ -60,6 +60,33 @@ async function ensureRoomOwnership(roomId: string, ownerId: string): Promise<boo
   return data.owner_id === ownerId;
 }
 
+async function getRoomOwnerId(roomId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('rooms')
+    .select('owner_id')
+    .eq('id', roomId)
+    .single();
+
+  if (error || !data?.owner_id) return null;
+  return data.owner_id as string;
+}
+
+async function hasAcceptedAssignmentForOwner(
+  assigneeId: string,
+  ownerId: string
+): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('room_assignments')
+    .select('id, room:rooms!inner(owner_id)')
+    .eq('assignee_id', assigneeId)
+    .eq('status', 'accepted')
+    .eq('room.owner_id', ownerId)
+    .limit(1);
+
+  if (error || !data) return false;
+  return data.length > 0;
+}
+
 async function listAssignmentsForOwner(ownerId: string): Promise<AssignmentRow[]> {
   const { data, error } = await supabaseAdmin
     .from('room_assignments')
@@ -128,25 +155,60 @@ serve(
       }
 
       if (roomId) {
-        const ownsRoom = await ensureRoomOwnership(roomId, userId);
-        if (!ownsRoom) {
+        const roomOwnerId = await getRoomOwnerId(roomId);
+        if (!roomOwnerId) {
           return new Response(JSON.stringify({ error: 'Room not found or unauthorized' }), {
-            status: 403,
+            status: 404,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
+        const ownsRoom = roomOwnerId === userId;
+        const canSeeAssignees = ownsRoom
+          ? true
+          : await hasAcceptedAssignmentForOwner(userId, roomOwnerId);
+
+        if (canSeeAssignees) {
+          const { data, error } = await supabaseAdmin
+            .from('room_assignments')
+            .select(
+              `
+              *,
+              room:rooms(*),
+              assignee:profiles(*)
+            `
+            )
+            .eq('room_id', roomId)
+            .order('created_at', { ascending: true });
+
+          if (error) {
+            return new Response(JSON.stringify({ error: 'Error al obtener asignaciones' }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
+          return new Response(
+            JSON.stringify({
+              data: {
+                owner_id: roomOwnerId,
+                match_assignment: null,
+                assignments: (data ?? []) as AssignmentRow[],
+              },
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          );
+        }
+
         const { data, error } = await supabaseAdmin
           .from('room_assignments')
-          .select(
-            `
-            *,
-            room:rooms(*),
-            assignee:profiles(*)
-          `
-          )
+          .select('id, room_id, status')
           .eq('room_id', roomId)
-          .order('created_at', { ascending: true });
+          .eq('status', 'accepted')
+          .limit(1);
 
         if (error) {
           return new Response(JSON.stringify({ error: 'Error al obtener asignaciones' }), {
@@ -158,9 +220,15 @@ serve(
         return new Response(
           JSON.stringify({
             data: {
-              owner_id: userId,
+              owner_id: roomOwnerId,
               match_assignment: null,
-              assignments: (data ?? []) as AssignmentRow[],
+              assignments: (data ?? []).map((item) => ({
+                id: item.id,
+                room_id: item.room_id,
+                status: item.status,
+                created_at: '',
+                updated_at: '',
+              })) as AssignmentRow[],
             },
           }),
           {
