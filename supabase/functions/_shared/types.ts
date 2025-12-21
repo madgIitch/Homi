@@ -31,6 +31,7 @@ export interface User {
   last_name: string    
   identity_document?: string    
   birth_date: string    
+  gender?: string
   created_at: string    
 }  
   
@@ -281,6 +282,7 @@ export interface Phase2Request {
   temp_token: string  
   first_name: string  
   last_name: string  
+  gender: string  
 }  
   
 export interface Phase3Request {  

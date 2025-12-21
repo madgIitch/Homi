@@ -17,7 +17,7 @@ async function handler(req: Request): Promise<Response> {
   
     const body: Phase2Request = await req.json()  
       
-    if (!body.temp_token || !body.first_name || !body.last_name) {  
+    if (!body.temp_token || !body.first_name || !body.last_name || !body.gender) {  
       return new Response(  
         JSON.stringify({ error: 'Missing required fields' }),  
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }  
@@ -57,7 +57,8 @@ async function handler(req: Request): Promise<Response> {
       .from('temp_registrations')  
       .update({  
         first_name: body.first_name,  
-        last_name: body.last_name  
+        last_name: body.last_name,  
+        gender: body.gender  
       })  
       .eq('temp_token', body.temp_token)  
   

@@ -5,6 +5,7 @@ import {
   RegisterRequest,
   Phase1Data,
   Phase2Data,
+  PhaseGenderData,
   Phase3Data,
   TempRegistration,
 } from '../types/auth';
@@ -60,6 +61,7 @@ const mapSupabaseUserToAppUser = (supabaseUser: any): User => {
       nameParts.slice(1).join(' ') ||
       '',
     birth_date: supabaseUser.user_metadata?.birth_date || '',
+    gender: supabaseUser.user_metadata?.gender ?? null,
     identity_document: supabaseUser.user_metadata?.identity_document,
     created_at: supabaseUser.created_at,
   };
@@ -209,6 +211,7 @@ class AuthService {
       firstName: userData.firstName,
       lastName: userData.lastName,
       birthDate: userData.birthDate,
+      gender: userData.gender,
     });
 
     const registerData = {
@@ -218,6 +221,7 @@ class AuthService {
         first_name: userData.firstName,
         last_name: userData.lastName,
         birth_date: userData.birthDate,
+        gender: userData.gender,
       },
     };
 
@@ -354,7 +358,7 @@ class AuthService {
     }
   }
 
-  async registerPhase2(tempToken: string, data: Phase2Data): Promise<void> {
+  async registerPhase2(tempToken: string, data: PhaseGenderData): Promise<void> {
     const response = await fetch(
       `${API_CONFIG.FUNCTIONS_URL}/auth-register-phase2`,
       {
@@ -364,6 +368,7 @@ class AuthService {
           temp_token: tempToken,
           first_name: data.firstName,
           last_name: data.lastName,
+          gender: data.gender,
         }),
       }
     );
@@ -387,6 +392,7 @@ class AuthService {
         body: JSON.stringify({
           temp_token: tempToken,
           birth_date: data.birthDate,
+          gender: data.gender,
         }),
       }
     );

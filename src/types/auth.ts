@@ -1,4 +1,5 @@
 // src/types/auth.ts  
+import type { Gender } from './gender';
 export interface User {  
   id: string;  
   email: string;  
@@ -6,6 +7,7 @@ export interface User {
   last_name: string;  
   identity_document?: string;  
   birth_date: string;  
+  gender?: Gender | null;
   created_at: string;  
 }  
   
@@ -20,6 +22,7 @@ export interface RegisterRequest {
   firstName: string;  
   lastName: string;  
   birthDate: string;  
+  gender?: Gender;
 }  
   
 // Nuevos tipos para registro por fases  
@@ -37,6 +40,12 @@ export interface Phase2Data {
 export interface Phase3Data {  
   birthDate: string;  
 }  
+
+export interface PhaseGenderData {
+  firstName: string;
+  lastName: string;
+  gender: Gender;
+}
   
 export interface TempRegistration {  
   tempToken: string;  

@@ -14,6 +14,7 @@ const STORAGE_KEY = 'swipeFilters';
 
 const DEFAULT_SWIPE_FILTERS: SwipeFilters = {
   housingSituation: 'any',
+  gender: 'any',
   budgetMin: DEFAULT_BUDGET_MIN,
   budgetMax: DEFAULT_BUDGET_MAX,
   zones: [],

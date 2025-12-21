@@ -29,6 +29,7 @@ import { swipeRejectionService } from '../services/swipeRejectionService';
 import { API_CONFIG } from '../config/api';
 import type { Profile } from '../types/profile';
 import type { SwipeFilters } from '../types/swipeFilters';
+import type { Gender } from '../types/gender';
 
 type SwipeProfile = {
   id: string;
@@ -44,6 +45,7 @@ type SwipeProfile = {
   interests: string[];
   preferredZones: string[];
   roommates: number | null;
+  gender?: Gender | null;
   profile: Profile;
 };
 
@@ -263,6 +265,7 @@ export const SwipeScreen: React.FC = () => {
       interests: profile.interests ?? [],
       preferredZones: profile.preferred_zones ?? [],
       roommates: profile.num_roommates_wanted ?? null,
+      gender: profile.gender ?? null,
       lifestyle: profile.lifestyle_preferences
         ? Object.values(profile.lifestyle_preferences).filter(
             (item): item is string => Boolean(item)
@@ -332,6 +335,7 @@ export const SwipeScreen: React.FC = () => {
 
         await setFilters({
           housingSituation: profile.housing_situation ?? 'any',
+          gender: 'any',
           budgetMin: profile.budget_min ?? BUDGET_MIN,
           budgetMax: profile.budget_max ?? BUDGET_MAX,
           zones: profile.preferred_zones ?? [],
@@ -928,6 +932,7 @@ const styles = StyleSheet.create({
 const getActiveFilterCount = (filters: SwipeFilters) => {
   let count = 0;
   if (filters.housingSituation !== 'any') count += 1;
+  if (filters.gender !== 'any') count += 1;
   if (filters.budgetMin > BUDGET_MIN || filters.budgetMax < BUDGET_MAX)
     count += 1;
   if (filters.zones.length > 0) count += 1;
@@ -959,6 +964,10 @@ const applyFilters = (
       filters.housingSituation !== 'any' &&
       profile.housing !== filters.housingSituation
     ) {
+      return false;
+    }
+
+    if (filters.gender !== 'any' && profile.gender !== filters.gender) {
       return false;
     }
 

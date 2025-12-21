@@ -67,7 +67,7 @@ export const EditProfileScreen: React.FC = () => {
   const handleAuthError = authContext?.handleAuthError;
 
   const navigation = useNavigation<StackNavigationProp<any>>();
-  const { setFilters } = useSwipeFilters();
+  const { setFilters, filters } = useSwipeFilters();
 
   // Estados del formulario - solo campos que existen en la tabla profiles
   const [nombre, setNombre] = useState('');
@@ -339,6 +339,7 @@ export const EditProfileScreen: React.FC = () => {
       await profileService.updateProfile(profileData);
       await setFilters({
         housingSituation,
+        gender: filters.gender,
         budgetMin: presupuestoMinValue,
         budgetMax: presupuestoMaxValue,
         zones: zonas,

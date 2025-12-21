@@ -25,11 +25,20 @@ import {
 } from '../constants/swipeFilters';
 import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import type { HousingFilter, SwipeFilters } from '../types/swipeFilters';
+import type { GenderFilter } from '../types/gender';
 
 const HOUSING_OPTIONS: { id: HousingFilter; label: string }[] = [
   { id: 'any', label: 'Indiferente' },
   { id: 'seeking', label: 'Busca piso' },
   { id: 'offering', label: 'Tiene piso' },
+];
+
+const GENDER_OPTIONS: { id: GenderFilter; label: string }[] = [
+  { id: 'any', label: 'Indiferente' },
+  { id: 'male', label: 'Hombre' },
+  { id: 'female', label: 'Mujer' },
+  { id: 'non_binary', label: 'No binario' },
+  { id: 'other', label: 'Otro' },
 ];
 
 const clamp = (value: number, min: number, max: number) =>
@@ -73,6 +82,7 @@ export const FiltersScreen: React.FC = () => {
   const handleResetDraft = () => {
     setDraft({
       housingSituation: 'any',
+      gender: 'any',
       budgetMin: DEFAULT_BUDGET_MIN,
       budgetMax: DEFAULT_BUDGET_MAX,
       zones: [],
@@ -137,6 +147,39 @@ export const FiltersScreen: React.FC = () => {
                     setDraft((prev) => ({
                       ...prev,
                       housingSituation: option.id,
+                    }))
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.segmentButtonText,
+                      isActive && styles.segmentButtonTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </FormSection>
+
+        <FormSection title="Genero" iconName="people-outline">
+          <Text style={styles.label}>Preferencia</Text>
+          <View style={styles.segmentRow}>
+            {GENDER_OPTIONS.map((option) => {
+              const isActive = draft.gender === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[
+                    styles.segmentButton,
+                    isActive && styles.segmentButtonActive,
+                  ]}
+                  onPress={() =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      gender: option.id,
                     }))
                   }
                 >
@@ -278,6 +321,7 @@ const styles = StyleSheet.create({
   },
   segmentRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   segmentButton: {

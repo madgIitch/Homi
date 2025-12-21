@@ -9,8 +9,15 @@ import { useTheme } from '../theme/ThemeContext';
 import { authService } from '../services/authService';
 import { Phase1Email } from './register/Phase1Email';  
 import { Phase2Name } from './register/Phase2Name';  
+import { Phase3Gender } from './register/Phase3Gender';
 import { Phase3BirthDate } from './register/Phase3BirthDate';  
-import { Phase1Data, Phase2Data, Phase3Data, TempRegistration } from '../types/auth';  
+import {
+  Phase1Data,
+  Phase2Data,
+  Phase3Data,
+  PhaseGenderData,
+  TempRegistration,
+} from '../types/auth';  
   
 type RootStackParamList = {  
   Login: undefined;  
@@ -33,37 +40,38 @@ export const RegisterScreen: React.FC = () => {
     
   const [currentPhase, setCurrentPhase] = useState(1);  
   const [tempRegistration, setTempRegistration] = useState<TempRegistration | null>(null);  
+  const [phase2Data, setPhase2Data] = useState<Phase2Data | null>(null);
   const [loading, setLoading] = useState(false);  
   
   const handlePhase1 = async (data: Phase1Data) => {  
-    console.log('📍 RegisterScreen: handlePhase1 called');  
-    console.log('📍 RegisterScreen: authService available:', !!authService);  
-    console.log('📍 RegisterScreen: registerPhase1 method available:', typeof authService.registerPhase1);  
+    console.log('ÐY"? RegisterScreen: handlePhase1 called');  
+    console.log('ÐY"? RegisterScreen: authService available:', !!authService);  
+    console.log('ÐY"? RegisterScreen: registerPhase1 method available:', typeof authService.registerPhase1);  
       
     setLoading(true);  
     try {  
       if (data.isGoogleUser) {  
-        console.log('📍 RegisterScreen: Google flow detected');  
+        console.log('ÐY"? RegisterScreen: Google flow detected');  
         const result = await authService.loginWithGoogle();  
         setTempRegistration({  
           tempToken: 'google_' + result.user.id,  
           email: result.user.email,  
           isGoogleUser: true,  
         });  
-        setCurrentPhase(3);  
+        setCurrentPhase(2);  
       } else {  
-        console.log('📍 RegisterScreen: Email flow detected, calling registerPhase1');  
+        console.log('ÐY"? RegisterScreen: Email flow detected, calling registerPhase1');  
         const tempReg = await authService.registerPhase1(data);  
-        console.log('📍 RegisterScreen: registerPhase1 completed:', tempReg);  
+        console.log('ÐY"? RegisterScreen: registerPhase1 completed:', tempReg);  
         setTempRegistration(tempReg);  
         setCurrentPhase(2);  
       }  
     } catch (error) {  
-      console.error('❌ Error en fase 1:', error);  
+      console.error('ƒ?O Error en fase 1:', error);  
       const errorMessage = error instanceof Error ? error.message : String(error);  
       const errorStack = error instanceof Error ? error.stack : 'No stack available';  
         
-      console.error('❌ Full error details:', {  
+      console.error('ƒ?O Full error details:', {  
         message: errorMessage,  
         stack: errorStack,  
         name: error instanceof Error ? error.name : 'Unknown'  
@@ -76,25 +84,37 @@ export const RegisterScreen: React.FC = () => {
   };
 
 
-  const handlePhase2 = async (data: Phase2Data) => {  
+  const handlePhase2 = (data: Phase2Data) => {  
+    setPhase2Data(data);
+    setCurrentPhase(3);
+  };  
+
+  const handlePhase3 = async (gender: PhaseGenderData['gender']) => {  
     if (!tempRegistration) {  
       Alert.alert('Error', 'Registro temporal no encontrado');  
       return;  
     }  
+    if (!phase2Data) {
+      Alert.alert('Error', 'Datos personales incompletos');
+      return;
+    }
   
     setLoading(true);  
     try {  
-      await authService.registerPhase2(tempRegistration.tempToken, data);  
-      setCurrentPhase(3);  
+      await authService.registerPhase2(tempRegistration.tempToken, {
+        ...phase2Data,
+        gender,
+      });  
+      setCurrentPhase(4);  
     } catch (error) {  
-      console.error('❌ Error en fase 2:', error);  
+      console.error('ƒ?O Error en fase 3:', error);  
       Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
     }  
   };  
   
-  const handlePhase3 = async (data: Phase3Data) => {  
+  const handlePhase4 = async (data: Phase3Data) => {  
     if (!tempRegistration) {  
       Alert.alert('Error', 'Registro temporal no encontrado');  
       return;  
@@ -104,9 +124,9 @@ export const RegisterScreen: React.FC = () => {
     try {  
       const result = await authService.registerPhase3(tempRegistration.tempToken, data);  
       await loginWithSession(result.user, result.token, result.refreshToken);  
-      // Navegación automática manejada por AuthContext  
+      // NavegaciÇün automÇ­tica manejada por AuthContext  
     } catch (error) {  
-      console.error('❌ Error en fase 3:', error);  
+      console.error('ƒ?O Error en fase 4:', error);  
       Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
@@ -128,10 +148,10 @@ export const RegisterScreen: React.FC = () => {
         email: result.user.email,  
         isGoogleUser: true,  
       });  
-      // Para usuarios de Google, saltar directamente al paso 3  
-      setCurrentPhase(3);  
+      // Para usuarios de Google, saltar directamente al paso 2  
+      setCurrentPhase(2);  
     } catch (error) {  
-      console.error('❌ Error en login con Google:', error);  
+      console.error('ƒ?O Error en login con Google:', error);  
       Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
@@ -149,7 +169,7 @@ export const RegisterScreen: React.FC = () => {
   
         <Text style={[styles.logo, { color: theme.colors.primary }]}>HomiMatch</Text>  
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
-          Crea tu cuenta - Paso {currentPhase} de 3  
+          Crea tu cuenta - Paso {currentPhase} de 4  
         </Text>  
       </View>  
   
@@ -170,8 +190,15 @@ export const RegisterScreen: React.FC = () => {
           />  
         )}  
         {currentPhase === 3 && (  
+          <Phase3Gender
+            onNext={handlePhase3}
+            onBack={handleBack}
+            loading={loading}
+          />
+        )}  
+        {currentPhase === 4 && (  
           <Phase3BirthDate  
-            onComplete={handlePhase3}  
+            onComplete={handlePhase4}  
             onBack={handleBack}  
             loading={loading}  
           />  

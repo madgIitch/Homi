@@ -59,6 +59,13 @@ async function handler(req: Request): Promise<Response> {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }  
       )  
     }  
+
+    if (!tempData.gender) {  
+      return new Response(  
+        JSON.stringify({ error: 'Missing required gender' }),  
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }  
+      )  
+    }  
   
     if (tempData.is_google_user) {  
       // Para usuarios de Google, solo actualizar perfil  
@@ -75,7 +82,8 @@ async function handler(req: Request): Promise<Response> {
         email_confirm: true,  
         user_metadata: {  
           first_name: tempData.first_name,  
-          last_name: tempData.last_name  
+          last_name: tempData.last_name,  
+          gender: tempData.gender  
         }  
       })  
   
@@ -96,7 +104,8 @@ async function handler(req: Request): Promise<Response> {
             email: tempData.email,  
             first_name: tempData.first_name,  
             last_name: tempData.last_name,  
-            birth_date: body.birth_date
+            birth_date: body.birth_date,  
+            gender: tempData.gender
             },  
             {  
             onConflict: 'id'  // Maneja duplicados  
@@ -116,7 +125,7 @@ async function handler(req: Request): Promise<Response> {
       // Crear perfil básico  
       await supabaseClient  
         .from('profiles')  
-        .insert({ id: authData.user.id })  
+        .insert({ id: authData.user.id, gender: tempData.gender })  
   
       // Generar sesión  
       const anonClient = createClient(  
@@ -148,6 +157,7 @@ async function handler(req: Request): Promise<Response> {
           first_name: tempData.first_name,  
           last_name: tempData.last_name,  
           birth_date: body.birth_date,  
+          gender: tempData.gender,  
           created_at: signInData.user.created_at  
         }  
       }  

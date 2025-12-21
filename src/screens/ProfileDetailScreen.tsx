@@ -188,6 +188,27 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     (!routeProfile && (!userId || userId === currentUserId)) ||
     routeProfile?.id === currentUserId;
 
+  const handleLogout = () => {
+    if (!authContext?.logout) return;
+    Alert.alert('Cerrar sesion', 'Quieres salir de tu cuenta?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Salir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await authContext.logout();
+          } finally {
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          }
+        },
+      },
+    ]);
+  };
+
   useEffect(() => {
     if (routeProfile) {
       setProfile(routeProfile);
@@ -422,9 +443,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           {profile.display_name}
         </Text>
         {isOwnProfile ? (
-          <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
-            <Text style={styles.editButton}>Editar</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
+              <Text style={styles.editButton}>Editar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleLogout}>
+              <Text style={styles.logoutButton}>Cerrar sesion</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={styles.headerSpacer} />
         )}
@@ -1000,6 +1026,11 @@ const styles = StyleSheet.create({
   editButton: {
     fontSize: 16,
     color: '#6B46C1',
+    fontWeight: '500',
+  },
+  logoutButton: {
+    fontSize: 16,
+    color: '#DC2626',
     fontWeight: '500',
   },
   headerActions: {

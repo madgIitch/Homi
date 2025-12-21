@@ -1,4 +1,5 @@
 // src/types/profile.ts  
+import type { Gender } from './gender';
 export interface LifestylePreferences {  
   schedule?: string | null;  
   cleaning?: string | null;  
@@ -20,6 +21,7 @@ export interface Profile {
   occupation: string | null;  
   university: string | null;  
   field_of_study: string | null;  
+  gender?: Gender | null;
   
   interests: string[];  
   lifestyle_preferences: LifestylePreferences | null;  

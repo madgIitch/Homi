@@ -1,5 +1,7 @@
 import type { Profile } from './profile';
 
+export type GenderPolicy = 'mixed' | 'men_only' | 'flinta';
+
 export interface Flat {
   id: string;
   owner_id: string;
@@ -8,6 +10,7 @@ export interface Flat {
   district?: string;
   rules?: string;
   services?: FlatService[];
+  gender_policy?: GenderPolicy;
   created_at: string;
 }
 
@@ -46,6 +49,7 @@ export interface FlatCreateRequest {
   district?: string;
   rules?: string;
   services?: FlatService[];
+  gender_policy?: GenderPolicy;
 }
 
 export interface RoomCreateRequest {
@@ -63,6 +67,7 @@ export interface RoomFilters {
   price_min?: number;
   price_max?: number;
   available_from?: string;
+  gender_policy?: GenderPolicy;
 }
 
 export interface RoomExtraDetails {
