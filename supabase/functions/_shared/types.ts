@@ -41,6 +41,7 @@ export interface Profile {
   avatar_url?: string      
   bio?: string      
   gender?: string      
+  birth_date?: string
   occupation?: string      
   smoker?: boolean      
   has_pets?: boolean      
@@ -60,7 +61,6 @@ export interface Profile {
   preferred_zones?: string[]  
   budget_min?: number  
   budget_max?: number  
-  num_roommates_wanted?: number  
 }
   
 export interface Flat {    
@@ -69,6 +69,7 @@ export interface Flat {
   address: string    
   city: string    
   district?: string    
+  gender_policy?: string
   rules?: string
   services?: FlatService[]
   created_at: string    
@@ -175,7 +176,6 @@ export interface ProfileCreateRequest {
   preferred_zones?: string[]  
   budget_min?: number  
   budget_max?: number  
-  num_roommates_wanted?: number  
 }
   
 export interface FlatCreateRequest {    

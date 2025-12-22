@@ -12,7 +12,6 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { Button } from '../components/Button';
 import { ChipGroup } from '../components/ChipGroup';
 import { FormSection } from '../components/FormSection';
-import { Input } from '../components/Input';
 import {
   BUDGET_MAX,
   BUDGET_MIN,
@@ -26,6 +25,59 @@ import {
 import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import type { HousingFilter, SwipeFilters } from '../types/swipeFilters';
 import type { GenderFilter } from '../types/gender';
+import type { Gender, HousingSituation } from '../types/profile';
+import { profileService } from '../services/profileService';
+
+const RULE_OPTIONS = [
+  { id: 'ruido', label: 'Ruido' },
+  { id: 'visitas', label: 'Visitas' },
+  { id: 'limpieza', label: 'Limpieza' },
+  { id: 'fumar', label: 'Fumar' },
+  { id: 'mascotas', label: 'Mascotas' },
+  { id: 'cocina', label: 'Dejar la cocina limpia tras usarla' },
+  { id: 'banos', label: 'Mantener banos en orden' },
+  { id: 'basura', label: 'Sacar la basura segun el turno' },
+  { id: 'seguridad', label: 'Cerrar siempre la puerta con llave' },
+  { id: 'otros', label: 'Otros' },
+];
+
+const SUB_RULE_OPTIONS: Record<string, { id: string; label: string }[]> = {
+  ruido: [
+    { id: 'ruido_22_08', label: 'Silencio 22:00 - 08:00' },
+    { id: 'ruido_23_08', label: 'Silencio 23:00 - 08:00' },
+    { id: 'ruido_flexible', label: 'Horario flexible' },
+    { id: 'ruido_otros', label: 'Otros' },
+  ],
+  visitas: [
+    { id: 'visitas_si', label: 'Si, con aviso' },
+    { id: 'visitas_no', label: 'No permitidas' },
+    { id: 'visitas_sin_dormir', label: 'Si, pero sin dormir' },
+    { id: 'visitas_libre', label: 'Sin problema' },
+    { id: 'visitas_otros', label: 'Otros' },
+  ],
+  limpieza: [
+    { id: 'limpieza_semanal', label: 'Turnos semanales' },
+    { id: 'limpieza_quincenal', label: 'Turnos quincenales' },
+    { id: 'limpieza_por_uso', label: 'Limpieza por uso' },
+    { id: 'limpieza_profesional', label: 'Servicio de limpieza' },
+    { id: 'limpieza_otros', label: 'Otros' },
+  ],
+  fumar: [
+    { id: 'fumar_no', label: 'No fumar' },
+    { id: 'fumar_terraza', label: 'Solo en terraza/balcon' },
+    { id: 'fumar_si', label: 'Permitido en zonas comunes' },
+    { id: 'fumar_otros', label: 'Otros' },
+  ],
+  mascotas: [
+    { id: 'mascotas_no', label: 'No se permiten' },
+    { id: 'mascotas_gatos', label: 'Solo gatos' },
+    { id: 'mascotas_perros', label: 'Solo perros' },
+    { id: 'mascotas_acuerdo', label: 'Permitidas bajo acuerdo' },
+    { id: 'mascotas_otros', label: 'Otros' },
+  ],
+};
+
+const FLEXIBLE_OPTION = { id: 'flexible', label: 'Flexible' };
 
 const HOUSING_OPTIONS: { id: HousingFilter; label: string }[] = [
   { id: 'any', label: 'Indiferente' },
@@ -36,9 +88,7 @@ const HOUSING_OPTIONS: { id: HousingFilter; label: string }[] = [
 const GENDER_OPTIONS: { id: GenderFilter; label: string }[] = [
   { id: 'any', label: 'Indiferente' },
   { id: 'male', label: 'Hombre' },
-  { id: 'female', label: 'Mujer' },
-  { id: 'non_binary', label: 'No binario' },
-  { id: 'other', label: 'Otro' },
+  { id: 'flinta', label: 'Flinta' },
 ];
 
 const clamp = (value: number, min: number, max: number) =>
@@ -49,17 +99,64 @@ const snapToStep = (value: number) =>
 
 export const FiltersScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<any>>();
-  const { filters, setFilters } = useSwipeFilters();
+  const { filters, resetFilters, setFilters } = useSwipeFilters();
   const [draft, setDraft] = useState<SwipeFilters>(filters);
-  const [roommatesText, setRoommatesText] = useState(
-    filters.roommates != null ? String(filters.roommates) : ''
+  const [profileHousing, setProfileHousing] = useState<HousingSituation | null>(
+    null
   );
+  const [profileGender, setProfileGender] = useState<Gender | null>(null);
   const [isDraggingBudget, setIsDraggingBudget] = useState(false);
 
   useEffect(() => {
     setDraft(filters);
-    setRoommatesText(filters.roommates != null ? String(filters.roommates) : '');
   }, [filters]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadProfile = async () => {
+      try {
+        const profile = await profileService.getProfile();
+        if (isMounted) {
+          setProfileHousing(profile?.housing_situation ?? null);
+          setProfileGender(profile?.gender ?? null);
+        }
+      } catch (error) {
+        console.error('[FiltersScreen] Error cargando perfil:', error);
+      }
+    };
+
+    void loadProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (profileHousing === 'offering' && draft.housingSituation !== 'any') {
+      setDraft((prev) => ({
+        ...prev,
+        housingSituation: 'any',
+      }));
+    }
+  }, [draft.housingSituation, profileHousing]);
+
+  useEffect(() => {
+    if (profileHousing !== 'offering') return;
+    const resetAll = async () => {
+      await resetFilters();
+      setDraft({
+        housingSituation: 'any',
+        gender: 'any',
+        budgetMin: DEFAULT_BUDGET_MIN,
+        budgetMax: DEFAULT_BUDGET_MAX,
+        zones: [],
+        lifestyle: [],
+        interests: [],
+        rules: {},
+      });
+    };
+    void resetAll();
+  }, [profileHousing, resetFilters]);
 
   const handleApply = async () => {
     let budgetMin = clamp(draft.budgetMin, BUDGET_MIN, BUDGET_MAX);
@@ -86,11 +183,10 @@ export const FiltersScreen: React.FC = () => {
       budgetMin: DEFAULT_BUDGET_MIN,
       budgetMax: DEFAULT_BUDGET_MAX,
       zones: [],
-      roommates: null,
       lifestyle: [],
       interests: [],
+      rules: {},
     });
-    setRoommatesText('');
   };
 
   const housingLabel = useMemo(
@@ -99,20 +195,33 @@ export const FiltersScreen: React.FC = () => {
         ?.label ?? 'Indiferente',
     [draft.housingSituation]
   );
-
-  const updateRoommates = (text: string) => {
-    const cleaned = text.replace(/[^\d]/g, '');
-    setRoommatesText(cleaned);
-    if (!cleaned) {
-      setDraft((prev) => ({ ...prev, roommates: null }));
-      return;
+  const genderOptions = useMemo(() => {
+    if (draft.housingSituation !== 'offering') return GENDER_OPTIONS;
+    if (profileGender === 'male') {
+      return GENDER_OPTIONS.filter((option) => option.id !== 'flinta');
     }
-    const parsed = Number.parseInt(cleaned, 10);
-    setDraft((prev) => ({
-      ...prev,
-      roommates: Number.isNaN(parsed) ? null : parsed,
-    }));
-  };
+    if (!profileGender || profileGender === 'undisclosed') {
+      return GENDER_OPTIONS;
+    }
+    return GENDER_OPTIONS.filter((option) => option.id !== 'male');
+  }, [draft.housingSituation, profileGender]);
+
+  useEffect(() => {
+    if (
+      draft.housingSituation === 'offering' &&
+      !genderOptions.some((option) => option.id === draft.gender)
+    ) {
+      setDraft((prev) => ({
+        ...prev,
+        gender: 'any',
+      }));
+    }
+  }, [draft.gender, draft.housingSituation, genderOptions]);
+  const showLifestyleFilters =
+    draft.housingSituation === 'any' || draft.housingSituation === 'seeking';
+  const showRuleFilters =
+    draft.housingSituation === 'any' || draft.housingSituation === 'offering';
+
 
   return (
     <View style={styles.container}>
@@ -131,71 +240,137 @@ export const FiltersScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         scrollEnabled={!isDraggingBudget}
       >
-        <FormSection title="Situacion vivienda" iconName="home-outline">
-          <Text style={styles.label}>Actual: {housingLabel}</Text>
-          <View style={styles.segmentRow}>
-            {HOUSING_OPTIONS.map((option) => {
-              const isActive = draft.housingSituation === option.id;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[
-                    styles.segmentButton,
-                    isActive && styles.segmentButtonActive,
-                  ]}
-                  onPress={() =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      housingSituation: option.id,
-                    }))
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.segmentButtonText,
-                      isActive && styles.segmentButtonTextActive,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        {profileHousing === 'offering' ? (
+          <View style={styles.noticeCard}>
+            <Ionicons name="information-circle-outline" size={20} color="#111827" />
+            <Text style={styles.noticeTitle}>Filtros ocultos</Text>
+            <Text style={styles.noticeText}>
+              Como tienes piso, te mostramos perfiles segun las condiciones y
+              precios de tus habitaciones disponibles.
+            </Text>
           </View>
-        </FormSection>
+        ) : (
+          <>
+        {profileHousing !== 'offering' ? (
+          <FormSection title="Situacion vivienda" iconName="home-outline">
+            <Text style={styles.label}>Actual: {housingLabel}</Text>
+            <View style={styles.segmentRow}>
+              {HOUSING_OPTIONS.map((option) => {
+                const isActive = draft.housingSituation === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[
+                      styles.segmentButton,
+                      isActive && styles.segmentButtonActive,
+                    ]}
+                    onPress={() =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        housingSituation: option.id,
+                      }))
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.segmentButtonText,
+                        isActive && styles.segmentButtonTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </FormSection>
+        ) : null}
 
-        <FormSection title="Genero" iconName="people-outline">
-          <Text style={styles.label}>Preferencia</Text>
-          <View style={styles.segmentRow}>
-            {GENDER_OPTIONS.map((option) => {
+        {profileHousing !== 'offering' ? (
+          <FormSection title="Genero" iconName="people-outline">
+            <Text style={styles.label}>Preferencia</Text>
+            <View style={styles.segmentRow}>
+            {genderOptions.map((option) => {
               const isActive = draft.gender === option.id;
               return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[
-                    styles.segmentButton,
-                    isActive && styles.segmentButtonActive,
-                  ]}
-                  onPress={() =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      gender: option.id,
-                    }))
-                  }
-                >
-                  <Text
+                  <TouchableOpacity
+                    key={option.id}
                     style={[
-                      styles.segmentButtonText,
-                      isActive && styles.segmentButtonTextActive,
+                      styles.segmentButton,
+                      isActive && styles.segmentButtonActive,
                     ]}
+                    onPress={() =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        gender: option.id,
+                      }))
+                    }
                   >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </FormSection>
+                    <Text
+                      style={[
+                        styles.segmentButtonText,
+                        isActive && styles.segmentButtonTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </FormSection>
+        ) : null}
+
+        {showRuleFilters ? (
+          <FormSection title="Reglas del piso" iconName="clipboard-outline">
+            <Text style={styles.label}>Preferencias</Text>
+            <View style={styles.rulesList}>
+              {RULE_OPTIONS.map((rule) => {
+                const options = SUB_RULE_OPTIONS[rule.id]
+                  ? [...SUB_RULE_OPTIONS[rule.id], FLEXIBLE_OPTION]
+                  : [{ id: rule.id, label: 'Obligatorio' }, FLEXIBLE_OPTION];
+                const active = draft.rules?.[rule.id] ?? null;
+                return (
+                  <View key={rule.id} style={styles.ruleBlock}>
+                    <Text style={styles.ruleTitle}>{rule.label}</Text>
+                    <View style={styles.ruleOptions}>
+                      {options.map((option) => {
+                        const isActive = active === option.id;
+                        return (
+                          <TouchableOpacity
+                            key={option.id}
+                            style={[
+                              styles.ruleChip,
+                              isActive && styles.ruleChipActive,
+                            ]}
+                            onPress={() =>
+                              setDraft((prev) => ({
+                                ...prev,
+                                rules: {
+                                  ...(prev.rules ?? {}),
+                                  [rule.id]: isActive ? null : option.id,
+                                },
+                              }))
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.ruleChipText,
+                                isActive && styles.ruleChipTextActive,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </FormSection>
+        ) : null}
 
         <FormSection title="Presupuesto" iconName="cash-outline">
           <View style={styles.budgetValues}>
@@ -232,32 +407,24 @@ export const FiltersScreen: React.FC = () => {
           />
         </FormSection>
 
-        <FormSection title="Numero de companeros" iconName="people-outline">
-          <Input
-            label="Preferencia"
-            placeholder="Cualquiera"
-            value={roommatesText}
-            onChangeText={updateRoommates}
-            keyboardType="numeric"
-          />
-        </FormSection>
-
-        <FormSection title="Estilo de vida" iconName="sparkles-outline">
-          <ChipGroup
-            label="Selecciona estilos"
-            options={ESTILO_VIDA_OPTIONS}
-            selectedIds={draft.lifestyle}
-            onSelect={(id) => {
-              setDraft((prev) => ({
-                ...prev,
-                lifestyle: prev.lifestyle.includes(id)
-                  ? prev.lifestyle.filter((chip) => chip !== id)
-                  : [...prev.lifestyle, id],
-              }));
-            }}
-            multiline
-          />
-        </FormSection>
+        {showLifestyleFilters ? (
+          <FormSection title="Estilo de vida" iconName="sparkles-outline">
+            <ChipGroup
+              label="Selecciona estilos"
+              options={ESTILO_VIDA_OPTIONS}
+              selectedIds={draft.lifestyle}
+              onSelect={(id) => {
+                setDraft((prev) => ({
+                  ...prev,
+                  lifestyle: prev.lifestyle.includes(id)
+                    ? prev.lifestyle.filter((chip) => chip !== id)
+                    : [...prev.lifestyle, id],
+                }));
+              }}
+              multiline
+            />
+          </FormSection>
+        ) : null}
 
         <FormSection title="Intereses clave" iconName="heart-outline">
           <ChipGroup
@@ -275,6 +442,8 @@ export const FiltersScreen: React.FC = () => {
             multiline
           />
         </FormSection>
+          </>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -307,7 +476,7 @@ const styles = StyleSheet.create({
   resetText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#7C3AED',
+    color: '#111827',
   },
   content: {
     flex: 1,
@@ -334,8 +503,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   segmentButtonActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
+    backgroundColor: '#111827',
+    borderColor: '#111827',
   },
   segmentButtonText: {
     fontSize: 12,
@@ -361,6 +530,62 @@ const styles = StyleSheet.create({
     borderTopColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
   },
+  noticeCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    gap: 8,
+  },
+  noticeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  noticeText: {
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 18,
+  },
+  rulesList: {
+    gap: 12,
+  },
+  ruleBlock: {
+    gap: 8,
+  },
+  ruleTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  ruleOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  ruleChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  ruleChipActive: {
+    borderColor: '#111827',
+    backgroundColor: '#111827',
+  },
+  ruleChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  ruleChipTextActive: {
+    color: '#FFFFFF',
+  },
   sliderTrack: {
     height: 6,
     borderRadius: 3,
@@ -375,14 +600,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#111827',
   },
   sliderThumb: {
     position: 'absolute',
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#111827',
     borderWidth: 2,
     borderColor: '#FFFFFF',
     top: -7,

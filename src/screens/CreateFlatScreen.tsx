@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -15,29 +15,52 @@ import { Button } from '../components/Button';
 import { ChipGroup } from '../components/ChipGroup';
 import { AuthContext } from '../context/AuthContext';
 import { roomService } from '../services/roomService';
+import { profileService } from '../services/profileService';
 import { ZONAS_OPTIONS } from '../constants/swipeFilters';
 import type { GenderPolicy } from '../types/room';
+import type { Gender } from '../types/gender';
 
 export const CreateFlatScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const authContext = useContext(AuthContext);
   const userGender = authContext?.user?.gender ?? null;
+  const [profileGender, setProfileGender] = useState<Gender | null>(null);
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [district, setDistrict] = useState<string | null>(null);
   const [genderPolicy, setGenderPolicy] = useState<GenderPolicy>('mixed');
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    let isMounted = true;
+    const loadProfileGender = async () => {
+      try {
+        const profile = await profileService.getProfile();
+        if (isMounted) {
+          setProfileGender(profile?.gender ?? null);
+        }
+      } catch (error) {
+        console.error('Error cargando perfil:', error);
+      }
+    };
+
+    void loadProfileGender();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const resolvedGender = profileGender ?? userGender;
   const allowedPolicies = useMemo(() => {
-    if (userGender === 'male') {
+    if (resolvedGender === 'male') {
       return new Set<GenderPolicy>(['men_only', 'mixed']);
     }
-    if (!userGender) {
-      return new Set<GenderPolicy>(['mixed']);
+    if (!resolvedGender || resolvedGender === 'undisclosed') {
+      return new Set<GenderPolicy>(['men_only', 'mixed', 'flinta']);
     }
     return new Set<GenderPolicy>(['flinta', 'mixed']);
-  }, [userGender]);
+  }, [resolvedGender]);
 
   const selectPolicy = (policy: GenderPolicy) => {
     if (!allowedPolicies.has(policy)) {

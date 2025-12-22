@@ -210,6 +210,7 @@ export const ChatScreen: React.FC = () => {
       ),
     [acceptedAssignments]
   );
+  const isChatWithSeeker = profile?.housing_situation === 'seeking';
 
   const privateRooms = useMemo(
     () => ownerRooms.filter((room) => roomExtras[room.id]?.category !== 'area_comun'),
@@ -405,7 +406,7 @@ export const ChatScreen: React.FC = () => {
           style={styles.headerProfile}
           onPress={() => {
             if (profile) {
-              navigation.navigate('ProfileDetail', { profile });
+              navigation.navigate('ProfileDetail', { profile, fromMatch: true });
             }
           }}
           disabled={!profile}
@@ -418,7 +419,7 @@ export const ChatScreen: React.FC = () => {
         <View style={styles.headerSpacer} />
       </View>
 
-      {(isOwner || isSeeker) && (
+      {!isChatWithSeeker && (isOwner || isSeeker) && (
         <View style={styles.assignmentPanel}>
           <View style={styles.assignmentHeader}>
             <View>
@@ -493,7 +494,8 @@ export const ChatScreen: React.FC = () => {
         </View>
       )}
 
-      <View style={styles.roommatesPanel}>
+      {!isChatWithSeeker && (
+        <View style={styles.roommatesPanel}>
         <View style={styles.roommatesHeader}>
           <Text style={styles.roommatesTitle}>Companeros y habitaciones</Text>
           <View style={styles.roommatesBadge}>
@@ -537,7 +539,8 @@ export const ChatScreen: React.FC = () => {
             ))}
           </View>
         )}
-      </View>
+        </View>
+      )}
 
       <FlatList
         data={orderedMessages}

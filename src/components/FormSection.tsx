@@ -1,4 +1,4 @@
-// src/components/FormSection.tsx  
+// src/components/FormSection.tsx
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -26,15 +26,23 @@ export const FormSection: React.FC<FormSectionProps> = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.card}>
+      <View
+        style={[
+          styles.card,
+          {
+            borderRadius: theme.borderRadius.lg,
+            borderColor: theme.colors.borderLight,
+          },
+        ]}
+      >
         {showHeader && (
           <View style={styles.header}>
             <View style={styles.titleRow}>
               {iconName && (
                 <Ionicons
                   name={iconName}
-                  size={20}
-                  color={theme.colors.primary}
+                  size={18}
+                  color={theme.colors.text}
                   style={styles.headerIcon}
                 />
               )}
@@ -85,15 +93,13 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
     padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   header: {
     marginBottom: 16,

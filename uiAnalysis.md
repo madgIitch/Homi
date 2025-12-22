@@ -648,6 +648,7 @@ CREATE TABLE public.flats (
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   rules text,
   services jsonb DEFAULT '[]'::jsonb,
+  gender_policy text NOT NULL DEFAULT 'mixed'::text CHECK (gender_policy = ANY (ARRAY['mixed'::text, 'men_only'::text, 'flinta'::text])),
   CONSTRAINT flats_pkey PRIMARY KEY (id),
   CONSTRAINT flats_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
 );
@@ -687,7 +688,7 @@ CREATE TABLE public.profiles (
   display_name text,
   avatar_url text,
   bio text,
-  gender text,
+  gender text NOT NULL CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'non_binary'::text, 'other'::text, 'undisclosed'::text])),
   occupation text,
   smoker boolean DEFAULT false,
   has_pets boolean DEFAULT false,
@@ -701,7 +702,6 @@ CREATE TABLE public.profiles (
   preferred_zones jsonb,
   budget_min numeric,
   budget_max numeric,
-  num_roommates_wanted integer,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES public.users(id)
 );
@@ -775,6 +775,7 @@ CREATE TABLE public.temp_registrations (
   last_name text,
   expires_at timestamp with time zone NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
+  gender text CHECK ((gender = ANY (ARRAY['male'::text, 'female'::text, 'non_binary'::text, 'other'::text, 'undisclosed'::text])) OR gender IS NULL),
   CONSTRAINT temp_registrations_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.users (
@@ -785,6 +786,7 @@ CREATE TABLE public.users (
   identity_document text UNIQUE,
   birth_date date,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  gender text NOT NULL CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'non_binary'::text, 'other'::text, 'undisclosed'::text])),
   CONSTRAINT users_pkey PRIMARY KEY (id),
   CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );

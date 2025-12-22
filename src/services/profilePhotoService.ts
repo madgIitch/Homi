@@ -109,6 +109,20 @@ class ProfilePhotoService {
     const data: ProfilePhotoResponse = await response.json();
     return data.data;
   }
+
+  async deletePhoto(photoId: string): Promise<void> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profile-photos`, {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({ id: photoId }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Error al eliminar la foto');
+    }
+  }
 }
 
 export const profilePhotoService = new ProfilePhotoService();

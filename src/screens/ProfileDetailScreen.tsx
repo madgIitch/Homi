@@ -8,13 +8,12 @@ import {
   TouchableOpacity,
   Alert,
   Image,
-  FlatList,
-  Dimensions,
   Modal,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { BlurView } from '@react-native-community/blur';
 import { useTheme } from '../theme/ThemeContext';
 import { API_CONFIG } from '../config/api';
 import { profileService } from '../services/profileService';
@@ -168,7 +167,6 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
-  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'perfil' | 'piso'>('perfil');
@@ -182,8 +180,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const route = useRoute();
   const authContext = useContext(AuthContext);
   const currentUserId = authContext?.user?.id ?? '';
-  const routeProfile = (route as { params?: { profile?: Profile } }).params
-    ?.profile;
+  const routeParams = route as { params?: { profile?: Profile; fromMatch?: boolean } };
+  const routeProfile = routeParams.params?.profile;
+  const isFromMatch = Boolean(routeParams.params?.fromMatch);
   const isOwnProfile =
     (!routeProfile && (!userId || userId === currentUserId)) ||
     routeProfile?.id === currentUserId;
@@ -346,7 +345,6 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const preferredZoneLabels = preferredZones.map(
     (zone) => zoneLabelById.get(zone) ?? zone
   );
-  const hasStudyInfo = Boolean(profile.university || profile.occupation);
   const convivenciaItems = [
     {
       key: 'schedule',
@@ -406,12 +404,30 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       : profile.housing_situation === 'offering'
       ? `Tengo piso en ${preferredZoneLabels[0] ?? 'zona preferida'}`
       : null;
+  const memberSinceYear = profile.created_at
+    ? new Date(profile.created_at).getFullYear()
+    : null;
+  const birthDateString = isOwnProfile
+    ? profile.birth_date ?? authContext?.user?.birth_date ?? null
+    : profile.birth_date ?? null;
+  const birthDateValue = birthDateString
+    ? (() => {
+        const date = new Date(birthDateString);
+        if (Number.isNaN(date.getTime())) return null;
+        const today = new Date();
+        let age = today.getFullYear() - date.getFullYear();
+        const monthDelta = today.getMonth() - date.getMonth();
+        if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < date.getDate())) {
+          age -= 1;
+        }
+        return `${age} años`;
+      })()
+    : null;
   const aboutBadges = [housingBadge].filter(
     (badge): badge is string => Boolean(badge)
   );
   const shouldShowFlatTab = profile.housing_situation === 'offering';
 
-  const carouselWidth = Dimensions.get('window').width - 40;
   const resolvedAvatarUrl =
     profile.avatar_url && !profile.avatar_url.startsWith('http')
       ? `${API_CONFIG.SUPABASE_URL}/storage/v1/object/public/avatars/${profile.avatar_url}`
@@ -432,6 +448,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           },
         ]
       : [];
+  const summaryChips = [
+    profile.occupation ?? null,
+    profile.university ?? null,
+    formatBudget() !== '-' ? formatBudget() : null,
+    ...lifestyleItems,
+    ...interestLabels,
+  ].filter((item): item is string => Boolean(item));
 
   return (
     <View style={styles.container}>
@@ -440,15 +463,21 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           <Ionicons name="arrow-back" size={22} color="#111827" />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          {profile.display_name}
+          Perfil
         </Text>
         {isOwnProfile ? (
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
-              <Text style={styles.editButton}>Editar</Text>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => navigation.navigate('EditProfile')}
+            >
+              <Ionicons name="create-outline" size={18} color="#111827" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogout}>
-              <Text style={styles.logoutButton}>Cerrar sesion</Text>
+            <TouchableOpacity
+              style={[styles.headerIconButton, styles.headerIconDanger]}
+              onPress={handleLogout}
+            >
+              <Ionicons name="log-out-outline" size={18} color="#DC2626" />
             </TouchableOpacity>
           </View>
         ) : (
@@ -496,52 +525,59 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 
         {activeTab === 'perfil' && (
           <>
-        {carouselPhotos.length > 0 && (
-          <View style={styles.carouselContainer}>
-            <FlatList
-              data={carouselPhotos}
-              keyExtractor={(item) => item.id}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={carouselWidth}
-              decelerationRate="fast"
-              onMomentumScrollEnd={(event) => {
-                const index = Math.round(
-                  event.nativeEvent.contentOffset.x / carouselWidth
-                );
-                setActivePhotoIndex(index);
-              }}
-              renderItem={({ item }) => (
-                <View style={{ width: carouselWidth }}>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={() => {
-                      setLightboxUrl(item.signedUrl);
-                      setLightboxVisible(true);
-                    }}
-                  >
-                    <Image
-                      source={{ uri: item.signedUrl }}
-                      style={styles.carouselImage}
-                    />
-                  </TouchableOpacity>
-                </View>
-              )}
-            />
-            {carouselPhotos.length > 1 && (
-              <View style={styles.carouselDots}>
-                {carouselPhotos.map((photo, index) => (
-                  <View
-                    key={photo.id}
-                    style={[
-                      styles.carouselDot,
-                      index === activePhotoIndex && styles.carouselDotActive,
-                    ]}
-                  />
-                ))}
+        <View style={styles.identityCard}>
+          <View style={styles.avatarWrap}>
+            {carouselPhotos[0]?.signedUrl ? (
+              <Image
+                source={{ uri: carouselPhotos[0].signedUrl }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={26} color="#9CA3AF" />
               </View>
             )}
+          </View>
+          <Text style={styles.identityName}>{profile.display_name ?? 'Usuario'}</Text>
+          <View style={styles.identityBadges}>
+            {memberSinceYear ? (
+              <View style={styles.identityBadge}>
+                <Ionicons name="shield-checkmark" size={14} color="#111827" />
+                <Text style={styles.identityBadgeText}>
+                  Miembro desde {memberSinceYear}
+                </Text>
+              </View>
+            ) : null}
+            {housingBadge ? (
+              <View style={styles.identityBadgeLight}>
+                <Text style={styles.identityBadgeLightText}>{housingBadge}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        {carouselPhotos.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="images-outline" size={18} color="#111827" />
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                Momentos
+              </Text>
+            </View>
+            <View style={styles.photoGrid}>
+              {carouselPhotos.map((photo) => (
+                <TouchableOpacity
+                  key={photo.id}
+                  style={styles.photoTile}
+                  onPress={() => {
+                    setLightboxUrl(photo.signedUrl);
+                    setLightboxVisible(true);
+                  }}
+                >
+                  <Image source={{ uri: photo.signedUrl }} style={styles.photoTileImage} />
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
 
@@ -554,17 +590,34 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
           <View style={styles.detailCard}>
             <Text style={styles.aboutText}>{aboutText}</Text>
-            {aboutBadges.length > 0 && (
-              <View style={styles.chipsContainer}>
-                {aboutBadges.map((badge) => (
-                  <View key={badge} style={styles.outlineChip}>
-                    <Text style={styles.outlineChipText}>{badge}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
           </View>
         </View>
+
+        {summaryChips.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionMutedTitle}>Un poco sobre mi</Text>
+            <View style={styles.compactChips}>
+              {summaryChips.map((chip, index) => (
+                <View key={`${chip}-${index}`} style={styles.compactChip}>
+                  <Text style={styles.compactChipText}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {preferredZoneLabels.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionMutedTitle}>Zonas de interes</Text>
+            <View style={styles.compactChips}>
+              {preferredZoneLabels.map((zone, index) => (
+                <View key={`${zone}-${index}`} style={styles.compactChip}>
+                  <Text style={styles.compactChipText}>{zone}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {isOwnProfile && profile.housing_situation === 'offering' && (
           <View style={styles.section}>
@@ -591,175 +644,6 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         )}
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="people" size={20} color="#111827" />
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              Companeros
-            </Text>
-          </View>
-          <View style={styles.detailCard}>
-            <View style={styles.detailRow}>
-              <View style={[styles.detailIcon, styles.detailIconBlue]}>
-                <Ionicons name="people" size={18} color="#2563EB" />
-              </View>
-              <View style={styles.detailText}>
-                <Text style={styles.detailLabel}>COMPANEROS BUSCADOS</Text>
-                <Text style={styles.detailValue}>
-                  {profile.num_roommates_wanted ?? '-'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="cash" size={20} color="#111827" />
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              Presupuesto
-            </Text>
-          </View>
-          <View style={styles.detailCard}>
-            <View style={styles.detailRow}>
-              <View style={[styles.detailIcon, styles.detailIconGreen]}>
-                <Ionicons name="cash" size={18} color="#16A34A" />
-              </View>
-              <View style={styles.detailText}>
-                <Text style={styles.detailLabel}>RANGO</Text>
-                <Text style={styles.detailValue}>{formatBudget()}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {hasStudyInfo && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="school" size={20} color="#111827" />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Estudios y Trabajo
-              </Text>
-            </View>
-            <View style={styles.detailCard}>
-              {profile.university && (
-                <View style={styles.detailRow}>
-                  <View style={[styles.detailIcon, styles.detailIconBlue]}>
-                    <Ionicons name="school" size={18} color="#2563EB" />
-                  </View>
-                  <View style={styles.detailText}>
-                    <Text style={styles.detailLabel}>UNIVERSIDAD</Text>
-                    <Text style={styles.detailValue}>{profile.university}</Text>
-                  </View>
-                </View>
-              )}
-              {profile.occupation && (
-                <View style={[styles.detailRow, styles.detailRowSpacing]}>
-                  <View style={[styles.detailIcon, styles.detailIconGreen]}>
-                    <Ionicons name="briefcase" size={18} color="#16A34A" />
-                  </View>
-                  <View style={styles.detailText}>
-                    <Text style={styles.detailLabel}>OCUPACION</Text>
-                    <Text style={styles.detailValue}>{profile.occupation}</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-        {lifestyleItems.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="home" size={20} color="#111827" />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Estilo de Vida
-              </Text>
-            </View>
-            <View style={styles.chipsContainer}>
-              {lifestyleItems.map((pref, index) => (
-                <View key={`${pref}-${index}`} style={styles.outlineChip}>
-                  <Ionicons
-                    name={getLifestyleIcon(pref)}
-                    size={14}
-                    color="#7C3AED"
-                    style={styles.chipIcon}
-                  />
-                  <Text style={styles.outlineChipText}>{pref}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {interestLabels.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="sparkles" size={20} color="#111827" />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Intereses
-              </Text>
-            </View>
-            <View style={styles.chipsContainer}>
-              {interestLabels.map((interest, index) => (
-                <View key={`${interest}-${index}`} style={styles.outlineChip}>
-                  <Text style={styles.outlineChipText}>{interest}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {preferredZoneLabels.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="location" size={20} color="#111827" />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Zonas de interes
-              </Text>
-            </View>
-            <View style={styles.chipsContainer}>
-              {preferredZoneLabels.map((zone, index) => (
-                <View key={`${zone}-${index}`} style={styles.outlineChip}>
-                  <Text style={styles.outlineChipText}>{zone}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {convivenciaItems.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="clipboard" size={20} color="#111827" />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Detalles de convivencia
-              </Text>
-            </View>
-            <View style={styles.detailCard}>
-              {convivenciaItems.map((item, index) => (
-                <View
-                  key={item.key}
-                  style={[styles.detailRow, index > 0 && styles.detailRowSpacing]}
-                >
-                  <View style={[styles.detailIcon, { backgroundColor: item.bg }]}>
-                    <Ionicons name={item.icon} size={18} color={item.color} />
-                  </View>
-                  <View style={styles.detailText}>
-                    <Text style={styles.detailLabel}>{item.label.toUpperCase()}</Text>
-                    <Text style={styles.detailValue}>{item.value}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {!isOwnProfile && (
-          <TouchableOpacity style={styles.ctaButton}>
-            <Text style={styles.ctaText}>Enviar mensaje</Text>
-          </TouchableOpacity>
-        )}
           </>
         )}
 
@@ -957,12 +841,26 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
       </ScrollView>
 
-      {!isOwnProfile && (
+      {!isOwnProfile && !isFromMatch && (
         <View style={styles.bottomActions}>
           <TouchableOpacity style={[styles.bottomButton, styles.rejectButton]}>
+            <BlurView
+              style={StyleSheet.absoluteFillObject}
+              blurType="light"
+              blurAmount={14}
+              reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+            />
+            <View style={[styles.glassTint, styles.rejectTint]} />
             <Ionicons name="close" size={24} color="#EF4444" />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.bottomButton, styles.likeButton]}>
+            <BlurView
+              style={StyleSheet.absoluteFillObject}
+              blurType="light"
+              blurAmount={14}
+              reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+            />
+            <View style={[styles.glassTint, styles.likeTint]} />
             <Ionicons name="heart" size={24} color="#7C3AED" />
           </TouchableOpacity>
         </View>
@@ -1000,7 +898,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F4F5F7',
   },
   loadingContainer: {
     flex: 1,
@@ -1015,6 +913,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   headerSpacer: {
     width: 48,
@@ -1023,19 +922,23 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  editButton: {
-    fontSize: 16,
-    color: '#6B46C1',
-    fontWeight: '500',
-  },
-  logoutButton: {
-    fontSize: 16,
-    color: '#DC2626',
-    fontWeight: '500',
-  },
   headerActions: {
     flexDirection: 'row',
     gap: 12,
+  },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  headerIconDanger: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   actionButton: {
     width: 36,
@@ -1046,12 +949,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   rejectButton: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FCA5A5',
+    borderColor: 'rgba(239, 68, 68, 0.25)',
   },
   likeButton: {
-    backgroundColor: '#F3E8FF',
-    borderColor: '#D8B4FE',
+    borderColor: 'rgba(17, 24, 39, 0.2)',
   },
   content: {
     flex: 1,
@@ -1084,29 +985,95 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: '#7C3AED',
   },
-  carouselContainer: {
-    marginBottom: 24,
+  identityCard: {
+    alignItems: 'center',
+    marginBottom: 28,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  carouselImage: {
+  avatarWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    overflow: 'hidden',
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  avatarImage: {
     width: '100%',
-    height: 480,
-    borderRadius: 16,
+    height: '100%',
+  },
+  avatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  identityName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  identityBadges: {
+    marginTop: 10,
+    alignItems: 'center',
+    gap: 8,
+  },
+  identityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
     backgroundColor: '#F3F4F6',
   },
-  carouselDots: {
+  identityBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  identityBadgeLight: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D8B4FE',
+    backgroundColor: '#FFFFFF',
+  },
+  identityBadgeLightText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7C3AED',
+  },
+  photoGrid: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 10,
-    gap: 6,
+    flexWrap: 'wrap',
+    gap: 10,
   },
-  carouselDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D1D5DB',
+  photoTile: {
+    width: '31%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  carouselDotActive: {
-    backgroundColor: '#7C3AED',
+  photoTileImage: {
+    width: '100%',
+    height: '100%',
   },
   section: {
     marginBottom: 28,
@@ -1114,6 +1081,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
+  },
+  sectionMutedTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 12,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1305,6 +1278,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#7C3AED',
   },
+  compactChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  compactChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  compactChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#111827',
+  },
   chipIcon: {
     marginRight: 6,
   },
@@ -1338,6 +1329,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  glassTint: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 29,
+  },
+  rejectTint: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  },
+  likeTint: {
+    backgroundColor: 'rgba(124, 58, 237, 0.08)',
   },
   lightboxOverlay: {
     flex: 1,

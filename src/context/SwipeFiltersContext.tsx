@@ -18,9 +18,9 @@ const DEFAULT_SWIPE_FILTERS: SwipeFilters = {
   budgetMin: DEFAULT_BUDGET_MIN,
   budgetMax: DEFAULT_BUDGET_MAX,
   zones: [],
-  roommates: null,
   lifestyle: [],
   interests: [],
+  rules: {},
 };
 
 const SwipeFiltersContext = createContext<SwipeFiltersContextType | undefined>(

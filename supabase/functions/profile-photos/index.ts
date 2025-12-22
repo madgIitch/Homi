@@ -237,6 +237,93 @@ serve(
       });
     }
 
+    if (req.method === 'DELETE') {
+      let body: Record<string, unknown> | null = null;
+      try {
+        body = await req.json();
+      } catch {
+        body = null;
+      }
+      const photoId = (body?.id as string | undefined) ?? undefined;
+
+      if (!photoId) {
+        return new Response(JSON.stringify({ error: 'Missing id' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: photo, error: photoError } = await supabaseAdmin
+        .from('profile_photos')
+        .select('*')
+        .eq('id', photoId)
+        .eq('profile_id', profileId)
+        .single();
+
+      if (photoError || !photo) {
+        return new Response(JSON.stringify({ error: 'Photo not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { error: storageError } = await supabaseAdmin.storage
+        .from('avatars')
+        .remove([photo.path]);
+
+      if (storageError) {
+        console.error('[profile-photos] Delete storage error:', storageError);
+        return new Response(JSON.stringify({ error: 'Error deleting photo' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { error: deleteError } = await supabaseAdmin
+        .from('profile_photos')
+        .delete()
+        .eq('id', photoId);
+
+      if (deleteError) {
+        console.error('[profile-photos] Delete row error:', deleteError);
+        return new Response(JSON.stringify({ error: 'Error deleting photo' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if ((photo as ProfilePhotoRow).is_primary) {
+        const remaining = await listPhotos(profileId);
+        if (remaining.length > 0) {
+          await supabaseAdmin
+            .from('profile_photos')
+            .update({ is_primary: false })
+            .eq('profile_id', profileId);
+
+          const nextPrimary = remaining[0];
+          await supabaseAdmin
+            .from('profile_photos')
+            .update({ is_primary: true })
+            .eq('id', nextPrimary.id);
+
+          await supabaseAdmin
+            .from('profiles')
+            .update({ avatar_url: nextPrimary.path })
+            .eq('id', profileId);
+        } else {
+          await supabaseAdmin
+            .from('profiles')
+            .update({ avatar_url: null })
+            .eq('id', profileId);
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

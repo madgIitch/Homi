@@ -22,7 +22,8 @@ type ApiProfile = {
   preferred_zones?: string[] | null;
   budget_min?: number | null;
   budget_max?: number | null;
-  num_roommates_wanted?: number | null;
+  birth_date?: string | null;
+  users?: { birth_date?: string | null } | null;
   updated_at?: string | null;
 };
 
@@ -86,7 +87,7 @@ const mapApiProfileToProfile = (profile?: ApiProfile | null): Profile | null => 
     preferred_zones: profile.preferred_zones ?? [],
     budget_min: profile.budget_min ?? null,
     budget_max: profile.budget_max ?? null,
-    num_roommates_wanted: profile.num_roommates_wanted ?? null,
+    birth_date: profile.users?.birth_date ?? profile.birth_date ?? null,
     avatar_url: resolveAvatarUrl(profile.avatar_url ?? undefined),
     created_at: profile.updated_at ?? new Date().toISOString(),
     updated_at: profile.updated_at ?? new Date().toISOString(),

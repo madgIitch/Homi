@@ -22,6 +22,7 @@ export interface Profile {
   university: string | null;  
   field_of_study: string | null;  
   gender?: Gender | null;
+  birth_date?: string | null;
   
   interests: string[];  
   lifestyle_preferences: LifestylePreferences | null;  
@@ -30,7 +31,6 @@ export interface Profile {
   
   budget_min: number | null;  
   budget_max: number | null;  
-  num_roommates_wanted: number | null;  
   
   avatar_url: string | null;  
   
@@ -66,7 +66,6 @@ export interface ProfileCreateRequest {
   
   budget_min?: number;  
   budget_max?: number;  
-  num_roommates_wanted?: number;  
   
   avatar_url?: string;  
 }

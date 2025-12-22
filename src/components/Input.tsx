@@ -42,13 +42,13 @@ export const Input: React.FC<InputProps> = ({
         style={[  
           styles.input,  
           {  
-            borderColor: error ? theme.colors.error : theme.colors.border,  
-            borderRadius: theme.borderRadius.md,  
+            borderColor: error ? theme.colors.error : theme.colors.borderLight,  
+            borderRadius: theme.borderRadius.full,  
             paddingHorizontal: theme.spacing.md,  
-            paddingVertical: theme.spacing.md,  
+            paddingVertical: 12,  
             fontSize: theme.typography.body.fontSize,  
             color: theme.colors.text,  
-            backgroundColor: theme.colors.surface,  
+            backgroundColor: theme.colors.background,  
           },  
         ]}  
         placeholderTextColor={theme.colors.textTertiary}  

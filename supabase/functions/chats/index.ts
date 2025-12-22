@@ -54,8 +54,8 @@ async function getUserChats(userId: string): Promise<Chat[]> {
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*),
-        user_b:profiles!matches_user_b_id_fkey(*)
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
       )
     `
     )
@@ -80,8 +80,8 @@ async function getChatByMatchId(
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*),
-        user_b:profiles!matches_user_b_id_fkey(*)
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
       )
     `
     )
@@ -111,8 +111,8 @@ async function getChatById(chatId: string, userId: string): Promise<Chat | null>
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*),
-        user_b:profiles!matches_user_b_id_fkey(*)
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
       )
     `
     )
@@ -143,8 +143,8 @@ async function createChat(matchId: string): Promise<Chat> {
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*),
-        user_b:profiles!matches_user_b_id_fkey(*)
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
       )
     `
     )
@@ -168,8 +168,8 @@ async function getChatMessages(
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*),
-        user_b:profiles!matches_user_b_id_fkey(*)
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
       )
     `
     )
@@ -193,7 +193,7 @@ async function getChatMessages(
     .select(
       `
       *,
-      sender:profiles!messages_sender_id_fkey(*)
+      sender:profiles!messages_sender_id_fkey(*, users!profiles_id_fkey(birth_date))
     `
     )
     .eq('chat_id', chatId)
@@ -221,7 +221,7 @@ async function sendMessage(
     .select(
       `
       *,
-      sender:profiles!messages_sender_id_fkey(*)
+      sender:profiles!messages_sender_id_fkey(*, users!profiles_id_fkey(birth_date))
     `
     )
     .single();

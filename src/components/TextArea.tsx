@@ -38,13 +38,13 @@ export const TextArea: React.FC<TextAreaProps> = ({
         style={[  
           styles.textarea,  
           {  
-            borderColor: error ? theme.colors.error : theme.colors.border,  
-            borderRadius: theme.borderRadius.md,  
+            borderColor: error ? theme.colors.error : theme.colors.borderLight,  
+            borderRadius: theme.borderRadius.lg,  
             paddingHorizontal: theme.spacing.md,  
             paddingVertical: theme.spacing.md,  
             fontSize: theme.typography.body.fontSize,  
             color: theme.colors.text,  
-            backgroundColor: theme.colors.surface,  
+            backgroundColor: theme.colors.background,  
           },  
         ]}  
         multiline  

@@ -43,7 +43,6 @@ interface ProfileValidationData {
   preferred_zones?: string[];
   budget_min?: number;
   budget_max?: number;
-  num_roommates_wanted?: number;
 }
 
 function extractAvatarPath(avatarUrl: string): string | null {
@@ -91,7 +90,7 @@ async function getSignedAvatarUrl(avatarUrl: string): Promise<string | null> {
 async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabaseClient
     .from('profiles')
-    .select('*')
+    .select('*, users!profiles_id_fkey(birth_date)')
     .eq('id', userId)
     .single();
 
@@ -99,7 +98,13 @@ async function getProfile(userId: string): Promise<Profile | null> {
     return null;
   }
 
-  const profile = data as Profile;
+  const { users, ...profileData } = data as Profile & {
+    users?: { birth_date?: string | null };
+  };
+  const profile: Profile = {
+    ...profileData,
+    birth_date: users?.birth_date ?? null,
+  };
   if (profile.avatar_url) {
     const signedUrl = await getSignedAvatarUrl(profile.avatar_url);
     if (signedUrl) {
@@ -156,7 +161,12 @@ function validateProfileData(data: ProfileValidationData): {
     errors.push('Bio must be a string');
   }
 
-  if (data.gender && !['male', 'female', 'other'].includes(data.gender)) {
+  if (
+    data.gender &&
+    !['male', 'female', 'non_binary', 'other', 'undisclosed'].includes(
+      data.gender
+    )
+  ) {
     errors.push('Invalid gender value');
   }
 
@@ -213,13 +223,6 @@ function validateProfileData(data: ProfileValidationData): {
   }
   if (data.budget_max !== undefined && typeof data.budget_max !== 'number') {
     errors.push('Budget max must be a number');
-  }
-
-  if (
-    data.num_roommates_wanted !== undefined &&
-    typeof data.num_roommates_wanted !== 'number'
-  ) {
-    errors.push('Number of roommates wanted must be a number');
   }
 
   return {
@@ -320,6 +323,21 @@ const handler = withAuth(
         }
 
         const updatedProfile = await updateProfile(userId, updates);
+        if (
+          updatedProfile.gender &&
+          updatedProfile.gender !== existingProfile.gender
+        ) {
+          const { error: authUpdateError } =
+            await supabaseClient.auth.admin.updateUserById(userId, {
+              user_metadata: { gender: updatedProfile.gender },
+            });
+          if (authUpdateError) {
+            console.error(
+              '[profiles] Failed to sync gender to auth metadata:',
+              authUpdateError
+            );
+          }
+        }
         const response: ApiResponse<Profile> = { data: updatedProfile };
 
         return new Response(JSON.stringify(response), {

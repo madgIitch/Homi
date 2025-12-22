@@ -8,7 +8,7 @@ export interface SwipeFilters {
   budgetMin: number;
   budgetMax: number;
   zones: string[];
-  roommates: number | null;
   lifestyle: string[];
   interests: string[];
+  rules?: Record<string, string | null>;
 }

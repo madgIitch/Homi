@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -14,11 +14,14 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { FormSection } from '../components/FormSection';
+import { AuthContext } from '../context/AuthContext';
+import { profileService } from '../services/profileService';
 import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import type { Flat, Room, RoomExtras } from '../types/room';
 import type { RoomAssignment } from '../types/roomAssignment';
+import type { Gender } from '../types/gender';
 
 type RoomStatus = 'available' | 'paused';
 
@@ -166,12 +169,46 @@ const getRoomStatus = (
 export const RoomManagementScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const authContext = useContext(AuthContext);
+  const userGender = authContext?.user?.gender ?? null;
+  const [profileGender, setProfileGender] = useState<Gender | null>(null);
   const [loading, setLoading] = useState(true);
   const [flats, setFlats] = useState<Flat[]>([]);
   const [selectedFlatId, setSelectedFlatId] = useState<string | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomExtras, setRoomExtras] = useState<RoomExtrasMap>({});
   const [roomAssignments, setRoomAssignments] = useState<RoomAssignmentsMap>({});
+  const [updatingGenderPolicy, setUpdatingGenderPolicy] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadProfileGender = async () => {
+      try {
+        const profile = await profileService.getProfile();
+        if (isMounted) {
+          setProfileGender(profile?.gender ?? null);
+        }
+      } catch (error) {
+        console.error('Error cargando perfil:', error);
+      }
+    };
+
+    void loadProfileGender();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const resolvedGender = profileGender ?? userGender;
+  const allowedPolicies = useMemo(() => {
+    if (resolvedGender === 'male') {
+      return new Set<Flat['gender_policy']>(['men_only', 'mixed']);
+    }
+    if (!resolvedGender || resolvedGender === 'undisclosed') {
+      return new Set<Flat['gender_policy']>(['men_only', 'mixed', 'flinta']);
+    }
+    return new Set<Flat['gender_policy']>(['flinta', 'mixed']);
+  }, [resolvedGender]);
 
   const loadRooms = useCallback(async () => {
     try {
@@ -292,6 +329,35 @@ export const RoomManagementScreen: React.FC = () => {
       return;
     }
     navigation.navigate('RoomEdit', { flatId: selectedFlatId });
+  };
+
+  const handleUpdateGenderPolicy = async (policy: Flat['gender_policy']) => {
+    if (!selectedFlatId || !policy) return;
+    if (!allowedPolicies.has(policy)) {
+      Alert.alert(
+        'Restriccion',
+        'Esta opcion no esta disponible segun tu genero.'
+      );
+      return;
+    }
+
+    const currentPolicy = selectedFlat?.gender_policy ?? 'mixed';
+    if (currentPolicy === policy) return;
+
+    try {
+      setUpdatingGenderPolicy(true);
+      const updatedFlat = await roomService.updateFlat(selectedFlatId, {
+        gender_policy: policy,
+      });
+      setFlats((prev) =>
+        prev.map((flat) => (flat.id === updatedFlat.id ? updatedFlat : flat))
+      );
+    } catch (error) {
+      console.error('Error actualizando tipo de convivencia:', error);
+      Alert.alert('Error', 'No se pudo actualizar el tipo de convivencia');
+    } finally {
+      setUpdatingGenderPolicy(false);
+    }
   };
 
   const selectedFlat = flats.find((flat) => flat.id === selectedFlatId) || null;
@@ -452,6 +518,47 @@ export const RoomManagementScreen: React.FC = () => {
                       : 'Agregar servicios'}
                   </Text>
                 </TouchableOpacity>
+              </FormSection>
+
+              <FormSection title="Tipo de convivencia" iconName="people-outline">
+                <View style={styles.segmentRow}>
+                  {[
+                    { id: 'mixed' as const, label: 'Mixto' },
+                    { id: 'men_only' as const, label: 'Solo hombres' },
+                    { id: 'flinta' as const, label: 'FLINTA' },
+                  ].map((option) => {
+                    const currentPolicy = selectedFlat?.gender_policy ?? 'mixed';
+                    const isActive = currentPolicy === option.id;
+                    const isDisabled =
+                      updatingGenderPolicy || !allowedPolicies.has(option.id);
+                    return (
+                      <TouchableOpacity
+                        key={option.id}
+                        style={[
+                          styles.segmentButton,
+                          isActive && styles.segmentButtonActive,
+                          isDisabled && styles.segmentButtonDisabled,
+                        ]}
+                        onPress={() => handleUpdateGenderPolicy(option.id)}
+                        disabled={isDisabled}
+                      >
+                        <Text
+                          style={[
+                            styles.segmentButtonText,
+                            isActive && styles.segmentButtonTextActive,
+                            isDisabled && styles.segmentButtonTextDisabled,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <Text style={styles.sectionHint}>
+                  FLINTA: mujeres, personas no binarias y otras identidades;
+                  hombres no.
+                </Text>
               </FormSection>
 
               <FormSection title="Habitaciones" iconName="bed-outline">
@@ -760,6 +867,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#7C3AED',
+  },
+  sectionHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  segmentButtonActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  segmentButtonDisabled: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+  },
+  segmentButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  segmentButtonTextActive: {
+    color: '#FFFFFF',
+  },
+  segmentButtonTextDisabled: {
+    color: '#9CA3AF',
   },
   roomCard: {
     marginTop: 12,

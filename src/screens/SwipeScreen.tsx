@@ -12,6 +12,7 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { BlurView } from '@react-native-community/blur';
 import { borderRadius, colors, shadows, spacing, typography } from '../theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -27,7 +28,7 @@ import { authService } from '../services/authService';
 import { chatService } from '../services/chatService';
 import { swipeRejectionService } from '../services/swipeRejectionService';
 import { API_CONFIG } from '../config/api';
-import type { Profile } from '../types/profile';
+import type { HousingSituation, Profile } from '../types/profile';
 import type { SwipeFilters } from '../types/swipeFilters';
 import type { Gender } from '../types/gender';
 
@@ -44,7 +45,6 @@ type SwipeProfile = {
   lifestyle: string[];
   interests: string[];
   preferredZones: string[];
-  roommates: number | null;
   gender?: Gender | null;
   profile: Profile;
 };
@@ -65,6 +65,9 @@ export const SwipeScreen: React.FC = () => {
   const [excludedProfileIds, setExcludedProfileIds] = useState<string[]>([]);
   const [loadingProfiles, setLoadingProfiles] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileHousing, setProfileHousing] = useState<HousingSituation | null>(
+    null
+  );
   const [photoIndexByProfile, setPhotoIndexByProfile] = useState<
     Record<string, number>
   >({});
@@ -101,6 +104,7 @@ export const SwipeScreen: React.FC = () => {
   const canSwipe = swipesUsed < SWIPE_LIMIT;
   const activeFilterCount = getActiveFilterCount(filters);
   const hasActiveFilters = activeFilterCount > 0;
+  const isOwnerOffering = profileHousing === 'offering';
   const lifestyleIdByLabel = useMemo(
     () => new Map(ESTILO_VIDA_OPTIONS.map((option) => [option.label, option.id])),
     []
@@ -264,7 +268,6 @@ export const SwipeScreen: React.FC = () => {
       bio: profile.bio ?? 'Sin descripcion por ahora.',
       interests: profile.interests ?? [],
       preferredZones: profile.preferred_zones ?? [],
-      roommates: profile.num_roommates_wanted ?? null,
       gender: profile.gender ?? null,
       lifestyle: profile.lifestyle_preferences
         ? Object.values(profile.lifestyle_preferences).filter(
@@ -314,13 +317,19 @@ export const SwipeScreen: React.FC = () => {
   useEffect(() => {
     const applyProfileFilters = async () => {
       if (profileFiltersApplied) return;
-      if (activeFilterCount > 0) {
-        setProfileFiltersApplied(true);
-        return;
-      }
       try {
         const profile = await profileService.getProfile();
         if (!profile) {
+          setProfileFiltersApplied(true);
+          return;
+        }
+        setProfileHousing(profile.housing_situation ?? null);
+        if (profile.housing_situation === 'offering') {
+          await resetFilters();
+          setProfileFiltersApplied(true);
+          return;
+        }
+        if (activeFilterCount > 0) {
           setProfileFiltersApplied(true);
           return;
         }
@@ -334,12 +343,11 @@ export const SwipeScreen: React.FC = () => {
           .filter((id): id is string => Boolean(id));
 
         await setFilters({
-          housingSituation: profile.housing_situation ?? 'any',
+          housingSituation: 'any',
           gender: 'any',
           budgetMin: profile.budget_min ?? BUDGET_MIN,
           budgetMax: profile.budget_max ?? BUDGET_MAX,
           zones: profile.preferred_zones ?? [],
-          roommates: profile.num_roommates_wanted ?? null,
           lifestyle: mappedLifestyle,
           interests: profile.interests ?? [],
         });
@@ -351,7 +359,13 @@ export const SwipeScreen: React.FC = () => {
     };
 
     void applyProfileFilters();
-  }, [activeFilterCount, lifestyleIdByLabel, profileFiltersApplied, setFilters]);
+  }, [
+    activeFilterCount,
+    lifestyleIdByLabel,
+    profileFiltersApplied,
+    resetFilters,
+    setFilters,
+  ]);
 
   useEffect(() => {
     const loadProfiles = async () => {
@@ -590,19 +604,21 @@ export const SwipeScreen: React.FC = () => {
               {SWIPE_LIMIT - swipesUsed} libres
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.filterButton}
-            onPress={() => navigation.navigate('Filters')}
-          >
-            <Ionicons name="options-outline" size={18} color={colors.text} />
-            {activeFilterCount > 0 && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>
-                  {activeFilterCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          {!isOwnerOffering ? (
+            <TouchableOpacity
+              style={styles.filterButton}
+              onPress={() => navigation.navigate('Filters')}
+            >
+              <Ionicons name="options-outline" size={18} color={colors.text} />
+              {activeFilterCount > 0 && (
+                <View style={styles.filterBadge}>
+                  <Text style={styles.filterBadgeText}>
+                    {activeFilterCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
@@ -656,6 +672,13 @@ export const SwipeScreen: React.FC = () => {
           onPress={() => handleSwipe('left')}
           disabled={!currentProfile || !canSwipe}
         >
+          <BlurView
+            style={StyleSheet.absoluteFillObject}
+            blurType="light"
+            blurAmount={14}
+            reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+          />
+          <View style={[styles.glassTint, styles.rejectTint]} />
           <Ionicons name="close" size={22} color="#EF4444" />
         </TouchableOpacity>
         <TouchableOpacity
@@ -663,6 +686,13 @@ export const SwipeScreen: React.FC = () => {
           onPress={() => handleSwipe('right')}
           disabled={!currentProfile || !canSwipe}
         >
+          <BlurView
+            style={StyleSheet.absoluteFillObject}
+            blurType="light"
+            blurAmount={14}
+            reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+          />
+          <View style={[styles.glassTint, styles.likeTint]} />
           <Ionicons name="heart" size={22} color="#7C3AED" />
         </TouchableOpacity>
       </View>
@@ -861,17 +891,33 @@ const styles = StyleSheet.create({
     borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 8,
   },
   rejectButton: {
     width: 70,
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FCA5A5',
+    borderColor: 'rgba(239, 68, 68, 0.25)',
   },
   likeButton: {
     width: 70,
-    backgroundColor: '#F3E8FF',
-    borderColor: '#D8B4FE',
+    borderColor: 'rgba(17, 24, 39, 0.2)',
+  },
+  glassTint: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 34,
+  },
+  rejectTint: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  },
+  likeTint: {
+    backgroundColor: 'rgba(124, 58, 237, 0.08)',
   },
   emptyState: {
     alignItems: 'center',
@@ -933,10 +979,13 @@ const getActiveFilterCount = (filters: SwipeFilters) => {
   let count = 0;
   if (filters.housingSituation !== 'any') count += 1;
   if (filters.gender !== 'any') count += 1;
+  const hasRuleFilters = Object.values(filters.rules ?? {}).some(
+    (value) => value && value !== 'flexible'
+  );
+  if (hasRuleFilters) count += 1;
   if (filters.budgetMin > BUDGET_MIN || filters.budgetMax < BUDGET_MAX)
     count += 1;
   if (filters.zones.length > 0) count += 1;
-  if (filters.roommates != null) count += 1;
   if (filters.lifestyle.length > 0) count += 1;
   if (filters.interests.length > 0) count += 1;
   return count;
@@ -954,6 +1003,8 @@ const applyFilters = (
 
   const hasBudgetFilter =
     filters.budgetMin > BUDGET_MIN || filters.budgetMax < BUDGET_MAX;
+  const useProfileBudgetFilter =
+    hasBudgetFilter && filters.housingSituation !== 'offering';
 
   return items.filter((profile) => {
     if (excluded.has(profile.id)) {
@@ -967,8 +1018,14 @@ const applyFilters = (
       return false;
     }
 
-    if (filters.gender !== 'any' && profile.gender !== filters.gender) {
-      return false;
+    if (filters.gender !== 'any') {
+      if (filters.gender === 'flinta') {
+        if (!profile.gender || profile.gender === 'male') {
+          return false;
+        }
+      } else if (profile.gender !== filters.gender) {
+        return false;
+      }
     }
 
     if (filters.zones.length > 0) {
@@ -978,11 +1035,6 @@ const applyFilters = (
       if (!matchesZone) return false;
     }
 
-    if (filters.roommates != null) {
-      if (profile.roommates == null || profile.roommates !== filters.roommates) {
-        return false;
-      }
-    }
 
     if (filters.interests.length > 0) {
       const matchesInterest = profile.interests.some((interest) =>
@@ -991,14 +1043,16 @@ const applyFilters = (
       if (!matchesInterest) return false;
     }
 
-    if (lifestyleLabels.length > 0) {
-      const matchesLifestyle = profile.lifestyle.some((chip) =>
-        lifestyleLabels.includes(chip)
-      );
-      if (!matchesLifestyle) return false;
+    if (lifestyleLabels.length > 0 && profile.housing !== 'offering') {
+      if (profile.lifestyle.length > 0) {
+        const matchesLifestyle = profile.lifestyle.some((chip) =>
+          lifestyleLabels.includes(chip)
+        );
+        if (!matchesLifestyle) return false;
+      }
     }
 
-    if (hasBudgetFilter) {
+    if (useProfileBudgetFilter) {
       if (profile.budgetMin == null && profile.budgetMax == null) {
         return false;
       }
