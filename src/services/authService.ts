@@ -204,6 +204,108 @@ class AuthService {
     };
   }
 
+  async requestPasswordReset(
+    email: string,
+    redirectTo?: string
+  ): Promise<void> {
+    const trimmedEmail = email.trim();
+    console.log('[AuthService.requestPasswordReset] email:', trimmedEmail);
+
+    const options = redirectTo ? { redirectTo } : undefined;
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(
+      trimmedEmail,
+      options
+    );
+
+    if (error) {
+      console.error(
+        '[AuthService.requestPasswordReset] error:',
+        error.message
+      );
+      throw new Error('No se pudo enviar el correo de recuperacion');
+    }
+  }
+
+  async handleRecoveryLink(url: string): Promise<boolean> {
+    try {
+      const parsedUrl = new URL(url);
+      const hashParams = new URLSearchParams(
+        parsedUrl.hash ? parsedUrl.hash.slice(1) : ''
+      );
+      const accessToken =
+        hashParams.get('access_token') ||
+        parsedUrl.searchParams.get('access_token');
+      const refreshToken =
+        hashParams.get('refresh_token') ||
+        parsedUrl.searchParams.get('refresh_token');
+      const type =
+        hashParams.get('type') || parsedUrl.searchParams.get('type');
+      const code =
+        hashParams.get('code') || parsedUrl.searchParams.get('code');
+
+      if (code) {
+        const { error } = await supabaseClient.auth.exchangeCodeForSession(
+          code
+        );
+        if (error) {
+          console.error(
+            '[AuthService.handleRecoveryLink] exchange code error:',
+            error.message
+          );
+          return false;
+        }
+        return true;
+      }
+
+      if (!accessToken || !refreshToken) {
+        return false;
+      }
+
+      if (type && type !== 'recovery') {
+        return false;
+      }
+
+      const { error } = await supabaseClient.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+
+      if (error) {
+        console.error(
+          '[AuthService.handleRecoveryLink] setSession error:',
+          error.message
+        );
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[AuthService.handleRecoveryLink] invalid url:', error);
+      return false;
+    }
+  }
+
+  async updatePassword(newPassword: string): Promise<void> {
+    const { error } = await supabaseClient.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      console.error('[AuthService.updatePassword] error:', error.message);
+      throw new Error('No se pudo actualizar la contrasena');
+    }
+  }
+
+  async hasActiveSession(): Promise<boolean> {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) {
+      console.error('[AuthService.hasActiveSession] error:', error.message);
+      return false;
+    }
+
+    return !!data.session;
+  }
+
   async register(userData: RegisterRequest): Promise<AuthResponse> {
     console.log('🔧 AuthService.register() llamado con:', {
       email: userData.email,
@@ -392,7 +494,7 @@ class AuthService {
         body: JSON.stringify({
           temp_token: tempToken,
           birth_date: data.birthDate,
-          gender: data.gender,
+          invite_code: data.inviteCode,
         }),
       }
     );

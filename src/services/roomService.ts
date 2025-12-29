@@ -145,6 +145,26 @@ class RoomService {
     const data: RoomResponse = await response.json();  
     return data.data;  
   }  
+
+  async getRoomsByFlatIds(flatIds: string[]): Promise<Room[]> {
+    if (flatIds.length === 0) return [];
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/rooms?type=rooms&flat_ids=${flatIds.join(',')}`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Error al obtener las habitaciones del piso');
+    }
+
+    const data: RoomResponse = await response.json();
+    return data.data;
+  }
   
   async createRoom(roomData: RoomCreateRequest): Promise<Room> {  
     const headers = await this.getAuthHeaders();  

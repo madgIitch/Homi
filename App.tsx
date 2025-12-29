@@ -6,7 +6,7 @@
 // 👇 AÑADE ESTO COMO PRIMER IMPORT (justo después del comentario)
 import 'react-native-url-polyfill/auto';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar, useColorScheme } from 'react-native';
 import {
   SafeAreaProvider,
@@ -16,12 +16,34 @@ import { AuthProvider } from './src/context/AuthContext';
 import { SwipeFiltersProvider } from './src/context/SwipeFiltersContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { configureGoogleSignIn } from './src/config/google';
+import { notificationService } from './src/services/notificationService';
 
 // Ejecutar configuración al iniciar
 configureGoogleSignIn();
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
+
+  useEffect(() => {
+    let unsubscribeForeground: (() => void) | undefined;
+    let unsubscribeOpener: (() => void) | undefined;
+
+    const init = async () => {
+      unsubscribeForeground = await notificationService.initForegroundHandler();
+      unsubscribeOpener = notificationService.initNotificationOpener();
+    };
+
+    init();
+
+    return () => {
+      if (unsubscribeForeground) {
+        unsubscribeForeground();
+      }
+      if (unsubscribeOpener) {
+        unsubscribeOpener();
+      }
+    };
+  }, []);
 
   return (
     <SafeAreaProvider>

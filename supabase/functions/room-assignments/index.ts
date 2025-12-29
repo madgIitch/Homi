@@ -1,4 +1,4 @@
-// supabase/functions/room-assignments/index.ts
+﻿// supabase/functions/room-assignments/index.ts
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
@@ -24,6 +24,83 @@ interface AssignmentRow {
   updated_at: string;
   room?: Record<string, unknown>;
   assignee?: Record<string, unknown>;
+}
+
+async function createMatchesForFlat(newUserId: string, roomId: string): Promise<void> {
+  const { data: roomData, error: roomError } = await supabaseAdmin
+    .from('rooms')
+    .select('flat_id, owner_id')
+    .eq('id', roomId)
+    .single();
+
+  if (roomError || !roomData?.flat_id) {
+    console.error('[room-assignments] Unable to resolve flat for matches', roomError);
+    return;
+  }
+
+  const { data: assignmentRows, error: assignmentError } = await supabaseAdmin
+    .from('room_assignments')
+    .select('assignee_id, room:rooms!inner(flat_id)')
+    .eq('status', 'accepted')
+    .eq('room.flat_id', roomData.flat_id);
+
+  if (assignmentError) {
+    console.error('[room-assignments] Unable to load flat members', assignmentError);
+    return;
+  }
+
+  const memberIds = new Set<string>();
+  (assignmentRows ?? []).forEach((row) => {
+    if (row.assignee_id) {
+      memberIds.add(row.assignee_id);
+    }
+  });
+  if (roomData.owner_id) {
+    memberIds.add(roomData.owner_id);
+  }
+  memberIds.delete(newUserId);
+
+  const members = Array.from(memberIds);
+  if (members.length === 0) return;
+
+  const memberList = members.join(',');
+  const { data: existingMatches, error: existingError } = await supabaseAdmin
+    .from('matches')
+    .select('user_a_id, user_b_id')
+    .or(
+      `and(user_a_id.eq.${newUserId},user_b_id.in.(${memberList})),and(user_b_id.eq.${newUserId},user_a_id.in.(${memberList}))`
+    );
+
+  if (existingError) {
+    console.error('[room-assignments] Unable to check existing matches', existingError);
+    return;
+  }
+
+  const existingSet = new Set<string>();
+  (existingMatches ?? []).forEach((match) => {
+    const otherId = match.user_a_id === newUserId ? match.user_b_id : match.user_a_id;
+    if (otherId) {
+      existingSet.add(otherId);
+    }
+  });
+
+  const newMatches = members
+    .filter((memberId) => !existingSet.has(memberId))
+    .map((memberId) => ({
+      user_a_id: newUserId,
+      user_b_id: memberId,
+      status: 'accepted',
+    }));
+
+  if (newMatches.length === 0) return;
+
+  const { error: insertError } = await supabaseAdmin
+    .from('matches')
+    .insert(newMatches);
+
+  if (insertError) {
+    console.error('[room-assignments] Unable to create matches', insertError);
+  }
 }
 
 async function getMatch(matchId: string): Promise<MatchRow | null> {
@@ -93,7 +170,7 @@ async function listAssignmentsForOwner(ownerId: string): Promise<AssignmentRow[]
     .select(
       `
       *,
-      room:rooms(*),
+      room:rooms(*, flat:flats(*)),
       assignee:profiles(*)
     `
     )
@@ -104,6 +181,23 @@ async function listAssignmentsForOwner(ownerId: string): Promise<AssignmentRow[]
   return data as AssignmentRow[];
 }
 
+async function listAssignmentsForAssignee(assigneeId: string): Promise<AssignmentRow[]> {
+  const { data, error } = await supabaseAdmin
+    .from('room_assignments')
+    .select(
+      `
+      *,
+      room:rooms(*, flat:flats(*)),
+      assignee:profiles(*)
+    `
+    )
+    .eq('assignee_id', assigneeId)
+    .eq('status', 'accepted')
+    .order('created_at', { ascending: true });
+
+  if (error || !data) return [];
+  return data as AssignmentRow[];
+}
 async function hasAcceptedAssignment(roomId: string): Promise<boolean> {
   const { data, error } = await supabaseAdmin
     .from('room_assignments')
@@ -129,9 +223,10 @@ serve(
       const matchId = url.searchParams.get('match_id');
       const roomId = url.searchParams.get('room_id');
       const ownerOnly = url.searchParams.get('owner') === 'true';
+      const assigneeOnly = url.searchParams.get('assignee') === 'true';
 
-      if (!matchId && !roomId && !ownerOnly) {
-        return new Response(JSON.stringify({ error: 'match_id, room_id or owner is required' }), {
+      if (!matchId && !roomId && !ownerOnly && !assigneeOnly) {
+        return new Response(JSON.stringify({ error: 'match_id, room_id, owner or assignee is required' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -154,6 +249,22 @@ serve(
         );
       }
 
+      if (assigneeOnly) {
+        const assignments = await listAssignmentsForAssignee(userId);
+        return new Response(
+          JSON.stringify({
+            data: {
+              owner_id: userId,
+              match_assignment: null,
+              assignments,
+            },
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
       if (roomId) {
         const roomOwnerId = await getRoomOwnerId(roomId);
         if (!roomOwnerId) {
@@ -174,7 +285,7 @@ serve(
             .select(
               `
               *,
-              room:rooms(*),
+              room:rooms(*, flat:flats(*)),
               assignee:profiles(*)
             `
             )
@@ -349,7 +460,7 @@ serve(
           .select(
             `
             *,
-            room:rooms(*),
+            room:rooms(*, flat:flats(*)),
             assignee:profiles(*)
           `
           )
@@ -399,7 +510,7 @@ serve(
         .select(
           `
           *,
-          room:rooms(*),
+          room:rooms(*, flat:flats(*)),
           assignee:profiles(*)
         `
         )
@@ -451,7 +562,7 @@ serve(
         .select(
           `
           *,
-          room:rooms(*)
+          room:rooms(*, flat:flats(*))
         `
         )
         .eq('id', assignmentId)
@@ -491,7 +602,7 @@ serve(
         .select(
           `
           *,
-          room:rooms(*),
+          room:rooms(*, flat:flats(*)),
           assignee:profiles(*)
         `
         )
@@ -517,6 +628,7 @@ serve(
           .from('rooms')
           .update({ is_available: false })
           .eq('id', existing.room_id);
+        await createMatchesForFlat(existing.assignee_id, existing.room_id);
       }
       if (status === 'rejected' && existing.status === 'accepted') {
         await supabaseAdmin
@@ -537,3 +649,9 @@ serve(
     });
   })
 );
+
+
+
+
+
+

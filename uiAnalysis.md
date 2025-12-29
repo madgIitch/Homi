@@ -628,7 +628,7 @@ src/
 
 ## 12. SQL en supabase desplegado
 
--- WARNING: This schema is for context only and is not meant to be run.
+--- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
 CREATE TABLE public.chats (
@@ -638,6 +638,43 @@ CREATE TABLE public.chats (
   updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT chats_pkey PRIMARY KEY (id),
   CONSTRAINT chats_match_id_fkey FOREIGN KEY (match_id) REFERENCES public.matches(id)
+);
+CREATE TABLE public.flat_expense_participants (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  expense_id uuid NOT NULL,
+  member_id uuid NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT flat_expense_participants_pkey PRIMARY KEY (id),
+  CONSTRAINT flat_expense_participants_expense_id_fkey FOREIGN KEY (expense_id) REFERENCES public.flat_expenses(id),
+  CONSTRAINT flat_expense_participants_member_id_fkey FOREIGN KEY (member_id) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.flat_expenses (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  flat_id uuid NOT NULL,
+  created_by uuid NOT NULL,
+  concept text NOT NULL,
+  amount numeric NOT NULL CHECK (amount > 0::numeric),
+  expense_date date NOT NULL DEFAULT CURRENT_DATE,
+  note text,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT flat_expenses_pkey PRIMARY KEY (id),
+  CONSTRAINT flat_expenses_flat_id_fkey FOREIGN KEY (flat_id) REFERENCES public.flats(id),
+  CONSTRAINT flat_expenses_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id)
+);
+CREATE TABLE public.flat_settlement_payments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  flat_id uuid NOT NULL,
+  month text NOT NULL,
+  from_id uuid NOT NULL,
+  to_id uuid NOT NULL,
+  amount numeric NOT NULL CHECK (amount > 0::numeric),
+  marked_by uuid NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT flat_settlement_payments_pkey PRIMARY KEY (id),
+  CONSTRAINT flat_settlement_payments_flat_id_fkey FOREIGN KEY (flat_id) REFERENCES public.flats(id),
+  CONSTRAINT flat_settlement_payments_from_id_fkey FOREIGN KEY (from_id) REFERENCES public.profiles(id),
+  CONSTRAINT flat_settlement_payments_to_id_fkey FOREIGN KEY (to_id) REFERENCES public.profiles(id),
+  CONSTRAINT flat_settlement_payments_marked_by_fkey FOREIGN KEY (marked_by) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.flats (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -705,6 +742,21 @@ CREATE TABLE public.profiles (
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES public.users(id)
 );
+CREATE TABLE public.push_tokens (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  token text NOT NULL,
+  platform text NOT NULL CHECK (platform = ANY (ARRAY['ios'::text, 'android'::text])),
+  device_id text,
+  device_name text,
+  app_version text,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  last_used_at timestamp with time zone,
+  provider text NOT NULL CHECK (provider = ANY (ARRAY['fcm'::text, 'apns'::text])),
+  CONSTRAINT push_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT push_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
 CREATE TABLE public.room_assignments (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   match_id uuid UNIQUE,
@@ -740,6 +792,20 @@ CREATE TABLE public.room_interests (
   CONSTRAINT room_interests_pkey PRIMARY KEY (id),
   CONSTRAINT room_interests_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
   CONSTRAINT room_interests_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id)
+);
+CREATE TABLE public.room_invitations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  room_id uuid NOT NULL,
+  owner_id uuid NOT NULL,
+  code text NOT NULL UNIQUE,
+  expires_at timestamp with time zone,
+  used_at timestamp with time zone,
+  used_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT room_invitations_pkey PRIMARY KEY (id),
+  CONSTRAINT room_invitations_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id),
+  CONSTRAINT room_invitations_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id),
+  CONSTRAINT room_invitations_used_by_fkey FOREIGN KEY (used_by) REFERENCES public.users(id)
 );
 CREATE TABLE public.rooms (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

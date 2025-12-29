@@ -1,5 +1,5 @@
 // src/screens/ProfileDetailScreen.tsx
-import React, { useCallback, useContext, useEffect, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,26 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  ImageBackground,
   Modal,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  Animated,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { BlurView } from '@react-native-community/blur';
+import LinearGradient from 'react-native-linear-gradient';
+import Share from 'react-native-share';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
+import { colors } from '../theme';
 import { API_CONFIG } from '../config/api';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
+import { shareService } from '../services/shareService';
 import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
@@ -25,6 +35,7 @@ import { AuthContext } from '../context/AuthContext';
 import { INTERESES_OPTIONS, ZONAS_OPTIONS } from '../constants/swipeFilters';
 import type { Profile, ProfilePhoto } from '../types/profile';
 import type { Flat, Room, RoomExtras } from '../types/room';
+import { ProfileDetailScreenStyles as styles } from '../styles/screens';
 
 interface ProfileDetailScreenProps {
   userId?: string;
@@ -56,6 +67,9 @@ const interestLabelById = new Map(
 const zoneLabelById = new Map(
   ZONAS_OPTIONS.map((option) => [option.id, option.label])
 );
+
+const LIGHTBOX_MIN_SCALE = 1;
+const LIGHTBOX_MAX_SCALE = 3;
 
 const SUB_RULE_TYPE_MAP = new Map<
   string,
@@ -164,17 +178,29 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   userId,
 }) => {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
   const [lightboxVisible, setLightboxVisible] = useState(false);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [lightboxFrameWidth, setLightboxFrameWidth] = useState(0);
+  const lightboxScrollRef = useRef<ScrollView>(null);
+  const lightboxScaleStates = useRef<
+    Array<{ base: Animated.Value; pinch: Animated.Value; lastScale: number }>
+  >([]);
   const [activeTab, setActiveTab] = useState<'perfil' | 'piso'>('perfil');
   const [flats, setFlats] = useState<Flat[]>([]);
   const [flatRooms, setFlatRooms] = useState<Room[]>([]);
   const [flatExtras, setFlatExtras] = useState<Record<string, RoomExtras | null>>({});
   const [flatLoading, setFlatLoading] = useState(false);
   const [flatAssignments, setFlatAssignments] = useState<Record<string, boolean>>({});
+  const [flatAssignmentsToMe, setFlatAssignmentsToMe] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedRules, setExpandedRules] = useState<Record<string, boolean>>({});
+  const [activeFlatIndex, setActiveFlatIndex] = useState(0);
+  const [isSharing, setIsSharing] = useState(false);
 
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
@@ -251,32 +277,113 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   };
 
   const loadFlatData = useCallback(async () => {
-    if (!profile?.id || profile.housing_situation !== 'offering') {
+    if (!profile?.id) {
       setActiveTab('perfil');
       setFlats([]);
       setFlatRooms([]);
       setFlatExtras({});
+      setFlatAssignments({});
+      setFlatAssignmentsToMe({});
       return;
     }
 
     try {
       setFlatLoading(true);
-      const [flatsData, roomsData] = await Promise.all([
-        roomService.getFlatsByOwner(profile.id),
-        roomService.getRoomsByOwner(profile.id),
-      ]);
+      if (profile.housing_situation === 'offering') {
+        const [flatsData, roomsData] = await Promise.all([
+          roomService.getFlatsByOwner(profile.id),
+          roomService.getRoomsByOwner(profile.id),
+        ]);
+        setFlats(flatsData);
+        setFlatRooms(roomsData);
+        const extras = await roomExtrasService.getExtrasForRooms(
+          roomsData.map((room) => room.id)
+        );
+        const extrasMap = Object.fromEntries(
+          extras.map((extra) => [extra.room_id, extra])
+        );
+        setFlatExtras(extrasMap);
+        const acceptedMap: Record<string, boolean> = {};
+        await Promise.all(
+          roomsData.map(async (roomItem) => {
+            try {
+              const assignmentsResponse =
+                await roomAssignmentService.getAssignmentsForRoom(roomItem.id);
+              const hasAcceptedAssignment =
+                assignmentsResponse.assignments.some(
+                  (assignment) => assignment.status === 'accepted'
+                ) ||
+                assignmentsResponse.match_assignment?.status === 'accepted';
+              if (hasAcceptedAssignment) {
+                acceptedMap[roomItem.id] = true;
+              }
+            } catch (error) {
+              console.warn(
+                'No se pudo cargar asignaciones para la habitacion:',
+                roomItem.id,
+                error
+              );
+            }
+          })
+        );
+        setFlatAssignments(acceptedMap);
+        setFlatAssignmentsToMe({});
+        return;
+      }
+
+      if (!isOwnProfile) {
+        setActiveTab('perfil');
+        setFlats([]);
+        setFlatRooms([]);
+      setFlatExtras({});
+      setFlatAssignments({});
+      setFlatAssignmentsToMe({});
+      return;
+      }
+
+      const assignmentsResponse =
+        await roomAssignmentService.getAssignmentsForAssignee();
+      const assignments = assignmentsResponse.assignments.filter(
+        (assignment) => assignment.room?.flat?.id
+      );
+      const flatMap = new Map<string, Flat>();
+      assignments.forEach((assignment) => {
+        if (assignment.room?.flat) {
+          flatMap.set(assignment.room.flat.id, assignment.room.flat);
+        }
+      });
+      const flatsData = Array.from(flatMap.values());
+      const flatIds = flatsData.map((flat) => flat.id);
+      if (flatIds.length === 0) {
+        setActiveTab('perfil');
+        setFlats([]);
+        setFlatRooms([]);
+        setFlatExtras({});
+        setFlatAssignments({});
+        setFlatAssignmentsToMe({});
+        return;
+      }
+
+      const roomsInFlats = await roomService.getRoomsByFlatIds(flatIds);
       setFlats(flatsData);
-      setFlatRooms(roomsData);
+      setFlatRooms(roomsInFlats);
       const extras = await roomExtrasService.getExtrasForRooms(
-        roomsData.map((room) => room.id)
+        roomsInFlats.map((room) => room.id)
       );
       const extrasMap = Object.fromEntries(
         extras.map((extra) => [extra.room_id, extra])
       );
       setFlatExtras(extrasMap);
       const acceptedMap: Record<string, boolean> = {};
+      const assignedToMeMap: Record<string, boolean> = {};
+      assignments.forEach((assignment) => {
+        if (assignment.room_id) {
+          assignedToMeMap[assignment.room_id] = true;
+        }
+      });
+
       await Promise.all(
-        roomsData.map(async (roomItem) => {
+        roomsInFlats.map(async (roomItem) => {
           try {
             const assignmentsResponse =
               await roomAssignmentService.getAssignmentsForRoom(roomItem.id);
@@ -297,17 +404,36 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           }
         })
       );
+
       setFlatAssignments(acceptedMap);
+      setFlatAssignmentsToMe(assignedToMeMap);
     } catch (error) {
       console.error('Error cargando piso:', error);
     } finally {
       setFlatLoading(false);
     }
-  }, [profile?.id, profile?.housing_situation]);
+  }, [profile?.id, profile?.housing_situation, isOwnProfile]);
+
+  const toggleRules = (flatId: string) => {
+    setExpandedRules((prev) => ({
+      ...prev,
+      [flatId]: !prev[flatId],
+    }));
+  };
 
   useEffect(() => {
     loadFlatData();
   }, [loadFlatData]);
+
+  useEffect(() => {
+    if (flats.length === 0) {
+      setActiveFlatIndex(0);
+      return;
+    }
+    setActiveFlatIndex((prev) =>
+      prev >= flats.length ? flats.length - 1 : prev
+    );
+  }, [flats.length]);
 
   useFocusEffect(
     useCallback(() => {
@@ -315,6 +441,83 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       loadFlatData();
     }, [activeTab, loadFlatData])
   );
+
+  const handlePrevFlat = () => {
+    if (flats.length <= 1) return;
+    setActiveFlatIndex((prev) => (prev - 1 + flats.length) % flats.length);
+  };
+
+  const handleNextFlat = () => {
+    if (flats.length <= 1) return;
+    setActiveFlatIndex((prev) => (prev + 1) % flats.length);
+  };
+
+  const handleLightboxPrev = () => {
+    if (lightboxCount <= 1) return;
+    setLightboxIndex((prev) => (prev - 1 + lightboxCount) % lightboxCount);
+  };
+
+  const handleLightboxNext = () => {
+    if (lightboxCount <= 1) return;
+    setLightboxIndex((prev) => (prev + 1) % lightboxCount);
+  };
+
+  useEffect(() => {
+    if (lightboxCount === 0) {
+      setLightboxIndex(0);
+      lightboxScaleStates.current = [];
+      return;
+    }
+    if (lightboxIndex >= lightboxCount) {
+      setLightboxIndex(0);
+    }
+    while (lightboxScaleStates.current.length < lightboxCount) {
+      lightboxScaleStates.current.push({
+        base: new Animated.Value(1),
+        pinch: new Animated.Value(1),
+        lastScale: 1,
+      });
+    }
+  }, [lightboxCount, lightboxIndex]);
+
+  useEffect(() => {
+    if (!lightboxVisible || lightboxFrameWidth <= 0) return;
+    lightboxScrollRef.current?.scrollTo({
+      x: lightboxIndex * lightboxFrameWidth,
+      animated: false,
+    });
+  }, [lightboxFrameWidth, lightboxIndex, lightboxVisible]);
+
+  const handleLightboxScrollEnd = (
+    event: NativeSyntheticEvent<NativeScrollEvent>
+  ) => {
+    if (lightboxFrameWidth <= 0) return;
+    const nextIndex = Math.round(
+      event.nativeEvent.contentOffset.x / lightboxFrameWidth
+    );
+    setLightboxIndex(nextIndex);
+  };
+
+  const handleShareProfile = async () => {
+    if (isSharing) return;
+    try {
+      setIsSharing(true);
+      const normalizedPath = await shareService.getProfileShareImageFile(
+        profile?.id
+      );
+      await Share.open({
+        title: 'Compartir perfil',
+        url: normalizedPath,
+        type: 'image/png',
+        failOnCancel: false,
+      });
+    } catch (error) {
+      console.error('Error compartiendo perfil:', error);
+      Alert.alert('Error', 'No se pudo compartir el perfil');
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -426,7 +629,8 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const aboutBadges = [housingBadge].filter(
     (badge): badge is string => Boolean(badge)
   );
-  const shouldShowFlatTab = profile.housing_situation === 'offering';
+  const shouldShowFlatTab =
+    profile.housing_situation === 'offering' || (isOwnProfile && flats.length > 0);
 
   const resolvedAvatarUrl =
     profile.avatar_url && !profile.avatar_url.startsWith('http')
@@ -448,17 +652,44 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           },
         ]
       : [];
-  const summaryChips = [
-    profile.occupation ?? null,
+  const lightboxCount = carouselPhotos.length;
+  const normalizedOccupation = profile.occupation?.trim() ?? '';
+  const normalizedUniversity = profile.university?.trim() ?? '';
+  const showOccupation =
+    !normalizedUniversity ||
+    !normalizedOccupation ||
+    normalizedOccupation.toLowerCase() !== 'universidad';
+  const infoChips = [
+    showOccupation ? profile.occupation ?? null : null,
     profile.university ?? null,
     formatBudget() !== '-' ? formatBudget() : null,
-    ...lifestyleItems,
-    ...interestLabels,
   ].filter((item): item is string => Boolean(item));
+  const lifestyleChips = [...lifestyleItems, ...interestLabels].filter(
+    (item): item is string => Boolean(item)
+  );
 
   return (
     <View style={styles.container}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
       <View style={styles.header}>
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerFill} />
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color="#111827" />
         </TouchableOpacity>
@@ -467,11 +698,27 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         </Text>
         {isOwnProfile ? (
           <View style={styles.headerActions}>
+            {!(activeTab === 'piso' && profile.housing_situation !== 'offering') ? (
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                onPress={() =>
+                  activeTab === 'piso'
+                    ? navigation.navigate('RoomManagement')
+                    : navigation.navigate('EditProfile')
+                }
+              >
+                  <Ionicons name="create-outline" size={18} color="#111827" />
+                </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
-              style={styles.headerIconButton}
-              onPress={() => navigation.navigate('EditProfile')}
+              style={[
+                styles.headerIconButton,
+                isSharing && styles.headerIconButtonDisabled,
+              ]}
+              onPress={handleShareProfile}
+              disabled={isSharing}
             >
-              <Ionicons name="create-outline" size={18} color="#111827" />
+              <Ionicons name="share-social-outline" size={18} color="#111827" />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.headerIconButton, styles.headerIconDanger]}
@@ -485,7 +732,11 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        showsVerticalScrollIndicator={false}
+      >
         {shouldShowFlatTab && (
           <View style={styles.tabsContainer}>
             <TouchableOpacity
@@ -526,7 +777,16 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         {activeTab === 'perfil' && (
           <>
         <View style={styles.identityCard}>
-          <View style={styles.avatarWrap}>
+          <TouchableOpacity
+            style={styles.avatarWrap}
+            activeOpacity={0.8}
+            disabled={!carouselPhotos[0]?.signedUrl}
+            onPress={() => {
+              if (!carouselPhotos[0]?.signedUrl) return;
+              setLightboxIndex(0);
+              setLightboxVisible(true);
+            }}
+          >
             {carouselPhotos[0]?.signedUrl ? (
               <Image
                 source={{ uri: carouselPhotos[0].signedUrl }}
@@ -537,7 +797,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                 <Ionicons name="person" size={26} color="#9CA3AF" />
               </View>
             )}
-          </View>
+          </TouchableOpacity>
           <Text style={styles.identityName}>{profile.display_name ?? 'Usuario'}</Text>
           <View style={styles.identityBadges}>
             {memberSinceYear ? (
@@ -556,31 +816,6 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         </View>
 
-        {carouselPhotos.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="images-outline" size={18} color="#111827" />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Momentos
-              </Text>
-            </View>
-            <View style={styles.photoGrid}>
-              {carouselPhotos.map((photo) => (
-                <TouchableOpacity
-                  key={photo.id}
-                  style={styles.photoTile}
-                  onPress={() => {
-                    setLightboxUrl(photo.signedUrl);
-                    setLightboxVisible(true);
-                  }}
-                >
-                  <Image source={{ uri: photo.signedUrl }} style={styles.photoTileImage} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Ionicons name="person" size={20} color="#111827" />
@@ -593,11 +828,24 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         </View>
 
-        {summaryChips.length > 0 && (
+        {infoChips.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionMutedTitle}>Un poco sobre mi</Text>
+            <Text style={styles.sectionMutedTitle}>Datos clave</Text>
             <View style={styles.compactChips}>
-              {summaryChips.map((chip, index) => (
+              {infoChips.map((chip, index) => (
+                <View key={`${chip}-${index}`} style={styles.compactChip}>
+                  <Text style={styles.compactChipText}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {lifestyleChips.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionMutedTitle}>Estilo e intereses</Text>
+            <View style={styles.compactChips}>
+              {lifestyleChips.map((chip, index) => (
                 <View key={`${chip}-${index}`} style={styles.compactChip}>
                   <Text style={styles.compactChipText}>{chip}</Text>
                 </View>
@@ -619,28 +867,32 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         )}
 
-        {isOwnProfile && profile.housing_situation === 'offering' && (
+        {carouselPhotos.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="bed" size={20} color="#111827" />
+              <Ionicons name="images-outline" size={18} color="#111827" />
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Gestion de habitaciones
+                Momentos
               </Text>
             </View>
-            <View style={styles.manageCard}>
-              <View style={styles.manageInfo}>
-                <Text style={styles.manageTitle}>Administra tus anuncios</Text>
-                <Text style={styles.manageSubtitle}>
-                  Edita detalles, pausa publicaciones y revisa interesados.
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.manageButton}
-                onPress={() => navigation.navigate('RoomManagement')}
-              >
-                <Text style={styles.manageButtonText}>Gestionar</Text>
-              </TouchableOpacity>
-            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.photoScroller}
+            >
+              {carouselPhotos.map((photo, index) => (
+                <TouchableOpacity
+                  key={photo.id}
+                  style={styles.photoTileWide}
+                  onPress={() => {
+                    setLightboxIndex(index);
+                    setLightboxVisible(true);
+                  }}
+                >
+                  <Image source={{ uri: photo.signedUrl }} style={styles.photoTileImage} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         )}
 
@@ -654,6 +906,25 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
                 Piso
               </Text>
+              {flats.length > 1 && (
+                <View style={styles.flatPager}>
+                  <TouchableOpacity
+                    style={styles.flatPagerButton}
+                    onPress={handlePrevFlat}
+                  >
+                    <Ionicons name="chevron-back" size={18} color="#111827" />
+                  </TouchableOpacity>
+                  <Text style={styles.flatPagerText}>
+                    {activeFlatIndex + 1}/{flats.length}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.flatPagerButton}
+                    onPress={handleNextFlat}
+                  >
+                    <Ionicons name="chevron-forward" size={18} color="#111827" />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
             {flatLoading ? (
               <Text style={styles.mutedText}>Cargando piso...</Text>
@@ -661,7 +932,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               <Text style={styles.mutedText}>No hay piso publicado.</Text>
             ) : (
               <View style={styles.flatList}>
-                {flats.map((flat) => {
+                {(() => {
+                  const flat = flats[activeFlatIndex];
+                  if (!flat) return null;
                   const roomsForFlat = flatRooms.filter(
                     (room) => room.flat_id === flat.id
                   );
@@ -678,6 +951,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                         .filter(Boolean)
                     : [];
                   const services = flat.services ?? [];
+                  const isExpanded = expandedRules[flat.id] ?? false;
+                  const visibleRules = isExpanded ? rules : rules.slice(0, 3);
+                  const canToggleRules = rules.length > 3;
 
                   return (
                     <View key={flat.id} style={styles.flatCard}>
@@ -687,32 +963,62 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                         {flat.district ? ` - ${flat.district}` : ''}
                       </Text>
 
-                      {rules.length > 0 && (
-                        <View style={styles.flatSection}>
-                          <Text style={styles.flatSectionTitle}>Reglas</Text>
-                          <View style={styles.listContainer}>
-                            {rules.map((rule) => (
-                              <Text key={rule} style={styles.listItem}>
-                                {getRuleIcon(rule)} {rule}
-                              </Text>
-                            ))}
+                      <View style={styles.flatInfoBlock}>
+                        <Text style={styles.flatSectionTitle}>Info del piso</Text>
+                        <View style={styles.locationRow}>
+                          <View style={styles.locationChip}>
+                            <Ionicons
+                              name="location-outline"
+                              size={14}
+                              color="#6B7280"
+                            />
+                            <Text style={styles.locationChipText}>
+                              {flat.district || flat.city}
+                            </Text>
                           </View>
                         </View>
-                      )}
 
-                      {services.length > 0 && (
-                        <View style={styles.flatSection}>
-                          <Text style={styles.flatSectionTitle}>Servicios</Text>
-                          <View style={styles.listContainer}>
-                            {services.map((service) => (
-                              <Text key={service.name} style={styles.listItem}>
-                                {getServiceIcon(service.name)} {service.name}
-                                {service.price != null ? ` (${service.price} EUR)` : ''}
-                              </Text>
-                            ))}
+                        {rules.length > 0 && (
+                          <View style={styles.flatSubSection}>
+                            <Text style={styles.flatSubTitle}>Reglas</Text>
+                            <View style={styles.listContainer}>
+                              {visibleRules.map((rule) => (
+                                <Text key={rule} style={styles.listItem}>
+                                  <Text style={styles.listBullet}>• </Text>
+                                  {getRuleIcon(rule)} {rule}
+                                </Text>
+                              ))}
+                            </View>
+                            {canToggleRules && (
+                              <TouchableOpacity
+                                style={styles.rulesToggle}
+                                onPress={() => toggleRules(flat.id)}
+                              >
+                                <Text style={styles.rulesToggleText}>
+                                  {isExpanded ? 'Ver menos' : 'Ver todas'}
+                                </Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
-                        </View>
-                      )}
+                        )}
+
+                        {services.length > 0 && (
+                          <View style={styles.flatSubSection}>
+                            <Text style={styles.flatSubTitle}>Servicios</Text>
+                            <View style={styles.listContainer}>
+                              {services.map((service) => (
+                                <Text key={service.name} style={styles.listItem}>
+                                  <Text style={styles.listBullet}>• </Text>
+                                  {getServiceIcon(service.name)} {service.name}
+                                  {service.price != null
+                                    ? ` (${service.price} EUR)`
+                                    : ''}
+                                </Text>
+                              ))}
+                            </View>
+                          </View>
+                        )}
+                      </View>
 
                       {bedrooms.length > 0 && (
                         <View style={styles.flatSection}>
@@ -724,13 +1030,17 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                               const typeLabel = extras?.room_type
                                 ? roomTypeLabel.get(extras.room_type) ?? extras.room_type
                                 : '';
-                              const statusLabel = flatAssignments[room.id]
+                              const statusLabel = flatAssignmentsToMe[room.id]
+                                ? 'Ocupada por ti'
+                                : flatAssignments[room.id]
                                 ? 'Ocupada'
                                 : room.is_available === true
                                 ? 'Disponible'
                                 : room.is_available === false
                                 ? 'Ocupada'
                                 : 'Sin estado';
+                              const isAvailable = statusLabel === 'Disponible';
+                              const isUnknown = statusLabel === 'Sin estado';
                               return (
                                 <TouchableOpacity
                                   key={room.id}
@@ -758,18 +1068,52 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                     </View>
                                   )}
                                   <View style={styles.roomInfo}>
-                                    <Text style={styles.roomTitle}>{room.title}</Text>
-                                    {room.price_per_month != null ? (
-                                      <Text style={styles.roomMeta}>
-                                        {room.price_per_month} EUR/mes
-                                      </Text>
-                                    ) : null}
+                                    <View style={styles.roomHeader}>
+                                      <Text style={styles.roomTitle}>{room.title}</Text>
+                                      {room.price_per_month != null ? (
+                                        <Text style={styles.roomPrice}>
+                                          {room.price_per_month} EUR/mes
+                                        </Text>
+                                      ) : null}
+                                    </View>
                                     {typeLabel ? (
                                       <Text style={styles.roomMeta}>
                                         Tipo: {typeLabel}
                                       </Text>
                                     ) : null}
-                                    <Text style={styles.roomMeta}>{statusLabel}</Text>
+                                    <View style={styles.roomFooter}>
+                                      <View
+                                        style={[
+                                          styles.statusBadge,
+                                          isAvailable
+                                            ? styles.statusAvailable
+                                            : isUnknown
+                                            ? styles.statusNeutral
+                                            : styles.statusOccupied,
+                                        ]}
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.statusText,
+                                            isAvailable
+                                              ? styles.statusAvailableText
+                                              : isUnknown
+                                              ? styles.statusNeutralText
+                                              : styles.statusOccupiedText,
+                                          ]}
+                                        >
+                                          {statusLabel}
+                                        </Text>
+                                      </View>
+                                      <View style={styles.roomCta}>
+                                        <Text style={styles.roomCtaText}>Ver detalle</Text>
+                                        <Ionicons
+                                          name="chevron-forward"
+                                          size={14}
+                                          color="#7C3AED"
+                                        />
+                                      </View>
+                                    </View>
                                   </View>
                                 </TouchableOpacity>
                               );
@@ -819,12 +1163,29 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                     </View>
                                   )}
                                   <View style={styles.roomInfo}>
-                                    <Text style={styles.roomTitle}>{room.title}</Text>
+                                    <View style={styles.roomHeader}>
+                                      <Text style={styles.roomTitle}>{room.title}</Text>
+                                    </View>
                                     {typeLabel ? (
                                       <Text style={styles.roomMeta}>
                                         Tipo: {typeLabel}
                                       </Text>
                                     ) : null}
+                                    <View style={styles.roomFooter}>
+                                      <View style={[styles.statusBadge, styles.statusNeutral]}>
+                                        <Text style={styles.statusNeutralText}>
+                                          Zona comun
+                                        </Text>
+                                      </View>
+                                      <View style={styles.roomCta}>
+                                        <Text style={styles.roomCtaText}>Ver detalle</Text>
+                                        <Ionicons
+                                          name="chevron-forward"
+                                          size={14}
+                                          color="#7C3AED"
+                                        />
+                                      </View>
+                                    </View>
                                   </View>
                                 </TouchableOpacity>
                               );
@@ -834,7 +1195,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                       )}
                     </View>
                   );
-                })}
+                })()}
               </View>
             )}
           </View>
@@ -848,7 +1209,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               style={StyleSheet.absoluteFillObject}
               blurType="light"
               blurAmount={14}
-              reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+              reducedTransparencyFallbackColor={theme.colors.glassOverlayStrong}
             />
             <View style={[styles.glassTint, styles.rejectTint]} />
             <Ionicons name="close" size={24} color="#EF4444" />
@@ -858,7 +1219,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               style={StyleSheet.absoluteFillObject}
               blurType="light"
               blurAmount={14}
-              reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+              reducedTransparencyFallbackColor={theme.colors.glassOverlayStrong}
             />
             <View style={[styles.glassTint, styles.likeTint]} />
             <Ionicons name="heart" size={24} color="#7C3AED" />
@@ -873,20 +1234,124 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         onRequestClose={() => setLightboxVisible(false)}
       >
         <View style={styles.lightboxOverlay}>
+          <LinearGradient
+            colors={[colors.overlayLight, colors.overlayDark]}
+            style={StyleSheet.absoluteFillObject}
+          />
           <TouchableOpacity
             style={styles.lightboxBackdrop}
             activeOpacity={1}
             onPress={() => setLightboxVisible(false)}
           />
           <View style={styles.lightboxContent}>
-            <TouchableOpacity
-              style={styles.lightboxClose}
-              onPress={() => setLightboxVisible(false)}
+            <View style={styles.lightboxTopBar}>
+              <Text style={styles.lightboxTitle}>Momentos</Text>
+              <TouchableOpacity
+                style={styles.lightboxClose}
+                onPress={() => setLightboxVisible(false)}
+              >
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.lightboxDivider} />
+            <View
+              style={styles.lightboxImageFrame}
+              onLayout={(event) => {
+                const nextWidth = event.nativeEvent.layout.width;
+                if (nextWidth !== lightboxFrameWidth) {
+                  setLightboxFrameWidth(nextWidth);
+                }
+              }}
             >
-              <Ionicons name="close" size={22} color="#FFFFFF" />
-            </TouchableOpacity>
-            {lightboxUrl && (
-              <Image source={{ uri: lightboxUrl }} style={styles.lightboxImage} />
+              {lightboxCount > 0 && lightboxFrameWidth > 0 && (
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  ref={lightboxScrollRef}
+                  onMomentumScrollEnd={handleLightboxScrollEnd}
+                >
+                  {carouselPhotos.map((photo, index) => {
+                    const scaleState = lightboxScaleStates.current[index];
+                    const scale = scaleState
+                      ? Animated.multiply(scaleState.base, scaleState.pinch)
+                      : 1;
+                    const onPinchEvent =
+                      scaleState &&
+                      Animated.event(
+                        [{ nativeEvent: { scale: scaleState.pinch } }],
+                        { useNativeDriver: true }
+                      );
+                    const onPinchStateChange = (event: any) => {
+                      if (!scaleState) return;
+                      if (event.nativeEvent.oldState === State.ACTIVE) {
+                        const nextScale =
+                          scaleState.lastScale * event.nativeEvent.scale;
+                        const clampedScale = Math.min(
+                          LIGHTBOX_MAX_SCALE,
+                          Math.max(LIGHTBOX_MIN_SCALE, nextScale)
+                        );
+                        scaleState.lastScale = clampedScale;
+                        scaleState.base.setValue(clampedScale);
+                        scaleState.pinch.setValue(1);
+                      }
+                    };
+                    return (
+                      <PinchGestureHandler
+                        key={photo.id}
+                        onGestureEvent={onPinchEvent as any}
+                        onHandlerStateChange={onPinchStateChange}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.lightboxSlide,
+                            { width: lightboxFrameWidth, transform: [{ scale }] },
+                          ]}
+                        >
+                          <Image
+                            source={{ uri: photo.signedUrl }}
+                            style={styles.lightboxImage}
+                          />
+                        </Animated.View>
+                      </PinchGestureHandler>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+            {lightboxCount > 1 && (
+              <View style={styles.lightboxNav}>
+                <TouchableOpacity
+                  style={styles.lightboxNavButton}
+                  onPress={handleLightboxPrev}
+                >
+                  <Ionicons
+                    name="chevron-back"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+                <View style={styles.lightboxCounterChip}>
+                  <Ionicons
+                    name="image-outline"
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.lightboxCounter}>
+                    {lightboxIndex + 1}/{lightboxCount}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.lightboxNavButton}
+                  onPress={handleLightboxNext}
+                >
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </View>
@@ -895,490 +1360,5 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F4F5F7',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  headerSpacer: {
-    width: 48,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  headerIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  headerIconDanger: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-  },
-  actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  rejectButton: {
-    borderColor: 'rgba(239, 68, 68, 0.25)',
-  },
-  likeButton: {
-    borderColor: 'rgba(17, 24, 39, 0.2)',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  tabButtonActive: {
-    borderColor: '#7C3AED',
-    backgroundColor: '#F5F3FF',
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  tabTextActive: {
-    color: '#7C3AED',
-  },
-  identityCard: {
-    alignItems: 'center',
-    marginBottom: 28,
-    paddingVertical: 18,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  avatarWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    overflow: 'hidden',
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  identityName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  identityBadges: {
-    marginTop: 10,
-    alignItems: 'center',
-    gap: 8,
-  },
-  identityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#F3F4F6',
-  },
-  identityBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  identityBadgeLight: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#D8B4FE',
-    backgroundColor: '#FFFFFF',
-  },
-  identityBadgeLightText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#7C3AED',
-  },
-  photoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  photoTile: {
-    width: '31%',
-    aspectRatio: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  photoTileImage: {
-    width: '100%',
-    height: '100%',
-  },
-  section: {
-    marginBottom: 28,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  sectionMutedTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 12,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
-  },
-  aboutText: {
-    fontSize: 15,
-    color: '#374151',
-    marginBottom: 12,
-  },
-  detailCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  detailRowSpacing: {
-    marginTop: 16,
-  },
-  detailIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  detailIconBlue: {
-    backgroundColor: '#DBEAFE',
-  },
-  detailIconGreen: {
-    backgroundColor: '#DCFCE7',
-  },
-  detailText: {
-    flex: 1,
-  },
-  detailLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-    letterSpacing: 0.6,
-  },
-  detailValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  mutedText: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  flatList: {
-    gap: 16,
-  },
-  flatCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  flatTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  flatMeta: {
-    marginTop: 6,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  flatSection: {
-    marginTop: 16,
-  },
-  flatSectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  listContainer: {
-    gap: 6,
-  },
-  listItem: {
-    fontSize: 12,
-    color: '#374151',
-  },
-  roomList: {
-    gap: 10,
-  },
-  roomCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  roomPhoto: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-  },
-  roomPhotoPlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roomInfo: {
-    flex: 1,
-  },
-  roomTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  roomMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  manageCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-  },
-  manageInfo: {
-    marginBottom: 12,
-  },
-  manageTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  manageSubtitle: {
-    marginTop: 6,
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  manageButton: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#7C3AED',
-  },
-  manageButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  outlineChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#D8B4FE',
-    backgroundColor: '#FFFFFF',
-  },
-  outlineChipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#7C3AED',
-  },
-  compactChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  compactChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  compactChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  chipIcon: {
-    marginRight: 6,
-  },
-  ctaButton: {
-    marginBottom: 32,
-    backgroundColor: '#7C3AED',
-    borderRadius: 18,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  ctaText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  bottomActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    paddingTop: 8,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  bottomButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  glassTint: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 29,
-  },
-  rejectTint: {
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-  },
-  likeTint: {
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-  },
-  lightboxOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  lightboxBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  lightboxContent: {
-    width: '90%',
-    height: '70%',
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  lightboxImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'contain',
-    backgroundColor: '#000000',
-  },
-  lightboxClose: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    zIndex: 2,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(17, 24, 39, 0.8)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+
+

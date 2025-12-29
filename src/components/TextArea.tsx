@@ -38,13 +38,15 @@ export const TextArea: React.FC<TextAreaProps> = ({
         style={[  
           styles.textarea,  
           {  
-            borderColor: error ? theme.colors.error : theme.colors.borderLight,  
+            borderColor: error
+              ? theme.colors.error
+              : theme.colors.glassBorderSoft,  
             borderRadius: theme.borderRadius.lg,  
             paddingHorizontal: theme.spacing.md,  
             paddingVertical: theme.spacing.md,  
             fontSize: theme.typography.body.fontSize,  
             color: theme.colors.text,  
-            backgroundColor: theme.colors.background,  
+            backgroundColor: theme.colors.glassSurface,  
           },  
         ]}  
         multiline  
@@ -78,7 +80,7 @@ export const TextArea: React.FC<TextAreaProps> = ({
     </View>  
   );  
 };  
-  
+
 const styles = StyleSheet.create({  
   container: {  
     marginBottom: 16,  
@@ -102,4 +104,5 @@ const styles = StyleSheet.create({
   errorText: {  
     flex: 1,  
   },  
-});
+});  
+  

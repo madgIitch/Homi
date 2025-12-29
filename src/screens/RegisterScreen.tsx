@@ -1,23 +1,38 @@
 // src/screens/RegisterScreen.tsx  
 import React, { useState, useContext } from 'react';  
-import { View, StyleSheet, Alert, Text, Image } from 'react-native';  
+import {
+  View,
+  Alert,
+  Text,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  StyleSheet,
+} from 'react-native';  
 import { useNavigation } from '@react-navigation/native';  
 import { StackNavigationProp } from '@react-navigation/stack';  
 import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
 import { useTheme } from '../theme/ThemeContext';  
 import { authService } from '../services/authService';
+import LinearGradient from 'react-native-linear-gradient';
 import { Phase1Email } from './register/Phase1Email';  
 import { Phase2Name } from './register/Phase2Name';  
 import { Phase3Gender } from './register/Phase3Gender';
+import { Phase4Invitation } from './register/Phase4Invitation';
 import { Phase3BirthDate } from './register/Phase3BirthDate';  
+import { RegisterScreenStyles as styles } from '../styles/screens';
 import {
   Phase1Data,
   Phase2Data,
   Phase3Data,
   PhaseGenderData,
+  PhaseInviteData,
   TempRegistration,
 } from '../types/auth';  
+import { colors } from '../theme';
   
 type RootStackParamList = {  
   Login: undefined;  
@@ -41,6 +56,7 @@ export const RegisterScreen: React.FC = () => {
   const [currentPhase, setCurrentPhase] = useState(1);  
   const [tempRegistration, setTempRegistration] = useState<TempRegistration | null>(null);  
   const [phase2Data, setPhase2Data] = useState<Phase2Data | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);  
   
   const handlePhase1 = async (data: Phase1Data) => {  
@@ -114,7 +130,12 @@ export const RegisterScreen: React.FC = () => {
     }  
   };  
   
-  const handlePhase4 = async (data: Phase3Data) => {  
+  const handlePhase4 = (data: PhaseInviteData) => {
+    setInviteCode(data.hasInvite ? data.inviteCode || null : null);
+    setCurrentPhase(5);
+  };
+
+  const handlePhase5 = async (data: Phase3Data) => {  
     if (!tempRegistration) {  
       Alert.alert('Error', 'Registro temporal no encontrado');  
       return;  
@@ -122,11 +143,14 @@ export const RegisterScreen: React.FC = () => {
   
     setLoading(true);  
     try {  
-      const result = await authService.registerPhase3(tempRegistration.tempToken, data);  
+      const result = await authService.registerPhase3(tempRegistration.tempToken, {
+        ...data,
+        inviteCode: inviteCode || undefined,
+      });  
       await loginWithSession(result.user, result.token, result.refreshToken);  
       // NavegaciÇün automÇ­tica manejada por AuthContext  
     } catch (error) {  
-      console.error('ƒ?O Error en fase 4:', error);  
+      console.error('ƒ?O Error en fase 5:', error);  
       Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
     } finally {  
       setLoading(false);  
@@ -159,17 +183,36 @@ export const RegisterScreen: React.FC = () => {
   };  
   
   return (  
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
-      <View style={styles.header}>  
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>  
         <Image
           source={require('../assets/homiLogo.png')}
-          style={styles.logoImage}
+          style={[styles.logoImage, { opacity: 0.85 }]}
           resizeMode="contain"
         />
   
-        <Text style={[styles.logo, { color: theme.colors.primary }]}>HomiMatch</Text>  
+        <Text style={[styles.logo, { color: theme.colors.text }]}>HomiMatch</Text>  
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
-          Crea tu cuenta - Paso {currentPhase} de 4  
+          Crea tu cuenta - Paso {currentPhase} de 5  
         </Text>  
       </View>  
   
@@ -197,8 +240,15 @@ export const RegisterScreen: React.FC = () => {
           />
         )}  
         {currentPhase === 4 && (  
+          <Phase4Invitation
+            onNext={handlePhase4}
+            onBack={handleBack}
+            loading={loading}
+          />
+        )}
+        {currentPhase === 5 && (  
           <Phase3BirthDate  
-            onComplete={handlePhase4}  
+            onComplete={handlePhase5}  
             onBack={handleBack}  
             loading={loading}  
           />  
@@ -212,37 +262,8 @@ export const RegisterScreen: React.FC = () => {
           variant="secondary"  
         />  
       </View>  
-    </View>  
+      </ScrollView>
+    </KeyboardAvoidingView>  
   );  
 };  
   
-const styles = StyleSheet.create({  
-  container: {  
-    flex: 1,  
-    padding: 24,  
-  },  
-  header: {  
-    alignItems: 'center',  
-    marginTop: 60,  
-    marginBottom: 40,  
-  },  
-  logoImage: {  
-    width: 84,  
-    height: 84,  
-    marginBottom: 12,  
-  },  
-  logo: {  
-    fontSize: 32,  
-    fontWeight: 'bold',  
-    marginBottom: 8,  
-  },  
-  subtitle: {  
-    fontSize: 16,  
-  },  
-  content: {  
-    flex: 1,  
-  },  
-  footer: {  
-    paddingBottom: 20,  
-  },  
-});

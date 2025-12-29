@@ -1,6 +1,13 @@
 // components/Button.tsx
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
 interface ButtonProps {
@@ -10,6 +17,7 @@ interface ButtonProps {
   size?: 'small' | 'medium' | 'large';
   loading?: boolean;
   disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -19,6 +27,7 @@ export const Button: React.FC<ButtonProps> = ({
   size = 'medium',
   loading = false,
   disabled = false,
+  style,
 }) => {
   const theme = useTheme();
   const isDisabled = disabled || loading;
@@ -33,6 +42,7 @@ export const Button: React.FC<ButtonProps> = ({
         sizeStyle,
         variantStyle,
         { borderRadius: theme.borderRadius.full },
+        style,
         isDisabled && styles.disabled,
       ]}
       onPress={onPress}
@@ -104,3 +114,4 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
 });
+

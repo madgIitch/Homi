@@ -3,21 +3,24 @@ import {
   View,
   Text,
   ScrollView,
-  StyleSheet,
   TouchableOpacity,
   Alert,
   Image,
+  ImageBackground,
   ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
+import LinearGradient from 'react-native-linear-gradient';
+import { colors } from '../theme';
+import { BlurView } from '@react-native-community/blur';
 import { FormSection } from '../components/FormSection';
 import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';
-import { Button } from '../components/Button';
 import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomPhotoService } from '../services/roomPhotoService';
@@ -27,6 +30,7 @@ import type {
   RoomCreateRequest,
   RoomExtraDetails,
 } from '../types/room';
+import { RoomEditScreenStyles as styles } from '../styles/screens';
 
 const toISODate = (date: Date) => date.toISOString().split('T')[0];
 
@@ -469,17 +473,39 @@ export const RoomEditScreen: React.FC = () => {
   if (isCreateMode && !roomCategory) {
     return (
       <View style={styles.container}>
+        <ImageBackground
+          source={{
+            uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+          }}
+          blurRadius={18}
+          style={styles.background}
+        >
+          <LinearGradient
+            colors={[colors.glassOverlay, colors.glassWarmStrong]}
+            style={StyleSheet.absoluteFillObject}
+          />
+        </ImageBackground>
         <View style={styles.header}>
+          <BlurView
+            blurType="light"
+            blurAmount={16}
+            reducedTransparencyFallbackColor={colors.glassOverlay}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.headerFill} />
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={22} color={theme.colors.text} />
+          </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
             Nueva publicacion
           </Text>
           <View style={styles.headerActions}>
-            <Button
-              title="Cancelar"
+            <TouchableOpacity
+              style={styles.headerIconButton}
               onPress={() => navigation.goBack()}
-              variant="tertiary"
-              size="small"
-            />
+            >
+              <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+            </TouchableOpacity>
           </View>
         </View>
         <View style={styles.choiceContainer}>
@@ -516,23 +542,40 @@ export const RoomEditScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
       <View style={styles.header}>
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerFill} />
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color={theme.colors.text} />
+        </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           {isCreateMode ? 'Nueva habitacion' : 'Editar habitacion'}
         </Text>
         <View style={styles.headerActions}>
-          <Button
-            title="Cancelar"
-            onPress={() => navigation.goBack()}
-            variant="tertiary"
-            size="small"
-          />
-          <Button
-            title={isCreateMode ? 'Crear' : 'Guardar'}
+          <TouchableOpacity
+            style={styles.headerIconButton}
             onPress={handleSave}
-            size="small"
-            loading={saving}
-          />
+            disabled={saving}
+          >
+            <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -727,235 +770,3 @@ export const RoomEditScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  photoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  photoTile: {
-    width: '31%',
-    aspectRatio: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  photo: {
-    width: '100%',
-    height: '100%',
-  },
-  photoRemove: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(17, 24, 39, 0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoRemoveText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  addPhotoTile: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderStyle: 'dashed',
-  },
-  addPhotoText: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#7C3AED',
-  },
-  addPhotoLabel: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#7C3AED',
-  },
-  photoHint: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  choiceContainer: {
-    flex: 1,
-    padding: 24,
-  },
-  choiceTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  choiceSubtitle: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  choiceGrid: {
-    marginTop: 24,
-    gap: 16,
-  },
-  choiceCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    gap: 10,
-  },
-  choiceCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  choiceCardText: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  commonAreaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  commonAreaChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  commonAreaChipActive: {
-    borderColor: '#7C3AED',
-    backgroundColor: '#F5F3FF',
-  },
-  commonAreaChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  commonAreaChipTextActive: {
-    color: '#7C3AED',
-  },
-  flatList: {
-    gap: 12,
-  },
-  flatOption: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  flatOptionActive: {
-    borderColor: '#7C3AED',
-    backgroundColor: '#F5F3FF',
-  },
-  flatOptionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  flatOptionTitleActive: {
-    color: '#7C3AED',
-  },
-  flatOptionSubtitle: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  flatEmptyText: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 8,
-  },
-  switchButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-  },
-  switchButtonActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
-  },
-  switchButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  switchButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  statusLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  statusToggle: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#F3E8FF',
-  },
-  statusToggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#7C3AED',
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-});

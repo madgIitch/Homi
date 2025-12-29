@@ -1,23 +1,36 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   FlatList,
   Image,
+  ImageBackground,
   Dimensions,
   ScrollView,
+  Modal,
+  Animated,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  Alert,
+  StyleSheet,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { BlurView } from '@react-native-community/blur';
+import LinearGradient from 'react-native-linear-gradient';
 import { useTheme } from '../theme/ThemeContext';
+import { colors } from '../theme';
 import { AuthContext } from '../context/AuthContext';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomService } from '../services/roomService';
+import { roomInvitationService } from '../services/roomInvitationService';
 import type { Flat, Room, RoomExtras } from '../types/room';
+import { Button } from '../components/Button';
+import { RoomDetailScreenStyles as styles } from '../styles/screens';
 
 type RouteParams = {
   room: Room;
@@ -43,6 +56,9 @@ const commonAreaLabel = new Map([
   ['trastero', 'Trastero'],
   ['estudio', 'Sala de estudio'],
 ]);
+
+const LIGHTBOX_MIN_SCALE = 1;
+const LIGHTBOX_MAX_SCALE = 3;
 
 const SUB_RULE_TYPE_MAP = new Map<
   string,
@@ -160,6 +176,14 @@ export const RoomDetailScreen: React.FC = () => {
   );
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [isAssigned, setIsAssigned] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [lightboxVisible, setLightboxVisible] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [lightboxFrameWidth, setLightboxFrameWidth] = useState(0);
+  const lightboxScrollRef = useRef<ScrollView>(null);
+  const lightboxScaleStates = useRef<
+    Array<{ base: Animated.Value; pinch: Animated.Value; lastScale: number }>
+  >([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -215,6 +239,54 @@ export const RoomDetailScreen: React.FC = () => {
   const photos = extrasState?.photos ?? [];
   const carouselWidth = Dimensions.get('window').width - 40;
   const isCommonArea = extrasState?.category === 'area_comun';
+  const isOwner = room.owner_id === currentUserId;
+  const lightboxCount = photos.length;
+
+  useEffect(() => {
+    if (lightboxCount === 0) {
+      setLightboxIndex(0);
+      lightboxScaleStates.current = [];
+      return;
+    }
+    if (lightboxIndex >= lightboxCount) {
+      setLightboxIndex(0);
+    }
+    while (lightboxScaleStates.current.length < lightboxCount) {
+      lightboxScaleStates.current.push({
+        base: new Animated.Value(1),
+        pinch: new Animated.Value(1),
+        lastScale: 1,
+      });
+    }
+  }, [lightboxCount, lightboxIndex]);
+
+  useEffect(() => {
+    if (!lightboxVisible || lightboxFrameWidth <= 0) return;
+    lightboxScrollRef.current?.scrollTo({
+      x: lightboxIndex * lightboxFrameWidth,
+      animated: false,
+    });
+  }, [lightboxFrameWidth, lightboxIndex, lightboxVisible]);
+
+  const handleLightboxScrollEnd = (
+    event: NativeSyntheticEvent<NativeScrollEvent>
+  ) => {
+    if (lightboxFrameWidth <= 0) return;
+    const nextIndex = Math.round(
+      event.nativeEvent.contentOffset.x / lightboxFrameWidth
+    );
+    setLightboxIndex(nextIndex);
+  };
+
+  const handleLightboxPrev = () => {
+    if (lightboxCount <= 1) return;
+    setLightboxIndex((prev) => (prev - 1 + lightboxCount) % lightboxCount);
+  };
+
+  const handleLightboxNext = () => {
+    if (lightboxCount <= 1) return;
+    setLightboxIndex((prev) => (prev + 1) % lightboxCount);
+  };
 
   const typeLabel = useMemo(() => {
     if (!extrasState) return null;
@@ -253,16 +325,73 @@ export const RoomDetailScreen: React.FC = () => {
       ? styles.statusPillAvailable
       : styles.statusPillOccupied;
 
+  const handleCreateInvite = async () => {
+    if (isAssigned) {
+      Alert.alert('Aviso', 'La habitacion ya esta asignada.');
+      return;
+    }
+
+    setInviteLoading(true);
+    try {
+      const invite = await roomInvitationService.createInvitation(room.id);
+      const expiresText = invite.expires_at
+        ? `Caduca: ${invite.expires_at}`
+        : 'Sin caducidad';
+      Alert.alert('Invitacion creada', `Codigo: ${invite.code}\n${expiresText}`);
+    } catch (error) {
+      console.error('Error creando invitacion:', error);
+      Alert.alert('Error', 'No se pudo crear la invitacion');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View style={styles.container}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={22} color={theme.colors.text} />
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerFill} />
+        <TouchableOpacity
+          style={styles.headerBackButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={20} color="#111827" />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           {room.title}
         </Text>
-        <View style={styles.headerSpacer} />
+        {isOwner && !isCommonArea ? (
+          <TouchableOpacity
+            style={styles.headerAction}
+            onPress={() =>
+              navigation.navigate('RoomInterests', {
+                roomId: room.id,
+                roomTitle: room.title,
+              })
+            }
+          >
+            <Ionicons name="people-outline" size={20} color={theme.colors.text} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -282,9 +411,20 @@ export const RoomDetailScreen: React.FC = () => {
                 );
                 setActivePhotoIndex(index);
               }}
-              renderItem={({ item }) => (
+              renderItem={({ item, index }) => (
                 <View style={{ width: carouselWidth }}>
-                  <Image source={{ uri: item.signedUrl }} style={styles.carouselImage} />
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setLightboxIndex(index);
+                      setLightboxVisible(true);
+                    }}
+                  >
+                    <Image
+                      source={{ uri: item.signedUrl }}
+                      style={styles.carouselImage}
+                    />
+                  </TouchableOpacity>
                 </View>
               )}
             />
@@ -355,6 +495,29 @@ export const RoomDetailScreen: React.FC = () => {
               </View>
             ) : null}
           </View>
+          {isOwner && !isCommonArea ? (
+            <View style={styles.inviteRow}>
+              <View style={styles.inviteCopy}>
+                <Text style={styles.inviteTitle}>Invitacion</Text>
+                <Text style={styles.inviteSubtitle}>
+                  Codigo de un solo uso para esta habitacion.
+                </Text>
+              </View>
+              <Button
+                title="Crear"
+                onPress={handleCreateInvite}
+                loading={inviteLoading}
+                disabled={isAssigned}
+                size="small"
+                variant="secondary"
+              />
+            </View>
+          ) : null}
+          {isOwner && !isCommonArea && isAssigned ? (
+            <Text style={styles.inviteHint}>
+              Esta habitacion ya esta asignada.
+            </Text>
+          ) : null}
         </View>
 
         {flat && (
@@ -409,142 +572,136 @@ export const RoomDetailScreen: React.FC = () => {
           </View>
         )}
       </ScrollView>
+
+      <Modal
+        visible={lightboxVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxVisible(false)}
+      >
+        <View style={styles.lightboxOverlay}>
+          <LinearGradient
+            colors={[colors.overlayLight, colors.overlayDark]}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <TouchableOpacity
+            style={styles.lightboxBackdrop}
+            activeOpacity={1}
+            onPress={() => setLightboxVisible(false)}
+          />
+          <View style={styles.lightboxContent}>
+            <View style={styles.lightboxTopBar}>
+              <Text style={styles.lightboxTitle}>Fotos</Text>
+              <TouchableOpacity
+                style={styles.lightboxClose}
+                onPress={() => setLightboxVisible(false)}
+              >
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.lightboxDivider} />
+            <View
+              style={styles.lightboxImageFrame}
+              onLayout={(event) => {
+                const nextWidth = event.nativeEvent.layout.width;
+                if (nextWidth !== lightboxFrameWidth) {
+                  setLightboxFrameWidth(nextWidth);
+                }
+              }}
+            >
+              {lightboxCount > 0 && lightboxFrameWidth > 0 && (
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  ref={lightboxScrollRef}
+                  onMomentumScrollEnd={handleLightboxScrollEnd}
+                >
+                  {photos.map((photo, index) => {
+                    const scaleState = lightboxScaleStates.current[index];
+                    const scale = scaleState
+                      ? Animated.multiply(scaleState.base, scaleState.pinch)
+                      : 1;
+                    const onPinchEvent =
+                      scaleState &&
+                      Animated.event(
+                        [{ nativeEvent: { scale: scaleState.pinch } }],
+                        { useNativeDriver: true }
+                      );
+                    const onPinchStateChange = (event: any) => {
+                      if (!scaleState) return;
+                      if (event.nativeEvent.oldState === State.ACTIVE) {
+                        const nextScale =
+                          scaleState.lastScale * event.nativeEvent.scale;
+                        const clampedScale = Math.min(
+                          LIGHTBOX_MAX_SCALE,
+                          Math.max(LIGHTBOX_MIN_SCALE, nextScale)
+                        );
+                        scaleState.lastScale = clampedScale;
+                        scaleState.base.setValue(clampedScale);
+                        scaleState.pinch.setValue(1);
+                      }
+                    };
+                    return (
+                      <PinchGestureHandler
+                        key={photo.path}
+                        onGestureEvent={onPinchEvent as any}
+                        onHandlerStateChange={onPinchStateChange}
+                      >
+                        <Animated.View
+                          style={[
+                            styles.lightboxSlide,
+                            { width: lightboxFrameWidth, transform: [{ scale }] },
+                          ]}
+                        >
+                          <Image
+                            source={{ uri: photo.signedUrl }}
+                            style={styles.lightboxImage}
+                          />
+                        </Animated.View>
+                      </PinchGestureHandler>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+            {lightboxCount > 1 && (
+              <View style={styles.lightboxNav}>
+                <TouchableOpacity
+                  style={styles.lightboxNavButton}
+                  onPress={handleLightboxPrev}
+                >
+                  <Ionicons
+                    name="chevron-back"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+                <View style={styles.lightboxCounterChip}>
+                  <Ionicons
+                    name="image-outline"
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.lightboxCounter}>
+                    {lightboxIndex + 1}/{lightboxCount}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.lightboxNavButton}
+                  onPress={handleLightboxNext}
+                >
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  headerSpacer: {
-    width: 22,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  carouselContainer: {
-    marginBottom: 24,
-  },
-  carouselImage: {
-    width: '100%',
-    height: 320,
-    borderRadius: 16,
-    backgroundColor: '#F3F4F6',
-  },
-  carouselDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 10,
-    gap: 6,
-  },
-  carouselDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D1D5DB',
-  },
-  carouselDotActive: {
-    backgroundColor: '#7C3AED',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 10,
-  },
-  detailCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 16,
-    gap: 12,
-    shadowColor: '#111827',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  detailLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexShrink: 1,
-  },
-  detailLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    textAlign: 'right',
-    flexShrink: 1,
-  },
-  pricePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: '#EEF2FF',
-  },
-  pricePillText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusPillAvailable: {
-    backgroundColor: '#ECFDF3',
-  },
-  statusPillOccupied: {
-    backgroundColor: '#FEF2F2',
-  },
-  statusPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  detailNote: {
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  detailNoteText: {
-    fontSize: 13,
-    color: '#374151',
-    lineHeight: 18,
-  },
-});

@@ -4,19 +4,22 @@ import {
   View,
   Text,
   ScrollView,
-  StyleSheet,
   Alert,
   TouchableOpacity,
   Image,
+  ImageBackground,
   ActivityIndicator,
   PanResponder,
+  StyleSheet,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
-import { Button } from '../components/Button';
+import { BlurView } from '@react-native-community/blur';
+import LinearGradient from 'react-native-linear-gradient';
+import { colors } from '../theme';
 import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';
 import { ChipGroup } from '../components/ChipGroup';
@@ -30,6 +33,7 @@ import type {
   HousingSituation,
   ProfilePhoto,
 } from '../types/profile';
+import { EditProfileScreenStyles as styles } from '../styles/screens';
 
 const ESTILO_VIDA_OPTIONS = [
   { id: 'schedule_flexible', label: 'Flexible' },
@@ -381,25 +385,46 @@ export const EditProfileScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
       <View style={styles.header}>
-        <Text style={[theme.typography.h2, { color: theme.colors.text }]}>
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerFill} />
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color="#111827" />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Editar perfil
         </Text>
         <View style={styles.headerActions}>
-          <Button
-            title="Cancelar"
-            onPress={() => {
-              navigation.goBack();
-            }}
-            variant="tertiary"
-            size="small"
-          />
-          <Button
-            title="Guardar"
+          <TouchableOpacity
+            style={styles.headerIconButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="close" size={18} color="#111827" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerIconButton}
             onPress={handleSave}
-            loading={loading}
-            size="small"
-          />
+            disabled={loading}
+          >
+            <Ionicons name="checkmark" size={20} color="#7C3AED" />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -723,356 +748,6 @@ export const EditProfileScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F4F5F7',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  sectionBlock: {
-    marginBottom: 18,
-  },
-  sectionTitleMuted: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 10,
-  },
-  sectionCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  photoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  photoTile: {
-    width: '31%',
-    aspectRatio: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photo: {
-    width: '100%',
-    height: '100%',
-  },
-  photoPressArea: {
-    width: '100%',
-    height: '100%',
-  },
-  deleteButton: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
-  },
-  deleteButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  primaryBadge: {
-    position: 'absolute',
-    bottom: 6,
-    left: 6,
-    right: 6,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(17, 24, 39, 0.85)',
-    borderRadius: 8,
-  },
-  primaryBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  photoHint: {
-    marginTop: 10,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  photoUploadingText: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  profileHeader: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  avatarShell: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#111827',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarImage: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-  },
-  avatarPlaceholder: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarEdit: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  profileHint: {
-    marginTop: 12,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  editPhotosButton: {
-    marginTop: 12,
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  editPhotosText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  switchLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 10,
-  },
-  inlineLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 10,
-  },
-  checkGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 16,
-  },
-  checkItem: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  checkItemActive: {
-    borderColor: '#111827',
-  },
-  checkBox: {
-    width: 18,
-    height: 18,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#111827',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  checkBoxActive: {
-    backgroundColor: '#111827',
-  },
-  checkLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  checkLabelActive: {
-    color: '#111827',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  switchButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-  },
-  switchButtonActive: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
-  },
-  switchButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  switchButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  budgetContainer: {
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  budgetValues: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  budgetValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  situacionContainer: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#1F2937',
-  },
-  situacionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  situacionButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  situacionButtonActive: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
-  },
-  situacionButtonText: {
-    textAlign: 'center',
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  situacionButtonTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  sliderTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#E5E7EB',
-  },
-  sliderTrackActive: {
-    position: 'absolute',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#111827',
-  },
-  sliderThumb: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#111827',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    top: -7,
-  },
-  sliderTicks: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  sliderTick: {
-    width: 2,
-    height: 6,
-    backgroundColor: '#D1D5DB',
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  sliderLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-  },
-});
 
 const BudgetRange: React.FC<{
   minValue: number;
@@ -1173,3 +848,4 @@ const BudgetRange: React.FC<{
     </View>
   );
 };
+

@@ -1,21 +1,31 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
+  ImageBackground,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import LinearGradient from 'react-native-linear-gradient';
+import { BlurView } from '@react-native-community/blur';
 import { useTheme } from '../theme/ThemeContext';
+import { colors } from '../theme';
 import { chatService } from '../services/chatService';
+import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import type { Chat, Match } from '../types/chat';
+import { MatchesScreenStyles as styles } from '../styles/screens';
 
 export const MatchesScreen: React.FC = () => {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const [matches, setMatches] = useState<Match[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
@@ -23,6 +33,8 @@ export const MatchesScreen: React.FC = () => {
   const [matchPhotoByProfile, setMatchPhotoByProfile] = useState<
     Record<string, string>
   >({});
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = React.useCallback(async () => {
     try {
@@ -51,10 +63,85 @@ export const MatchesScreen: React.FC = () => {
     }, [loadData])
   );
 
+  const scheduleRefresh = React.useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      void loadData();
+    }, 400);
+  }, [loadData]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const subscribeToChats = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const channel = supabaseClient
+        .channel('chats:list')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'messages' },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'chats' },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .subscribe();
+
+      channelRef.current = channel;
+    };
+
+    void subscribeToChats();
+
+    return () => {
+      isMounted = false;
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
+    };
+  }, [scheduleRefresh]);
+
   const chatMatchIds = useMemo(
     () => new Set(chats.map((chat) => chat.matchId)),
     [chats]
   );
+
+  const orderedChats = useMemo(() => {
+    return [...chats].sort(
+      (a, b) => Date.parse(b.lastMessageAtIso) - Date.parse(a.lastMessageAtIso)
+    );
+  }, [chats]);
 
   const unmatched = useMemo(
     () => matches.filter((match) => !chatMatchIds.has(match.id)),
@@ -63,23 +150,37 @@ export const MatchesScreen: React.FC = () => {
 
   useEffect(() => {
     const loadMatchPhotos = async () => {
-      const missing = unmatched.filter(
-        (match) => !matchPhotoByProfile[match.profileId]
+      const profileFallbacks = new Map<string, string>();
+      unmatched.forEach((match) => {
+        if (match.profileId) {
+          profileFallbacks.set(match.profileId, match.avatarUrl);
+        }
+      });
+      chats.forEach((chat) => {
+        if (chat.profileId) {
+          profileFallbacks.set(chat.profileId, chat.avatarUrl);
+        }
+      });
+
+      const missing = Array.from(profileFallbacks.keys()).filter(
+        (profileId) => !matchPhotoByProfile[profileId]
       );
       if (missing.length === 0) return;
 
       const updates: Record<string, string> = {};
       await Promise.all(
-        missing.map(async (match) => {
+        missing.map(async (profileId) => {
           try {
             const photos = await profilePhotoService.getPhotosForProfile(
-              match.profileId
+              profileId
             );
             const primary = photos.find((photo) => photo.is_primary) ?? photos[0];
-            updates[match.profileId] = primary?.signedUrl || match.avatarUrl;
+            const fallback = profileFallbacks.get(profileId) || '';
+            updates[profileId] = primary?.signedUrl || fallback;
           } catch (error) {
             console.error('Error cargando foto del match:', error);
-            updates[match.profileId] = match.avatarUrl;
+            const fallback = profileFallbacks.get(profileId) || '';
+            updates[profileId] = fallback;
           }
         })
       );
@@ -90,7 +191,7 @@ export const MatchesScreen: React.FC = () => {
     };
 
     void loadMatchPhotos();
-  }, [unmatched, matchPhotoByProfile]);
+  }, [unmatched, chats, matchPhotoByProfile]);
 
   const emptyMessage = useMemo(() => {
     if (errorMessage) return errorMessage;
@@ -179,10 +280,27 @@ export const MatchesScreen: React.FC = () => {
   );
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-    >
-      <View style={styles.header}>
+    <View style={styles.container}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerFill} />
         <Text style={[styles.title, { color: theme.colors.text }]}>
           Matches
         </Text>
@@ -199,17 +317,18 @@ export const MatchesScreen: React.FC = () => {
         </View>
       ) : (
         <FlatList
-          data={chats}
+          data={orderedChats}
           keyExtractor={(item) => item.id}
           renderItem={renderChat}
-          contentContainerStyle={styles.chatList}
+          contentContainerStyle={[
+            styles.chatList,
+            { paddingBottom: insets.bottom + 110 },
+          ]}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             unmatched.length > 0 ? (
               <View style={styles.matchesSection}>
-                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                  Nuevos matches
-                </Text>
+                <Text style={styles.sectionTitle}>Nuevos matches</Text>
                 <FlatList
                   data={unmatched}
                   keyExtractor={(item) => item.id}
@@ -218,17 +337,11 @@ export const MatchesScreen: React.FC = () => {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.matchesRow}
                 />
+                <View style={styles.sectionDivider} />
               </View>
             ) : (
               <View style={styles.matchesSectionEmpty}>
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    { color: theme.colors.textSecondary },
-                  ]}
-                >
-                  Sin nuevos matches
-                </Text>
+                <Text style={styles.sectionTitle}>Sin nuevos matches</Text>
               </View>
             )
           }
@@ -246,126 +359,3 @@ export const MatchesScreen: React.FC = () => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    paddingTop: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  matchesSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  matchesSectionEmpty: {
-    paddingHorizontal: 20,
-    paddingBottom: 6,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  matchesRow: {
-    gap: 12,
-  },
-  matchItem: {
-    alignItems: 'center',
-    width: 90,
-  },
-  avatarWrapper: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    borderWidth: 2,
-    borderColor: '#7C3AED',
-    padding: 3,
-    marginBottom: 8,
-  },
-  avatar: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 40,
-  },
-  matchName: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  chatList: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-  },
-  chatRow: {
-    flexDirection: 'row',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  chatAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-  },
-  chatBody: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  chatHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  chatName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  chatTime: {
-    fontSize: 12,
-  },
-  chatPreviewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  chatPreview: {
-    flex: 1,
-    fontSize: 13,
-  },
-  unreadBadge: {
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#7C3AED',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  unreadText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});

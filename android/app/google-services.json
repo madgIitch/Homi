@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "786671462069",
+    "project_id": "airy-semiotics-456019-p0",
+    "storage_bucket": "airy-semiotics-456019-p0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:786671462069:android:50fd338351efc3a48ec0fc",
+        "android_client_info": {
+          "package_name": "com.homimatchapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "786671462069-dl3od58kbd9rb6hn33b0o43uomu1i87e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArzqWTOvI98jIaKf5allz85twtpRFKXkk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "786671462069-dl3od58kbd9rb6hn33b0o43uomu1i87e.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

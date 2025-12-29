@@ -42,13 +42,15 @@ export const Input: React.FC<InputProps> = ({
         style={[  
           styles.input,  
           {  
-            borderColor: error ? theme.colors.error : theme.colors.borderLight,  
+            borderColor: error
+              ? theme.colors.error
+              : theme.colors.glassBorderSoft,  
             borderRadius: theme.borderRadius.full,  
             paddingHorizontal: theme.spacing.md,  
             paddingVertical: 12,  
             fontSize: theme.typography.body.fontSize,  
             color: theme.colors.text,  
-            backgroundColor: theme.colors.background,  
+            backgroundColor: theme.colors.glassSurface,  
           },  
         ]}  
         placeholderTextColor={theme.colors.textTertiary}  
@@ -77,7 +79,7 @@ export const Input: React.FC<InputProps> = ({
     </View>  
   );  
 };  
-  
+
 const styles = StyleSheet.create({  
   container: {  
     marginBottom: 16,  
@@ -99,4 +101,5 @@ const styles = StyleSheet.create({
   input: {  
     borderWidth: 1,  
   },  
-});
+});  
+  

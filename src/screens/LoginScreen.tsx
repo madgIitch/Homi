@@ -1,6 +1,17 @@
 // src/screens/LoginScreen.tsx  
 import React, { useState, useContext } from 'react';  
-import { View, Text, TextInput, StyleSheet, Alert, Image } from 'react-native';  
+import {
+  View,
+  Text,
+  TextInput,
+  Alert,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  StyleSheet,
+} from 'react-native';  
 import { useNavigation } from '@react-navigation/native';  
 import { StackNavigationProp } from '@react-navigation/stack';  
 import { AuthContext } from '../context/AuthContext';  
@@ -8,12 +19,16 @@ import { Button } from '../components/Button';
 import { useTheme } from '../theme/ThemeContext';  
 import { authService } from '../services/authService';  
 import { GoogleSignInButton } from '../components/GoogleSignInButton';  
+import { LoginScreenStyles as styles } from '../styles/screens';
+import LinearGradient from 'react-native-linear-gradient';
+import { colors } from '../theme';
   
 
 type RootStackParamList = {  
   Login: undefined;  
   Register: undefined;  
   Main: undefined;  
+  ForgotPassword: undefined;
 };  
   
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;  
@@ -65,15 +80,34 @@ export const LoginScreen: React.FC = () => {
   };  
     
   return (  
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
-      <View style={styles.header}>  
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>  
         <Image
           source={require('../assets/homiLogo.png')}
-          style={styles.logoImage}
+          style={[styles.logoImage, { opacity: 0.85 }]}
           resizeMode="contain"
         />
   
-        <Text style={[styles.logo, { color: theme.colors.primary }]}>HomiMatch</Text>  
+        <Text style={[styles.logo, { color: theme.colors.text }]}>HomiMatch</Text>  
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
           Encuentra tu compañero ideal  
         </Text>  
@@ -115,7 +149,14 @@ export const LoginScreen: React.FC = () => {
           secureTextEntry  
         />  
   
-        <Button  
+        
+        <Button
+          title="Olvidaste tu contrasena?"
+          onPress={() => navigation.navigate('ForgotPassword')}
+          variant="tertiary"
+        />
+
+        <Button
           title="Iniciar Sesión"  
           onPress={handleLogin}  
           loading={loading}  
@@ -132,41 +173,8 @@ export const LoginScreen: React.FC = () => {
           variant="tertiary"  
         />  
       </View>  
-    </View>  
+      </ScrollView>
+    </KeyboardAvoidingView>  
   );  
 };  
   
-const styles = StyleSheet.create({  
-  container: {  
-    flex: 1,  
-    padding: 24,  
-  },  
-  header: {  
-    alignItems: 'center',  
-    marginTop: 80,  
-    marginBottom: 80,  
-  },  
-  logoImage: {  
-    width: 84,  
-    height: 84,  
-    marginBottom: 12,  
-  },  
-  logo: {  
-    fontSize: 32,  
-    fontWeight: 'bold',  
-    marginBottom: 8,  
-  },  
-  subtitle: {  
-    fontSize: 16,  
-  },  
-  form: {  
-    flex: 1,  
-    justifyContent: 'center',  
-  },  
-  input: {  
-    borderWidth: 1,  
-    padding: 16,  
-    marginBottom: 16,  
-    fontSize: 16,  
-  },  
-});

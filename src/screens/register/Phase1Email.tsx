@@ -1,10 +1,11 @@
 // src/screens/register/Phase1Email.tsx  
 import React, { useState, useEffect } from 'react';  
-import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';  
+import { View, Text, TextInput, Alert } from 'react-native';  
 import { Button } from '../../components/Button';  
 import { GoogleSignInButton } from '../../components/GoogleSignInButton';  
 import { useTheme } from '../../theme/ThemeContext';  
 import { Phase1Data } from '../../types/auth';  
+import { Phase1EmailStyles as styles } from '../../styles/screens';
   
 interface Phase1EmailProps {  
   onNext: (data: Phase1Data) => void;  
@@ -88,30 +89,23 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
   };  
   
   return (  
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
+    <View style={styles.container}>  
       <View style={styles.card}>
       <Text style={[styles.title, { color: theme.colors.text }]}>  
           Crea tu cuenta  
         </Text>  
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
-          Paso 1 de 4  
+          Paso 1 de 5  
         </Text>  
         <View style={styles.stepper}>
-          {[1, 2, 3, 4].map((step) => {
-            const isActive = step === 1;
-            return (
-              <View
-                key={step}
-                style={[
-                  styles.stepDot,
-                  {
-                    backgroundColor: isActive ? theme.colors.primary : '#E5E7EB',
-                  },
-                ]}
-              />
-            );
-          })}
+          <View
+            style={[
+              styles.progressFill,
+              { width: '20%', backgroundColor: theme.colors.primary },
+            ]}
+          />
         </View>
+        <View style={styles.divider} />
   
         <TextInput  
           style={[  
@@ -149,70 +143,11 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
         <View style={styles.authButtons}>
           <GoogleSignInButton onPress={handleGoogleSignIn} loading={loading} />  
         </View>
-        <Button  
-          title="¿Ya tienes cuenta? Inicia sesión"  
-          onPress={handleGoToLogin}  
-          variant="secondary"  
-        />  
         <Button title="Continuar" onPress={handleNext} loading={loading} />  
       </View>
     </View>  
   );  
 };  
   
-const styles = StyleSheet.create({  
-  container: {  
-    flex: 1,  
-    justifyContent: 'center',  
-    paddingHorizontal: 20,
-  },  
-  card: {
-    borderRadius: 20,
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  title: {  
-    fontSize: 24,  
-    fontWeight: 'bold',  
-    textAlign: 'center',  
-    marginBottom: 8,  
-  },  
-  subtitle: {  
-    fontSize: 16,  
-    textAlign: 'center',  
-    marginBottom: 16,  
-  },  
-  stepper: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 24,
-  },
-  stepDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  input: {  
-    borderWidth: 1,  
-    padding: 16,  
-    marginBottom: 16,  
-    fontSize: 16,  
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },  
-  authButtons: {
-    marginBottom: 8,
-  },
-});
+
+

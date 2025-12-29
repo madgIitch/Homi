@@ -24,6 +24,7 @@ export interface Chat {
   avatarUrl: string;
   lastMessage: string;
   lastMessageAt: string;
+  lastMessageAtIso: string;
   unreadCount: number;
   profileId?: string;
   profile?: Profile;
@@ -35,6 +36,7 @@ export interface Message {
   chatId: string;
   text: string;
   createdAt: string;
+  createdAtIso: string;
   isMine: boolean;
   status?: MessageStatus;
   readAt?: string | null;

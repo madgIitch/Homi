@@ -288,6 +288,7 @@ export interface Phase2Request {
 export interface Phase3Request {  
   temp_token: string  
   birth_date: string  
+  invite_code?: string  
 }  
   
 export interface TempRegistrationResponse {  

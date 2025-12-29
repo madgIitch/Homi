@@ -3,6 +3,7 @@ import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';  
 import { User } from '../types/auth';  
 import { authService } from '../services/authService';  
+import { pushTokenService } from '../services/pushTokenService';
   
 interface AuthContextType {  
   user: User | null;  
@@ -25,6 +26,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {  
     checkAuth();  
   }, []);  
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    let unsubscribe: (() => void) | undefined;
+
+    const register = async () => {
+      const result = await pushTokenService.register(user.id);
+      if (result.status === 'registered') {
+        unsubscribe = pushTokenService.onTokenRefresh(user.id);
+      }
+    };
+
+    register();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user?.id]);
   
   const checkAuth = async () => {  
     try {  
@@ -63,7 +87,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };  
   
   const logout = async () => {  
+    const currentUserId = user?.id;
     await authService.logout();  
+    if (currentUserId) {
+      await pushTokenService.unregister(currentUserId);
+    }
     await AsyncStorage.removeItem('authUser');  
     await AsyncStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
     setUser(null);  

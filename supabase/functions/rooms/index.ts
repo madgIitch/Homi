@@ -76,6 +76,63 @@ async function getUserRooms(userId: string): Promise<Room[]> {
   return data as Room[]  
 }  
 
+async function getRoomsByFlatIds(
+  userId: string,
+  flatIds: string[]
+): Promise<Room[]> {
+  if (flatIds.length === 0) return [];
+
+  const { data: ownedFlats, error: ownedError } = await supabaseClient
+    .from('flats')
+    .select('id')
+    .eq('owner_id', userId)
+    .in('id', flatIds);
+
+  if (ownedError) {
+    throw new Error(`Failed to check owned flats: ${ownedError.message}`);
+  }
+
+  const { data: assignmentRows, error: assignmentError } = await supabaseClient
+    .from('room_assignments')
+    .select('room:rooms!inner(flat_id)')
+    .eq('assignee_id', userId)
+    .eq('status', 'accepted')
+    .in('room.flat_id', flatIds);
+
+  if (assignmentError) {
+    throw new Error(`Failed to check flat membership: ${assignmentError.message}`);
+  }
+
+  const authorizedFlatIds = new Set<string>();
+  (ownedFlats ?? []).forEach((flat) => authorizedFlatIds.add(flat.id));
+  (assignmentRows ?? []).forEach((row) => {
+    const flatId = (row as { room?: { flat_id?: string } }).room?.flat_id;
+    if (flatId) {
+      authorizedFlatIds.add(flatId);
+    }
+  });
+
+  const allowed = flatIds.filter((id) => authorizedFlatIds.has(id));
+  if (allowed.length === 0) return [];
+
+  const { data, error } = await supabaseClient
+    .from('rooms')
+    .select(
+      `
+      *,
+      flat:flats(*)
+    `
+    )
+    .in('flat_id', allowed)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to fetch rooms: ${error.message}`);
+  }
+
+  return data as Room[];
+}
+
 async function getRoomById(roomId: string): Promise<Room | null> {
   const { data, error } = await supabaseClient
     .from('rooms')
@@ -308,6 +365,7 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     if (method === 'GET') {  
       const type = url.searchParams.get('type') // 'flats' or 'rooms'  
       const ownerIdParam = url.searchParams.get('owner_id')?.trim()
+      const flatIdsParam = url.searchParams.get('flat_ids')?.trim()
       const targetOwnerId = ownerIdParam || userId
       const resourceId = pathParts[pathParts.length - 1]
       const isResourceRequest = resourceId && resourceId !== 'rooms'
@@ -347,6 +405,22 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       }  
             
       if (type === 'rooms' || !type) {  
+        if (flatIdsParam) {
+          const flatIds = flatIdsParam
+            .split(',')
+            .map((id) => id.trim())
+            .filter(Boolean);
+          const rooms = await getRoomsByFlatIds(userId, flatIds);
+          const response: ApiResponse<Room[]> = { data: rooms }  
+          return new Response(  
+            JSON.stringify(response),  
+            {       
+              status: 200,       
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+            }  
+          )  
+        }
+
         const rooms = await getUserRooms(targetOwnerId)  
         const response: ApiResponse<Room[]> = { data: rooms }  
         return new Response(  

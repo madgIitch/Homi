@@ -39,12 +39,18 @@ export interface Phase2Data {
   
 export interface Phase3Data {  
   birthDate: string;  
+  inviteCode?: string;
 }  
 
 export interface PhaseGenderData {
   firstName: string;
   lastName: string;
   gender: Gender;
+}
+
+export interface PhaseInviteData {
+  hasInvite: boolean;
+  inviteCode?: string;
 }
   
 export interface TempRegistration {  

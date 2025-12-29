@@ -2,19 +2,22 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
-  Image,
+  ImageBackground,
+  type LayoutChangeEvent,
   PanResponder,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { BlurView } from '@react-native-community/blur';
-import { borderRadius, colors, shadows, spacing, typography } from '../theme';
+import LinearGradient from 'react-native-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BUDGET_MAX,
   BUDGET_MIN,
@@ -22,15 +25,23 @@ import {
   lifestyleLabelById,
 } from '../constants/swipeFilters';
 import { useSwipeFilters } from '../context/SwipeFiltersContext';
-import { profileService } from '../services/profileService';
-import { profilePhotoService } from '../services/profilePhotoService';
 import { authService } from '../services/authService';
 import { chatService } from '../services/chatService';
+import { profilePhotoService } from '../services/profilePhotoService';
+import { profileService } from '../services/profileService';
 import { swipeRejectionService } from '../services/swipeRejectionService';
 import { API_CONFIG } from '../config/api';
+import type { Gender } from '../types/gender';
 import type { HousingSituation, Profile } from '../types/profile';
 import type { SwipeFilters } from '../types/swipeFilters';
-import type { Gender } from '../types/gender';
+import { SwipeScreenStyles as styles } from '../styles/screens';
+import { colors, spacing } from '../theme';
+
+type GlassProps = {
+  style?: object;
+  children: React.ReactNode;
+  onLayout?: (event: LayoutChangeEvent) => void;
+};
 
 type SwipeProfile = {
   id: string;
@@ -50,14 +61,98 @@ type SwipeProfile = {
 };
 
 const SWIPE_LIMIT = 20;
-const SWIPE_THRESHOLD = 120;
 const SWIPE_STORAGE_KEY = 'swipeDaily';
 const FALLBACK_PHOTO =
   'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=900&q=80';
+let isSwiping = false;
+
+// Blur + very low white fill keeps the glass subtle and system-like.
+const GlassCard: React.FC<GlassProps> = ({ style, children, onLayout }) => (
+  <View style={[styles.glassCard, style]} onLayout={onLayout}>
+    <BlurView
+      blurType="light"
+      blurAmount={18}
+      reducedTransparencyFallbackColor={colors.glassUltraLight}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={styles.glassFill} />
+    {children}
+  </View>
+);
+
+const GlassChip: React.FC<GlassProps> = ({ style, children }) => (
+  <View style={[styles.glassChip, style]}>
+    <BlurView
+      blurType="light"
+      blurAmount={14}
+      reducedTransparencyFallbackColor={colors.glassUltraLight}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={styles.glassFill} />
+    {children}
+  </View>
+);
+
+const GlassButton: React.FC<GlassProps> = ({ style, children }) => (
+  <View style={[styles.glassButton, style]}>
+    <BlurView
+      blurType="light"
+      blurAmount={16}
+      reducedTransparencyFallbackColor={colors.glassUltraLight}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={styles.glassFill} />
+    {children}
+  </View>
+);
+
+const ActionButton = ({
+  icon,
+  onPress,
+  disabled,
+}: {
+  icon: string;
+  onPress?: () => void;
+  disabled?: boolean;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <GlassButton style={styles.actionButton}>
+          <Ionicons name={icon} size={22} color="#1C1C1E" />
+        </GlassButton>
+      </Animated.View>
+    </Pressable>
+  );
+};
 
 export const SwipeScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const insets = useSafeAreaInsets();
   const { filters, resetFilters, setFilters } = useSwipeFilters();
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipesUsed, setSwipesUsed] = useState(0);
   const [allProfiles, setAllProfiles] = useState<SwipeProfile[]>([]);
@@ -75,28 +170,28 @@ export const SwipeScreen: React.FC = () => {
     Record<string, string[]>
   >({});
   const [profileFiltersApplied, setProfileFiltersApplied] = useState(false);
-  const position = useRef(new Animated.ValueXY()).current;
+  const [cardsAreaHeight, setCardsAreaHeight] = useState(0);
 
+  const position = useRef(new Animated.ValueXY()).current;
+  const currentProfileRef = useRef<SwipeProfile | null>(null);
+  const canSwipeRef = useRef(false);
+  const swipeThresholdRef = useRef(0);
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
   const cardWidth = screenWidth - 40;
-  const cardImageHeight = Math.min(480, Math.round(screenHeight * 0.5));
+  const swipeThreshold = screenWidth * 0.3;
+  const fallbackCardHeight = Math.min(520, Math.round(screenHeight * 0.68));
+  const tabBarHeight = 68;
+  const tabBarGap = 12;
+  const actionDockOffset = tabBarHeight + tabBarGap;
+  const cardHeight =
+    cardsAreaHeight > 0
+      ? Math.max(0, cardsAreaHeight)
+      : fallbackCardHeight;
 
   const rotate = position.x.interpolate({
     inputRange: [-screenWidth, 0, screenWidth],
-    outputRange: ['-12deg', '0deg', '12deg'],
-    extrapolate: 'clamp',
-  });
-
-  const likeOpacity = position.x.interpolate({
-    inputRange: [0, SWIPE_THRESHOLD],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-
-  const rejectOpacity = position.x.interpolate({
-    inputRange: [-SWIPE_THRESHOLD, 0],
-    outputRange: [1, 0],
+    outputRange: ['-3.5deg', '0deg', '3.5deg'],
     extrapolate: 'clamp',
   });
 
@@ -109,6 +204,9 @@ export const SwipeScreen: React.FC = () => {
     () => new Map(ESTILO_VIDA_OPTIONS.map((option) => [option.label, option.id])),
     []
   );
+  currentProfileRef.current = currentProfile ?? null;
+  canSwipeRef.current = canSwipe;
+  swipeThresholdRef.current = swipeThreshold;
 
   const getTodayKey = () => new Date().toISOString().slice(0, 10);
 
@@ -174,22 +272,19 @@ export const SwipeScreen: React.FC = () => {
   const advanceCard = () => {
     setCurrentIndex((prev) => prev + 1);
     const nextCount = Math.min(swipesUsed + 1, SWIPE_LIMIT);
-    void updateSwipeCount(nextCount);
+    updateSwipeCount(nextCount).catch(() => undefined);
     position.setValue({ x: 0, y: 0 });
   };
 
-  const handleSwipe = (direction: 'left' | 'right') => {
-    if (!currentProfile || !canSwipe) return;
+  const handleSwipe = (direction: 'left' | 'right', profile: SwipeProfile) => {
+    if (!canSwipeRef.current) return;
+    isSwiping = true;
+    const swipedId = profile.id;
+    console.log('[Swipe] trigger', { direction, swipedId });
     if (direction === 'right') {
-      void sendLike(currentProfile.id);
-      setExcludedProfileIds((prev) =>
-        prev.includes(currentProfile.id) ? prev : [...prev, currentProfile.id]
-      );
+      sendLike(swipedId).catch(() => undefined);
     } else {
-      void sendRejection(currentProfile.id);
-      setExcludedProfileIds((prev) =>
-        prev.includes(currentProfile.id) ? prev : [...prev, currentProfile.id]
-      );
+      sendRejection(swipedId).catch(() => undefined);
     }
     Animated.timing(position, {
       toValue: {
@@ -198,28 +293,80 @@ export const SwipeScreen: React.FC = () => {
       },
       duration: 240,
       useNativeDriver: true,
-    }).start(() => advanceCard());
+    }).start(() => {
+      advanceCard();
+      setExcludedProfileIds((prev) =>
+        prev.includes(swipedId) ? prev : [...prev, swipedId]
+      );
+      isSwiping = false;
+    });
   };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gesture) =>
-        canSwipe && (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4),
+        canSwipeRef.current &&
+        (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4),
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        canSwipeRef.current &&
+        (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4),
+      onStartShouldSetPanResponderCapture: () => {
+        console.log('[Swipe] start capture');
+        return false;
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        console.log('[Swipe] grant');
+      },
       onPanResponderMove: (_, gesture) => {
+        console.log('[Swipe] move', {
+          dx: Math.round(gesture.dx),
+          dy: Math.round(gesture.dy),
+        });
+        if (isSwiping) return;
+        if (!canSwipeRef.current) return;
         position.setValue({ x: gesture.dx, y: gesture.dy });
+        if (gesture.dx > swipeThresholdRef.current) {
+          const profile = currentProfileRef.current;
+          if (profile) {
+            handleSwipe('right', profile);
+          }
+          return;
+        }
+        if (gesture.dx < -swipeThresholdRef.current) {
+          const profile = currentProfileRef.current;
+          if (profile) {
+            handleSwipe('left', profile);
+          }
+          return;
+        }
       },
       onPanResponderRelease: (_, gesture) => {
-        if (!canSwipe) {
+        console.log('[Swipe] release', {
+          dx: Math.round(gesture.dx),
+          dy: Math.round(gesture.dy),
+          canSwipe: canSwipeRef.current,
+        });
+        if (isSwiping) {
+          return;
+        }
+        if (!canSwipeRef.current) {
           position.setValue({ x: 0, y: 0 });
           return;
         }
-        if (gesture.dx > SWIPE_THRESHOLD) {
-          handleSwipe('right');
+        if (gesture.dx > swipeThresholdRef.current) {
+          const profile = currentProfileRef.current;
+          if (profile) {
+            handleSwipe('right', profile);
+          }
           return;
         }
-        if (gesture.dx < -SWIPE_THRESHOLD) {
-          handleSwipe('left');
+        if (gesture.dx < -swipeThresholdRef.current) {
+          const profile = currentProfileRef.current;
+          if (profile) {
+            handleSwipe('left', profile);
+          }
           return;
         }
         Animated.spring(position, {
@@ -245,10 +392,11 @@ export const SwipeScreen: React.FC = () => {
     if (profile.housing === 'offering')
       badges.push(`Tengo piso en ${profile.zone ?? 'zona top'}`);
     badges.push(formatBudget(profile));
+    if (profile.preferredZones?.[0]) badges.push(profile.preferredZones[0]);
     return badges;
   };
 
-  const mapProfileToSwipe = (profile: Profile): SwipeProfile => {
+  const mapProfileToSwipe = (profile: Profile): SwipeProfile | null => {
     const avatar = profile.avatar_url;
     const photoUrl = avatar
       ? avatar.startsWith('http')
@@ -256,9 +404,13 @@ export const SwipeScreen: React.FC = () => {
         : `${API_CONFIG.SUPABASE_URL}/storage/v1/object/public/avatars/${avatar}`
       : FALLBACK_PHOTO;
 
+    if (!profile.display_name) {
+      return null;
+    }
+
     return {
       id: profile.id,
-      name: profile.display_name ?? 'Usuario',
+      name: profile.display_name,
       age: profile.age ?? undefined,
       photoUrl,
       housing: profile.housing_situation ?? null,
@@ -311,7 +463,7 @@ export const SwipeScreen: React.FC = () => {
       }
     };
 
-    void loadSwipeCount();
+    loadSwipeCount().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -358,7 +510,7 @@ export const SwipeScreen: React.FC = () => {
       }
     };
 
-    void applyProfileFilters();
+    applyProfileFilters().catch(() => undefined);
   }, [
     activeFilterCount,
     lifestyleIdByLabel,
@@ -372,7 +524,6 @@ export const SwipeScreen: React.FC = () => {
       setLoadingProfiles(true);
       setProfileError(null);
       try {
-        console.log('[SwipeScreen] loading recommendations...');
         const [recommendations, existingMatches, rejections] = await Promise.all(
           [
             profileService.getProfileRecommendations(
@@ -382,20 +533,15 @@ export const SwipeScreen: React.FC = () => {
             swipeRejectionService.getRejections(),
           ]
         );
-        console.log(
-          '[SwipeScreen] recommendations received:',
-          recommendations.length
-        );
         const excluded = new Set<string>();
         existingMatches.forEach((match) => excluded.add(match.profileId));
         rejections.forEach((rejection) =>
           excluded.add(rejection.rejectedProfileId)
         );
-        const mapped = recommendations.map((rec) =>
-          mapProfileToSwipe(rec.profile)
-        );
+        const mapped = recommendations
+          .map((rec) => mapProfileToSwipe(rec.profile))
+          .filter((profile): profile is SwipeProfile => Boolean(profile));
         const filtered = mapped.filter((profile) => !excluded.has(profile.id));
-        console.log('[SwipeScreen] mapped profiles:', filtered.length);
         setAllProfiles(filtered);
         setExcludedProfileIds(Array.from(excluded));
       } catch (error) {
@@ -408,15 +554,17 @@ export const SwipeScreen: React.FC = () => {
     };
 
     if (profileFiltersApplied) {
-      void loadProfiles();
+      loadProfiles().catch(() => undefined);
     }
   }, [activeFilterCount, filters, profileFiltersApplied]);
 
   useEffect(() => {
     const next = applyFilters(allProfiles, filters, excludedProfileIds);
     setProfiles(next);
-    setCurrentIndex(0);
-    position.setValue({ x: 0, y: 0 });
+    if (!isSwiping) {
+      setCurrentIndex(0);
+      position.setValue({ x: 0, y: 0 });
+    }
   }, [allProfiles, filters, excludedProfileIds, position]);
 
   useEffect(() => {
@@ -448,7 +596,7 @@ export const SwipeScreen: React.FC = () => {
       }
     };
 
-    void loadPhotosForProfile();
+    loadPhotosForProfile().catch(() => undefined);
   }, [currentProfile, profilePhotosById]);
 
   const getProfilePhotos = (profile: SwipeProfile) =>
@@ -485,7 +633,8 @@ export const SwipeScreen: React.FC = () => {
     const isTop = index === currentIndex;
     const isNext = index === currentIndex + 1;
     const stackOffset = isNext ? 10 : 0;
-    const stackScale = isNext ? 0.96 : 1;
+    const stackScale = isNext ? 0.98 : 1;
+    const chips = getBadges(profile).slice(0, 3);
 
     const animatedStyle = isTop
       ? {
@@ -503,477 +652,211 @@ export const SwipeScreen: React.FC = () => {
       <Animated.View
         key={profile.id}
         style={[
-          styles.card,
-          { width: cardWidth, zIndex: profiles.length - index },
+          styles.cardWrap,
+          {
+            width: cardWidth,
+            height: cardHeight,
+            zIndex: profiles.length - index,
+          },
           animatedStyle,
         ]}
         {...(isTop ? panResponder.panHandlers : {})}
       >
-        <View style={styles.photoWrapper}>
-          <Image
+        <GlassCard style={styles.profileCard}>
+          <ImageBackground
             source={{ uri: getProfilePhotos(profile)[getPhotoIndex(profile)] }}
-            style={[styles.cardImage, { height: cardImageHeight }]}
-          />
-          {getProfilePhotos(profile).length > 1 && (
-            <View style={styles.photoIndicators}>
-              {getProfilePhotos(profile).map((_, photoIndex) => (
-                <View
-                  key={`${profile.id}-dot-${photoIndex}`}
-                  style={[
-                    styles.photoDot,
-                    photoIndex === getPhotoIndex(profile) && styles.photoDotActive,
-                  ]}
-                />
-              ))}
-            </View>
-          )}
-          <View style={styles.photoTapOverlay}>
-            <TouchableOpacity
-              style={styles.photoTapZone}
-              onPress={() => goToPrevPhoto(profile)}
-              activeOpacity={0.9}
-            />
-            <TouchableOpacity
-              style={styles.photoTapZone}
-              onPress={() => goToNextPhoto(profile)}
-              activeOpacity={0.9}
-            />
-          </View>
-        </View>
-        {isTop && (
-          <>
-            <Animated.View
-              style={[styles.actionTag, styles.likeTag, { opacity: likeOpacity }]}
-            >
-              <Ionicons name="heart" size={16} color="#16A34A" />
-              <Text style={styles.actionTagText}>LIKE</Text>
-            </Animated.View>
-            <Animated.View
-              style={[styles.actionTag, styles.rejectTag, { opacity: rejectOpacity }]}
-            >
-              <Ionicons name="close" size={16} color="#EF4444" />
-              <Text style={styles.actionTagText}>NOPE</Text>
-            </Animated.View>
-          </>
-        )}
-        <View style={styles.cardBody}>
-          <Text style={styles.cardTitle}>
-            {profile.name}, {profile.age}
-          </Text>
-          <View style={styles.badgeRow}>
-            {getBadges(profile).map((badge) => (
-              <View key={badge} style={styles.badge}>
-                <Text style={styles.badgeText}>{badge}</Text>
-              </View>
-            ))}
-          </View>
-          <Text style={styles.bioText}>{profile.bio}</Text>
-          <View style={styles.chipRow}>
-            {profile.lifestyle.map((chip) => (
-              <View key={chip} style={styles.chip}>
-                <Text style={styles.chipText}>{chip}</Text>
-              </View>
-            ))}
-          </View>
-          <TouchableOpacity
-            style={styles.detailTapArea}
-            onPress={() =>
-              navigation.navigate('ProfileDetail', {
-                profile: profile.profile,
-              })
-            }
+            style={styles.profileImage}
+            imageStyle={styles.profileImageRadius}
           >
-            <Text style={styles.detailTapText}>Ver perfil completo</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
+            {getProfilePhotos(profile).length > 1 && (
+              <View style={styles.photoIndicators}>
+                {getProfilePhotos(profile).map((_, photoIndex) => (
+                  <View
+                    key={`${profile.id}-dot-${photoIndex}`}
+                    style={[
+                      styles.photoDot,
+                      photoIndex === getPhotoIndex(profile) &&
+                        styles.photoDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+            )}
+            <View style={styles.photoTapOverlay}>
+              <TouchableOpacity
+                style={styles.photoTapZone}
+                onPress={() => goToPrevPhoto(profile)}
+                activeOpacity={0.9}
+              />
+              <TouchableOpacity
+                style={styles.photoTapZone}
+                onPress={() => goToNextPhoto(profile)}
+                activeOpacity={0.9}
+              />
+            </View>
+            <View style={styles.profileOverlay}>
+    <BlurView
+      blurType="light"
+      blurAmount={12}
+      reducedTransparencyFallbackColor={colors.glassUltraLightAlt}
+      style={styles.profileOverlayBlur}
+    />
+              <View style={styles.profileOverlayFill} />
+              <View style={styles.overlayContent}>
+                <Text style={styles.profileName}>
+                  {profile.age ? `${profile.name}, ${profile.age}` : profile.name}
+                </Text>
+                <View style={styles.chipRow}>
+                  {chips.map((chip) => (
+                    <GlassChip key={chip}>
+                      <Text style={styles.chipText}>{chip}</Text>
+                    </GlassChip>
+                  ))}
+                </View>
+                <Text style={styles.profileBio} numberOfLines={2}>
+                  {profile.bio}
+                </Text>
+                <Pressable
+                  onPress={() =>
+                    navigation.navigate('ProfileDetail', {
+                      profile: profile.profile,
+                    })
+                  }
+                >
+                  <GlassButton style={styles.profileButton}>
+                    <Text style={styles.profileButtonText}>
+                      Ver perfil completo
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color="#1C1C1E"
+                    />
+                  </GlassButton>
+                </Pressable>
+              </View>
+            </View>
+          </ImageBackground>
+        </GlassCard>
       </Animated.View>
     );
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={20}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
+
+      <View style={[styles.content, { paddingTop: insets.top + 10 }]}>
+        <View style={styles.topBar}>
           <Text style={styles.title}>Explorar</Text>
-        </View>
-        <View style={styles.headerActions}>
-          <View style={styles.counterPill}>
-            <Ionicons name="flash" size={16} color={colors.primary} />
-            <Text style={styles.counterText}>
-              {SWIPE_LIMIT - swipesUsed} libres
-            </Text>
+          <View style={styles.topActions}>
+            <GlassChip style={styles.counterChip}>
+              <Ionicons name="flash" size={14} color="#1C1C1E" />
+              <Text style={styles.counterText}>
+                {SWIPE_LIMIT - swipesUsed} libres
+              </Text>
+            </GlassChip>
+            {!isOwnerOffering ? (
+              <Pressable onPress={() => navigation.navigate('Filters')}>
+                <GlassButton style={styles.filterButton}>
+                  <Ionicons
+                    name="options-outline"
+                    size={18}
+                    color="#1C1C1E"
+                  />
+                </GlassButton>
+              </Pressable>
+            ) : null}
           </View>
-          {!isOwnerOffering ? (
-            <TouchableOpacity
-              style={styles.filterButton}
-              onPress={() => navigation.navigate('Filters')}
-            >
-              <Ionicons name="options-outline" size={18} color={colors.text} />
-              {activeFilterCount > 0 && (
-                <View style={styles.filterBadge}>
-                  <Text style={styles.filterBadgeText}>
-                    {activeFilterCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ) : null}
+        </View>
+
+        <View
+          style={styles.cardsArea}
+          onLayout={(event) => setCardsAreaHeight(event.nativeEvent.layout.height)}
+        >
+          <View style={styles.stack}>
+            {loadingProfiles ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="hourglass" size={36} color="#8E8E93" />
+                <Text style={styles.emptyTitle}>Cargando perfiles...</Text>
+                <Text style={styles.emptySubtitle}>Buscando matches cercanos.</Text>
+              </View>
+            ) : currentProfile ? (
+              profiles.slice(currentIndex, currentIndex + 2).map((profile, idx) =>
+                renderCard(profile, currentIndex + idx)
+              )
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="heart-dislike" size={36} color="#8E8E93" />
+                <Text style={styles.emptyTitle}>
+                  {hasActiveFilters
+                    ? 'Sin resultados con estos filtros'
+                    : 'No hay mas perfiles'}
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  {hasActiveFilters
+                    ? 'Ajusta los filtros para ver mas perfiles.'
+                    : 'Vuelve manana para mas swipes.'}
+                </Text>
+                {hasActiveFilters && (
+                  <Pressable onPress={() => resetFilters().catch(() => undefined)}>
+                    <GlassButton style={styles.clearFiltersButton}>
+                      <Text style={styles.clearFiltersText}>Limpiar filtros</Text>
+                    </GlassButton>
+                  </Pressable>
+                )}
+                {profileError && (
+                  <Text style={styles.emptySubtitle}>{profileError}</Text>
+                )}
+              </View>
+            )}
+            {!canSwipe && currentProfile && (
+              <View style={styles.limitOverlay}>
+                <Text style={styles.limitText}>Limite diario alcanzado</Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
 
-      <View style={styles.stack}>
-        {loadingProfiles ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="hourglass" size={42} color={colors.textTertiary} />
-            <Text style={styles.emptyTitle}>Cargando perfiles...</Text>
-            <Text style={styles.emptySubtitle}>Buscando matches cercanos.</Text>
-          </View>
-        ) : currentProfile ? (
-          profiles.slice(currentIndex, currentIndex + 2).map((profile, index) =>
-            renderCard(profile, currentIndex + index)
-          )
-        ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="heart-dislike" size={42} color={colors.textTertiary} />
-            <Text style={styles.emptyTitle}>
-              {hasActiveFilters
-                ? 'Sin resultados con estos filtros'
-                : 'No hay mas perfiles'}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {hasActiveFilters
-                ? 'Prueba a ajustar los filtros para ver mas perfiles.'
-                : 'Vuelve manana para mas swipes.'}
-            </Text>
-            {hasActiveFilters && (
-              <TouchableOpacity
-                style={styles.clearFiltersButton}
-                onPress={() => void resetFilters()}
-              >
-                <Text style={styles.clearFiltersText}>Limpiar filtros</Text>
-              </TouchableOpacity>
-            )}
-            {profileError && (
-              <Text style={styles.emptySubtitle}>{profileError}</Text>
-            )}
-          </View>
-        )}
-        {!canSwipe && currentProfile && (
-          <View style={styles.limitOverlay}>
-            <Text style={styles.limitText}>Limite diario alcanzado</Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.rejectButton]}
-          onPress={() => handleSwipe('left')}
-          disabled={!currentProfile || !canSwipe}
-        >
-          <BlurView
-            style={StyleSheet.absoluteFillObject}
-            blurType="light"
-            blurAmount={14}
-            reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+      <GlassCard
+        style={[
+          styles.actionDock,
+          { marginBottom: insets.bottom + actionDockOffset },
+        ]}
+      >
+        <View style={styles.actionRow}>
+          <ActionButton
+            icon="close"
+            onPress={() =>
+              currentProfile ? handleSwipe('left', currentProfile) : undefined
+            }
+            disabled={!currentProfile || !canSwipe}
           />
-          <View style={[styles.glassTint, styles.rejectTint]} />
-          <Ionicons name="close" size={22} color="#EF4444" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.likeButton]}
-          onPress={() => handleSwipe('right')}
-          disabled={!currentProfile || !canSwipe}
-        >
-          <BlurView
-            style={StyleSheet.absoluteFillObject}
-            blurType="light"
-            blurAmount={14}
-            reducedTransparencyFallbackColor="rgba(255, 255, 255, 0.7)"
+          <ActionButton
+            icon="heart"
+            onPress={() =>
+              currentProfile ? handleSwipe('right', currentProfile) : undefined
+            }
+            disabled={!currentProfile || !canSwipe}
           />
-          <View style={[styles.glassTint, styles.likeTint]} />
-          <Ionicons name="heart" size={22} color="#7C3AED" />
-        </TouchableOpacity>
-      </View>
+        </View>
+      </GlassCard>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingTop: spacing.lg,
-  },
-  header: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  title: {
-    ...typography.h3,
-    color: colors.text,
-  },
-  subtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  counterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceLight,
-  },
-  counterText: {
-    ...typography.smallMedium,
-    color: colors.textSecondary,
-  },
-  filterButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceLight,
-  },
-  filterBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  filterBadgeText: {
-    ...typography.smallMedium,
-    color: '#FFFFFF',
-    fontSize: 10,
-  },
-  stack: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  card: {
-    position: 'absolute',
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-    ...shadows.md,
-  },
-  cardImage: {
-    width: '100%',
-    height: 480,
-  },
-  photoWrapper: {
-    position: 'relative',
-  },
-  photoTapOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-  },
-  photoTapZone: {
-    flex: 1,
-  },
-  photoIndicators: {
-    position: 'absolute',
-    bottom: 12,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  photoDot: {
-    width: 18,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  photoDotActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  cardBody: {
-    padding: spacing.md,
-  },
-  cardTitle: {
-    ...typography.h4,
-    color: colors.text,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceLight,
-  },
-  badgeText: {
-    ...typography.smallMedium,
-    color: colors.primaryDark,
-  },
-  bioText: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginBottom: 10,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.primaryLight,
-  },
-  chipText: {
-    ...typography.smallMedium,
-    color: '#FFFFFF',
-  },
-  actionTag: {
-    position: 'absolute',
-    top: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: borderRadius.full,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1.5,
-  },
-  actionTagText: {
-    ...typography.smallMedium,
-    letterSpacing: 1,
-  },
-  likeTag: {
-    left: 18,
-    backgroundColor: '#DCFCE7',
-    borderColor: '#86EFAC',
-  },
-  rejectTag: {
-    right: 18,
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FCA5A5',
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    gap: 120,
-  },
-  actionButton: {
-    height: 70,
-    borderRadius: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 8,
-  },
-  rejectButton: {
-    width: 70,
-    borderColor: 'rgba(239, 68, 68, 0.25)',
-  },
-  likeButton: {
-    width: 70,
-    borderColor: 'rgba(17, 24, 39, 0.2)',
-  },
-  glassTint: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 34,
-  },
-  rejectTint: {
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-  },
-  likeTint: {
-    backgroundColor: 'rgba(124, 58, 237, 0.08)',
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  emptyTitle: {
-    ...typography.h4,
-    color: colors.text,
-    marginTop: spacing.md,
-  },
-  emptySubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  clearFiltersButton: {
-    marginTop: spacing.md,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceLight,
-  },
-  clearFiltersText: {
-    ...typography.smallMedium,
-    color: colors.primaryDark,
-  },
-  limitOverlay: {
-    position: 'absolute',
-    bottom: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.warningLight,
-  },
-  limitText: {
-    ...typography.smallMedium,
-    color: colors.warning,
-  },
-  detailTapArea: {
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    backgroundColor: colors.surfaceLight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  detailTapText: {
-    ...typography.captionMedium,
-    color: colors.primaryDark,
-  },
-});
 
 const getActiveFilterCount = (filters: SwipeFilters) => {
   let count = 0;
@@ -1034,7 +917,6 @@ const applyFilters = (
       );
       if (!matchesZone) return false;
     }
-
 
     if (filters.interests.length > 0) {
       const matchesInterest = profile.interests.some((interest) =>

@@ -1,10 +1,11 @@
 // src/screens/register/Phase3BirthDate.tsx  
 import React, { useState } from 'react';  
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';  
+import { View, Text, TouchableOpacity, Alert, Platform } from 'react-native';  
 import DateTimePicker from '@react-native-community/datetimepicker';  
 import { Button } from '../../components/Button';  
 import { useTheme } from '../../theme/ThemeContext';  
 import { Phase3Data } from '../../types/auth';  
+import { Phase3BirthDateStyles as styles } from '../../styles/screens';
   
 interface Phase3BirthDateProps {  
   onComplete: (data: Phase3Data) => void;  
@@ -45,30 +46,23 @@ export const Phase3BirthDate: React.FC<Phase3BirthDateProps> = ({
   };  
   
   return (  
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>  
+    <View style={styles.container}>  
       <View style={styles.card}>
         <Text style={[styles.title, { color: theme.colors.text }]}>  
           Fecha de nacimiento  
         </Text>  
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
-          Paso 4 de 4  
+          Paso 5 de 5  
         </Text>  
         <View style={styles.stepper}>
-          {[1, 2, 3, 4].map((step) => {
-            const isActive = step === 4;
-            return (
-              <View
-                key={step}
-                style={[
-                  styles.stepDot,
-                  {
-                    backgroundColor: isActive ? theme.colors.primary : '#E5E7EB',
-                  },
-                ]}
-              />
-            );
-          })}
+          <View
+            style={[
+              styles.progressFill,
+              { width: '100%', backgroundColor: theme.colors.primary },
+            ]}
+          />
         </View>
+        <View style={styles.divider} />
   
         <TouchableOpacity  
           style={[  
@@ -109,65 +103,3 @@ export const Phase3BirthDate: React.FC<Phase3BirthDateProps> = ({
   );  
 };  
   
-const styles = StyleSheet.create({  
-  container: {  
-    flex: 1,  
-    justifyContent: 'center',  
-    paddingHorizontal: 20,
-  },  
-  card: {
-    borderRadius: 20,
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  title: {  
-    fontSize: 24,  
-    fontWeight: 'bold',  
-    textAlign: 'center',  
-    marginBottom: 8,  
-  },  
-  subtitle: {  
-    fontSize: 16,  
-    textAlign: 'center',  
-    marginBottom: 16,  
-  },  
-  stepper: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 24,
-  },
-  stepDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dateInput: {  
-    borderWidth: 1,  
-    padding: 16,  
-    marginBottom: 16,  
-    borderRadius: 8,  
-    height: 54,  
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },  
-  dateText: {  
-    fontSize: 16,  
-  },  
-  buttonContainer: {  
-    flexDirection: 'row',  
-    justifyContent: 'space-between',  
-    marginTop: 20,  
-  },  
-});

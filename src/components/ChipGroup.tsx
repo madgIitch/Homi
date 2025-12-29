@@ -50,9 +50,11 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
                 styles.chip,
                 {
                   backgroundColor: isSelected
-                    ? theme.colors.text
-                    : theme.colors.surfaceLight,
-                  borderColor: isSelected ? theme.colors.text : theme.colors.border,
+                    ? theme.colors.primaryTint
+                    : theme.colors.glassSurface,
+                  borderColor: isSelected
+                    ? theme.colors.primaryMuted
+                    : theme.colors.glassBorderSoft,
                   borderRadius: theme.borderRadius.full,
                   paddingHorizontal: theme.spacing.md,
                   paddingVertical: theme.spacing.sm,
@@ -64,7 +66,7 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
               <Text
                 style={[
                   theme.typography.captionMedium,
-                  { color: isSelected ? theme.colors.background : theme.colors.text },
+                  { color: isSelected ? theme.colors.primary : theme.colors.text },
                 ]}
               >
                 {option.label}

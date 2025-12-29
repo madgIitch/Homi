@@ -3,6 +3,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
+import { BlurView } from '@react-native-community/blur';
 
 interface FormSectionProps {
   title?: string;
@@ -31,10 +32,17 @@ export const FormSection: React.FC<FormSectionProps> = ({
           styles.card,
           {
             borderRadius: theme.borderRadius.lg,
-            borderColor: theme.colors.borderLight,
+            borderColor: theme.colors.glassBorderSoft,
           },
         ]}
       >
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={[styles.cardFill, { backgroundColor: theme.colors.glassUltraLightAlt }]} />
         {showHeader && (
           <View style={styles.header}>
             <View style={styles.titleRow}>
@@ -92,14 +100,15 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
     borderWidth: 1,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    overflow: 'hidden',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  cardFill: {
+    ...StyleSheet.absoluteFillObject,
   },
   header: {
     marginBottom: 16,

@@ -2,16 +2,16 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   Alert,
   TouchableOpacity,
+  ImageBackground,
+  StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../theme/ThemeContext';
 import { Input } from '../components/Input';
-import { Button } from '../components/Button';
 import { ChipGroup } from '../components/ChipGroup';
 import { AuthContext } from '../context/AuthContext';
 import { roomService } from '../services/roomService';
@@ -19,6 +19,11 @@ import { profileService } from '../services/profileService';
 import { ZONAS_OPTIONS } from '../constants/swipeFilters';
 import type { GenderPolicy } from '../types/room';
 import type { Gender } from '../types/gender';
+import { CreateFlatScreenStyles as styles } from '../styles/screens';
+import LinearGradient from 'react-native-linear-gradient';
+import { colors } from '../theme';
+import { BlurView } from '@react-native-community/blur';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 export const CreateFlatScreen: React.FC = () => {
   const theme = useTheme();
@@ -112,23 +117,40 @@ export const CreateFlatScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
       <View style={styles.header}>
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerFill} />
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color={theme.colors.text} />
+        </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Crear piso
         </Text>
         <View style={styles.headerActions}>
-          <Button
-            title="Cancelar"
-            onPress={() => navigation.goBack()}
-            variant="tertiary"
-            size="small"
-          />
-          <Button
-            title="Guardar"
+          <TouchableOpacity
+            style={styles.headerIconButton}
             onPress={handleSave}
-            size="small"
-            loading={saving}
-          />
+            disabled={saving}
+          >
+            <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -192,79 +214,4 @@ export const CreateFlatScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  section: {
-    marginTop: 16,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 10,
-  },
-  sectionHint: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  segmentRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  segmentButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  segmentButtonActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
-  },
-  segmentButtonDisabled: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
-  },
-  segmentButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  segmentButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  segmentButtonTextDisabled: {
-    color: '#9CA3AF',
-  },
-});
+
