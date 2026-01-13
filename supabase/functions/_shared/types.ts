@@ -37,7 +37,8 @@ export interface User {
   
 export interface Profile {      
   id: string      
-  display_name?: string      
+  first_name?: string
+  last_name?: string
   avatar_url?: string      
   bio?: string      
   gender?: string      
@@ -58,17 +59,29 @@ export interface Profile {
     guests?: string  
   }  
   housing_situation?: 'seeking' | 'offering'  
+  users?: {
+    first_name?: string
+    last_name?: string
+    birth_date?: string
+  }
+  is_seeking?: boolean
   preferred_zones?: string[]  
   budget_min?: number  
   budget_max?: number  
+  desired_roommates_min?: number
+  desired_roommates_max?: number
+  is_searchable?: boolean
 }
   
 export interface Flat {    
   id: string    
   owner_id: string    
   address: string    
+  city_id?: string
   city: string    
+  place_id?: string
   district?: string    
+  capacity_total?: number
   gender_policy?: string
   rules?: string
   services?: FlatService[]
@@ -154,7 +167,8 @@ export interface AuthResponse {
   
 export interface ProfileCreateRequest {    
   id: string  
-  display_name?: string    
+  first_name?: string
+  last_name?: string
   avatar_url?: string    
   bio?: string    
   gender?: string    
@@ -173,15 +187,22 @@ export interface ProfileCreateRequest {
     guests?: string  
   }  
   housing_situation?: 'seeking' | 'offering'  
+  is_seeking?: boolean
   preferred_zones?: string[]  
   budget_min?: number  
   budget_max?: number  
+  desired_roommates_min?: number
+  desired_roommates_max?: number
+  is_searchable?: boolean
 }
   
 export interface FlatCreateRequest {    
   address: string    
+  city_id?: string
   city: string    
+  place_id?: string
   district?: string    
+  capacity_total?: number
   rules?: string
   services?: FlatService[]
 }  
@@ -269,6 +290,9 @@ export interface RoomFilters {
   price_min?: number  
   price_max?: number  
   available_from?: string  
+  zones?: string[]  
+  roommates_min?: number
+  roommates_max?: number
 }
 
 // Tipos para registro por fases  

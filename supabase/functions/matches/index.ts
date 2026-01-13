@@ -27,8 +27,8 @@ async function getUserMatches(userId: string): Promise<Match[]> {
     .select(
       `
       *,
-      user_a:profiles!matches_user_a_id_fkey(*),
-      user_b:profiles!matches_user_b_id_fkey(*)
+      user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(first_name, last_name)),
+      user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(first_name, last_name))
     `
     )
     .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
@@ -51,8 +51,8 @@ async function createMatch(matchData: {
     .select(
       `
       *,
-      user_a:profiles!matches_user_a_id_fkey(*),
-      user_b:profiles!matches_user_b_id_fkey(*)
+      user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(first_name, last_name)),
+      user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(first_name, last_name))
     `
     )
     .single();
@@ -74,8 +74,8 @@ async function updateMatch(
     .select(
       `
       *,
-      user_a:profiles!matches_user_a_id_fkey(*),
-      user_b:profiles!matches_user_b_id_fkey(*)
+      user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(first_name, last_name)),
+      user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(first_name, last_name))
     `
     )
     .eq('id', matchId)
@@ -99,8 +99,8 @@ async function updateMatch(
     .select(
       `
       *,
-      user_a:profiles!matches_user_a_id_fkey(*),
-      user_b:profiles!matches_user_b_id_fkey(*)
+      user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(first_name, last_name)),
+      user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(first_name, last_name))
     `
     )
     .single();
@@ -141,19 +141,29 @@ function validateMatchData(
   return { isValid: errors.length === 0, errors };
 }
 
-async function checkExistingMatch(
+async function findExistingMatch(
   userAId: string,
   userBId: string
-): Promise<boolean> {
+): Promise<Match | null> {
   const { data, error } = await supabaseClient
     .from('matches')
-    .select('id')
-    .or(
-      `(user_a_id.eq.${userAId},user_b_id.eq.${userBId}),(user_a_id.eq.${userBId},user_b_id.eq.${userAId})`
+    .select(
+      `
+      *,
+      user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(first_name, last_name)),
+      user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(first_name, last_name))
+    `
     )
-    .single();
+    .or(
+      `and(user_a_id.eq.${userAId},user_b_id.eq.${userBId}),and(user_a_id.eq.${userBId},user_b_id.eq.${userAId})`
+    )
+    .maybeSingle();
 
-  return !error && data !== null;
+  if (error) {
+    throw new Error(`Failed to check existing match: ${error.message}`);
+  }
+
+  return (data as Match) ?? null;
 }
 
 const handler = withAuth(
@@ -172,8 +182,8 @@ const handler = withAuth(
             .select(
               `
               *,
-              user_a:profiles!matches_user_a_id_fkey(*),
-              user_b:profiles!matches_user_b_id_fkey(*)
+              user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(first_name, last_name)),
+              user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(first_name, last_name))
             `
             )
             .eq('id', matchId)
@@ -230,13 +240,32 @@ const handler = withAuth(
           );
         }
 
-        const existing = await checkExistingMatch(
+        const existing = await findExistingMatch(
           matchData.user_a_id,
           matchData.user_b_id
         );
         if (existing) {
-          return new Response(JSON.stringify({ error: 'Match already exists' }), {
-            status: 409,
+          if (existing.status === 'rejected') {
+            return new Response(JSON.stringify({ error: 'Match rejected' }), {
+              status: 409,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
+          if (existing.status === 'pending' && userId !== existing.user_a_id) {
+            const updated = await updateMatch(existing.id, userId, {
+              status: 'accepted',
+            });
+            const response: ApiResponse<Match> = { data: updated };
+            return new Response(JSON.stringify(response), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
+          const response: ApiResponse<Match> = { data: existing };
+          return new Response(JSON.stringify(response), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }

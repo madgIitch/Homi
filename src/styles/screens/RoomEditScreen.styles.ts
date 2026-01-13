@@ -1,15 +1,11 @@
 import { StyleSheet } from 'react-native';
-import {
-  borderRadius,
-  colors,
-  semanticRadii,
-  semanticSizes,
-  sizes,
-  spacing,
-} from '../../theme';
-import { commonStyles } from '../common';
+import type { Theme } from '../../theme';
+import { createCommonStyles } from '../common';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const commonStyles = createCommonStyles(theme);
+  const { colors, spacing, sizes, borderRadius, semanticRadii, semanticSizes } = theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surfaceMutedAlt,
@@ -48,9 +44,9 @@ export const styles = StyleSheet.create({
     borderRadius: borderRadius.s18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.glassSurface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassBorderSoft,
   },
   headerAction: {
     flexDirection: 'row',
@@ -168,8 +164,8 @@ export const styles = StyleSheet.create({
     ...commonStyles.chip,
   },
   commonAreaChipActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft,
+    borderColor: colors.chipSelectedBorder,
+    backgroundColor: colors.chipSelectedBackground,
   },
   commonAreaChipText: {
     fontSize: 12,
@@ -177,7 +173,7 @@ export const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   commonAreaChipTextActive: {
-    color: colors.primary,
+    color: colors.chipSelectedText,
   },
   flatList: {
     gap: spacing.s12,
@@ -268,4 +264,5 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
   },
-});
+  });
+};

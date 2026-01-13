@@ -1,16 +1,11 @@
 import { StyleSheet } from 'react-native';
-import {
-  borderRadius,
-  colors,
-  semanticRadii,
-  semanticSizes,
-  shadows,
-  sizes,
-  spacing,
-} from '../../theme';
-import { commonStyles } from '../common';
+import type { Theme } from '../../theme';
+import { createCommonStyles } from '../common';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const commonStyles = createCommonStyles(theme);
+  const { colors, spacing, sizes, borderRadius, semanticRadii, semanticSizes } = theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surfaceMutedAlt,
@@ -55,11 +50,8 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
     backgroundColor: colors.glassSurface,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   headerActionDisabled: {
     opacity: 0.5,
@@ -153,8 +145,8 @@ export const styles = StyleSheet.create({
     ...commonStyles.chip,
   },
   flatChipActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft,
+    borderColor: colors.chipSelectedBorder,
+    backgroundColor: colors.chipSelectedBackground,
   },
   flatChipText: {
     fontSize: 12,
@@ -162,7 +154,7 @@ export const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   flatChipTextActive: {
-    color: colors.primary,
+    color: colors.chipSelectedText,
   },
   monthRow: {
     flexDirection: 'row',
@@ -374,16 +366,16 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.glassSurface,
   },
   scopeChipActive: {
-    borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryTint,
+    borderColor: colors.chipSelectedBorder,
+    backgroundColor: colors.chipSelectedBackground,
   },
   scopeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: colors.textStrong,
   },
   scopeTextActive: {
-    color: colors.primary,
+    color: colors.chipSelectedText,
   },
   participantsGrid: {
     flexDirection: 'row',
@@ -397,16 +389,16 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.glassUltraLightAlt,
   },
   participantChipActive: {
-    borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryTint,
+    borderColor: colors.chipSelectedBorder,
+    backgroundColor: colors.chipSelectedBackground,
   },
   participantText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.textStrong,
   },
   participantTextActive: {
-    color: colors.primary,
+    color: colors.chipSelectedText,
   },
   participantsEmpty: {
     marginTop: spacing.sm,
@@ -424,16 +416,16 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.glassSurface,
   },
   categoryChipActive: {
-    borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryTint,
+    borderColor: colors.chipSelectedBorder,
+    backgroundColor: colors.chipSelectedBackground,
   },
   categoryText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: colors.textStrong,
   },
   categoryTextActive: {
-    color: colors.primary,
+    color: colors.chipSelectedText,
   },
   modalLabel: {
     fontSize: 12,
@@ -488,4 +480,5 @@ export const styles = StyleSheet.create({
   modalButtonDisabled: {
     backgroundColor: colors.primaryMuted,
   },
-});
+  });
+};

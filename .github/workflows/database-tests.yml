@@ -1,0 +1,261 @@
+name: Database Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch: # Permite ejecutar manualmente
+
+jobs:
+  database-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PostgreSQL
+        uses: ikalnytskyi/action-setup-postgres@v6
+        with:
+          username: postgres
+          password: postgres
+          database: homimatch_test
+          port: 5432
+        id: postgres
+
+      - name: Verify PostgreSQL connection
+        run: |
+          psql postgresql://postgres:postgres@localhost:5432/homimatch_test -c "SELECT version();"
+
+      - name: Create schema structure
+        run: |
+          echo "Creating database schema..."
+          psql postgresql://postgres:postgres@localhost:5432/homimatch_test <<EOF
+
+          -- Create auth schema (simulated)
+          CREATE SCHEMA IF NOT EXISTS auth;
+
+          CREATE TABLE IF NOT EXISTS auth.users (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            email text UNIQUE NOT NULL,
+            created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+          );
+
+          -- Create public schema tables
+          CREATE TABLE IF NOT EXISTS public.users (
+            id uuid NOT NULL,
+            email text NOT NULL UNIQUE,
+            first_name text,
+            last_name text,
+            identity_document text UNIQUE,
+            birth_date date,
+            created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            gender text NOT NULL CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'non_binary'::text, 'other'::text, 'undisclosed'::text])),
+            CONSTRAINT users_pkey PRIMARY KEY (id),
+            CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.profiles (
+            id uuid NOT NULL,
+            display_name text,
+            avatar_url text,
+            bio text,
+            gender text NOT NULL CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'non_binary'::text, 'other'::text, 'undisclosed'::text])),
+            occupation text,
+            smoker boolean DEFAULT false,
+            has_pets boolean DEFAULT false,
+            social_links jsonb,
+            updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            university text,
+            field_of_study text,
+            interests jsonb,
+            lifestyle_preferences jsonb,
+            housing_situation text,
+            preferred_zones jsonb,
+            budget_min numeric,
+            budget_max numeric,
+            is_searchable boolean NOT NULL DEFAULT true,
+            is_seeking boolean DEFAULT false,
+            desired_roommates_min integer,
+            desired_roommates_max integer,
+            CONSTRAINT profiles_pkey PRIMARY KEY (id),
+            CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES public.users(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.flats (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            owner_id uuid NOT NULL,
+            address text NOT NULL,
+            city text NOT NULL,
+            district text,
+            created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            rules text,
+            services jsonb DEFAULT '[]'::jsonb,
+            gender_policy text NOT NULL DEFAULT 'mixed'::text CHECK (gender_policy = ANY (ARRAY['mixed'::text, 'men_only'::text, 'flinta'::text])),
+            capacity_total integer,
+            CONSTRAINT flats_pkey PRIMARY KEY (id),
+            CONSTRAINT flats_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.rooms (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            flat_id uuid NOT NULL,
+            owner_id uuid NOT NULL,
+            title text NOT NULL,
+            description text,
+            price_per_month numeric NOT NULL,
+            size_m2 numeric,
+            is_available boolean DEFAULT true,
+            available_from date DEFAULT CURRENT_DATE,
+            created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            CONSTRAINT rooms_pkey PRIMARY KEY (id),
+            CONSTRAINT rooms_flat_id_fkey FOREIGN KEY (flat_id) REFERENCES public.flats(id),
+            CONSTRAINT rooms_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.matches (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            user_a_id uuid NOT NULL,
+            user_b_id uuid NOT NULL,
+            status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text, 'room_offer'::text, 'room_assigned'::text, 'room_declined'::text])),
+            matched_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            CONSTRAINT matches_pkey PRIMARY KEY (id),
+            CONSTRAINT matches_user_a_id_fkey FOREIGN KEY (user_a_id) REFERENCES public.profiles(id),
+            CONSTRAINT matches_user_b_id_fkey FOREIGN KEY (user_b_id) REFERENCES public.profiles(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.chats (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            match_id uuid NOT NULL UNIQUE,
+            created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            CONSTRAINT chats_pkey PRIMARY KEY (id),
+            CONSTRAINT chats_match_id_fkey FOREIGN KEY (match_id) REFERENCES public.matches(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.messages (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            chat_id uuid NOT NULL,
+            sender_id uuid NOT NULL,
+            body text NOT NULL CHECK (length(body) <= 1000),
+            created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            read_at timestamp with time zone,
+            CONSTRAINT messages_pkey PRIMARY KEY (id),
+            CONSTRAINT messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id),
+            CONSTRAINT messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.room_assignments (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            match_id uuid UNIQUE,
+            room_id uuid NOT NULL,
+            assignee_id uuid NOT NULL,
+            status text NOT NULL DEFAULT 'offered'::text,
+            created_at timestamp with time zone NOT NULL DEFAULT now(),
+            updated_at timestamp with time zone NOT NULL DEFAULT now(),
+            CONSTRAINT room_assignments_pkey PRIMARY KEY (id),
+            CONSTRAINT room_assignments_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id),
+            CONSTRAINT room_assignments_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES public.profiles(id),
+            CONSTRAINT room_assignments_match_id_fkey FOREIGN KEY (match_id) REFERENCES public.matches(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.room_extras (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            room_id uuid NOT NULL,
+            category text,
+            room_type text,
+            capacity integer,
+            common_area_type text,
+            common_area_custom text,
+            photos text[] NOT NULL DEFAULT '{}',
+            created_at timestamp with time zone NOT NULL DEFAULT now(),
+            updated_at timestamp with time zone NOT NULL DEFAULT now(),
+            CONSTRAINT room_extras_pkey PRIMARY KEY (id),
+            CONSTRAINT room_extras_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.room_interests (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            user_id uuid NOT NULL,
+            room_id uuid NOT NULL,
+            message text,
+            created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            CONSTRAINT room_interests_pkey PRIMARY KEY (id),
+            CONSTRAINT room_interests_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+            CONSTRAINT room_interests_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.rooms(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.swipe_rejections (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            user_id uuid NOT NULL,
+            rejected_profile_id uuid NOT NULL,
+            created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+            CONSTRAINT swipe_rejections_pkey PRIMARY KEY (id),
+            CONSTRAINT swipe_rejections_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+            CONSTRAINT swipe_rejections_rejected_profile_id_fkey FOREIGN KEY (rejected_profile_id) REFERENCES public.profiles(id)
+          );
+
+          CREATE TABLE IF NOT EXISTS public.profile_photos (
+            id uuid NOT NULL DEFAULT gen_random_uuid(),
+            profile_id uuid NOT NULL,
+            path text NOT NULL,
+            position integer NOT NULL CHECK (position >= 1 AND position <= 10),
+            is_primary boolean NOT NULL DEFAULT false,
+            created_at timestamp with time zone NOT NULL DEFAULT now(),
+            CONSTRAINT profile_photos_pkey PRIMARY KEY (id),
+            CONSTRAINT profile_photos_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id)
+          );
+
+          EOF
+
+      - name: Create test users in auth.users
+        run: |
+          echo "Creating test users..."
+          psql postgresql://postgres:postgres@localhost:5432/homimatch_test <<EOF
+
+          -- Insert auth users first
+          INSERT INTO auth.users (email) VALUES
+            ('owner1@test.com'),
+            ('owner2@test.com'),
+            ('seeker1@test.com'),
+            ('seeker2@test.com'),
+            ('seeker3@test.com'),
+            ('seeker4@test.com'),
+            ('mixed1@test.com'),
+            ('mixed2@test.com');
+
+          EOF
+
+      - name: Load seed data
+        run: |
+          echo "Loading seed data..."
+          psql postgresql://postgres:postgres@localhost:5432/homimatch_test -f seed-basic.sql
+
+      - name: Run database tests
+        id: run_tests
+        run: |
+          echo "Running database tests..."
+          psql postgresql://postgres:postgres@localhost:5432/homimatch_test -f database-tests.sql > test-results.txt
+          cat test-results.txt
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-test-results
+          path: test-results.txt
+
+      - name: Check test results
+        run: |
+          if grep -q "❌ FAIL" test-results.txt; then
+            echo "❌ Some tests failed!"
+            grep "FAIL" test-results.txt
+            exit 1
+          else
+            echo "✅ All tests passed!"
+          fi

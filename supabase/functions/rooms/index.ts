@@ -27,6 +27,7 @@ interface FlatValidationData {
   address?: string  
   city?: string  
   district?: string  
+  capacity_total?: number
 }  
   
 interface RoomValidationData {  
@@ -316,6 +317,12 @@ function validateFlatData(data: FlatValidationData): { isValid: boolean; errors:
       errors.push('City is required')  
     }  
   }  
+
+  if (data.capacity_total !== undefined) {
+    if (typeof data.capacity_total !== 'number' || data.capacity_total < 1) {
+      errors.push('capacity_total must be a positive number')
+    }
+  }
         
   return {  
     isValid: errors.length === 0,  

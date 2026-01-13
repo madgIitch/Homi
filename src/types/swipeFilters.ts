@@ -7,6 +7,11 @@ export interface SwipeFilters {
   gender: GenderFilter;
   budgetMin: number;
   budgetMax: number;
+  roommatesMin?: number;
+  roommatesMax?: number;
+  ageMin?: number;
+  ageMax?: number;
+  cities: string[];
   zones: string[];
   lifestyle: string[];
   interests: string[];

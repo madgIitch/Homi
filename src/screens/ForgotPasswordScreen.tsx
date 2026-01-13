@@ -1,23 +1,22 @@
 // src/screens/ForgotPasswordScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   Alert,
   ImageBackground,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
   StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../components/Button';
+import { KeyboardAwareContainer } from '../components/KeyboardAwareContainer';
 import { useTheme } from '../theme/ThemeContext';
 import { authService } from '../services/authService';
 import { API_CONFIG } from '../config/api';
-import { ForgotPasswordScreenStyles as styles } from '../styles/screens';
+import { ForgotPasswordScreenStyles } from '../styles/screens';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors } from '../theme';
 
@@ -35,6 +34,7 @@ type ForgotPasswordNavigationProp = StackNavigationProp<
 export const ForgotPasswordScreen: React.FC = () => {
   const navigation = useNavigation<ForgotPasswordNavigationProp>();
   const theme = useTheme();
+  const styles = useMemo(() => ForgotPasswordScreenStyles(theme), [theme]);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -65,11 +65,10 @@ export const ForgotPasswordScreen: React.FC = () => {
     }
   };
 
+  const insets = useSafeAreaInsets();
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={styles.container}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
@@ -82,9 +81,11 @@ export const ForgotPasswordScreen: React.FC = () => {
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAwareContainer
+        style={{ backgroundColor: 'transparent' }}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }]}
+        withSafeAreaBottom
+        extraScrollHeight={120}
       >
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.colors.text }]}>
@@ -126,7 +127,7 @@ export const ForgotPasswordScreen: React.FC = () => {
             variant="tertiary"
           />
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAwareContainer>
+    </View>
   );
 };

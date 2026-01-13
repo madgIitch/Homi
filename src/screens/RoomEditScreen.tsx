@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,20 @@ import {
   Image,
   ImageBackground,
   ActivityIndicator,
+  Dimensions,
+  Keyboard,
+  UIManager,
+  findNodeHandle,
   StyleSheet,
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
 import LinearGradient from 'react-native-linear-gradient';
-import { colors } from '../theme';
+import { colors, spacing } from '../theme';
 import { BlurView } from '@react-native-community/blur';
 import { FormSection } from '../components/FormSection';
 import { Input } from '../components/Input';
@@ -30,7 +35,7 @@ import type {
   RoomCreateRequest,
   RoomExtraDetails,
 } from '../types/room';
-import { RoomEditScreenStyles as styles } from '../styles/screens';
+import { RoomEditScreenStyles } from '../styles/screens';
 
 const toISODate = (date: Date) => date.toISOString().split('T')[0];
 
@@ -69,7 +74,15 @@ const commonAreaLabelById = new Map(
 
 export const RoomEditScreen: React.FC = () => {
   const theme = useTheme();
+  const styles = useMemo(() => RoomEditScreenStyles(theme), [theme]);
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const scrollRef = useRef<ScrollView>(null);
+  const focusedInputHandle = useRef<number | null>(null);
+  const keyboardHeightRef = useRef(0);
+  const keyboardTopRef = useRef(Dimensions.get('window').height);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const scrollYRef = useRef(0);
   const route = useRoute();
   const routeParams = route.params as
     | {
@@ -106,10 +119,104 @@ export const RoomEditScreen: React.FC = () => {
   const [roomCategory, setRoomCategory] = useState<
     RoomExtraDetails['category'] | null
   >(null);
+  const [roomCapacity, setRoomCapacity] = useState('');
   const [commonAreaType, setCommonAreaType] = useState<string | null>(null);
   const [commonAreaCustom, setCommonAreaCustom] = useState('');
   const [photos, setPhotos] = useState<RoomPhotoItem[]>([]);
   const lastAutoTitleRef = React.useRef<string>('');
+
+  const scrollToFocusedInput = useCallback(
+    (extraOffset?: number) => {
+      const scrollNode = scrollRef.current;
+      const target = focusedInputHandle.current;
+      if (!scrollNode || !target) return;
+
+      UIManager.measureInWindow(
+        target,
+        (_x, y, _width, height) => {
+          const windowHeight = Dimensions.get('window').height;
+          const keyboardOffset =
+            keyboardHeightRef.current > 0
+              ? keyboardHeightRef.current * 0.18
+              : 0;
+          const resolvedOffset =
+            extraOffset ??
+            Math.round(
+              Math.min(80, Math.max(12, windowHeight * 0.035, keyboardOffset))
+            );
+          const resolvedKeyboardTop =
+            keyboardHeightRef.current > 0
+              ? keyboardTopRef.current
+              : windowHeight;
+          const targetBottom = y + height;
+          const targetTop = y;
+
+          if (
+            keyboardHeightRef.current > 0 &&
+            targetBottom > resolvedKeyboardTop - resolvedOffset
+          ) {
+            const delta = targetBottom - (resolvedKeyboardTop - resolvedOffset);
+            scrollNode.scrollTo({
+              y: Math.max(0, scrollYRef.current + delta),
+              animated: true,
+            });
+            return;
+          }
+
+          const safeTop = insets.top + 16;
+          if (targetTop < safeTop) {
+            const delta = safeTop - targetTop;
+            scrollNode.scrollTo({
+              y: Math.max(0, scrollYRef.current - delta),
+              animated: true,
+            });
+          }
+        }
+      );
+    },
+    [insets.top]
+  );
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardHeightRef.current = event.endCoordinates.height;
+      keyboardTopRef.current = event.endCoordinates.screenY;
+      setKeyboardHeight(event.endCoordinates.height);
+      requestAnimationFrame(() => scrollToFocusedInput());
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardHeightRef.current = 0;
+      keyboardTopRef.current = Dimensions.get('window').height;
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [scrollToFocusedInput]);
+
+  const handleInputFocus = useCallback(
+    (event: any) => {
+      const rawTarget = event?.target ?? event?.nativeEvent?.target;
+      let target: number | null = null;
+
+      if (typeof rawTarget === 'number') {
+        target = rawTarget;
+      } else if (rawTarget) {
+        const handle = findNodeHandle(rawTarget as any);
+        if (typeof handle === 'number') {
+          target = handle;
+        }
+      }
+
+      if (target != null) {
+        focusedInputHandle.current = target;
+      }
+
+      setTimeout(() => scrollToFocusedInput(), 50);
+    },
+    [scrollToFocusedInput]
+  );
 
   const loadRoom = useCallback(async () => {
     if (!roomId) return;
@@ -186,6 +293,9 @@ export const RoomEditScreen: React.FC = () => {
       );
       setRoomType(
         (extras.room_type as RoomExtraDetails['roomType']) ?? undefined
+      );
+      setRoomCapacity(
+        typeof extras.capacity === 'number' ? String(extras.capacity) : ''
       );
       setCommonAreaType(extras.common_area_type ?? null);
       setCommonAreaCustom(extras.common_area_custom ?? '');
@@ -398,8 +508,24 @@ export const RoomEditScreen: React.FC = () => {
       available_from: availableValue,
     };
 
+    const capacityParsed = Number.parseInt(roomCapacity, 10);
+    if (roomCategory !== 'area_comun' && roomType === 'doble') {
+      if (!Number.isFinite(capacityParsed) || capacityParsed < 2) {
+        Alert.alert('Error', 'Indica plazas validas para la habitacion doble');
+        return;
+      }
+    }
+
     try {
       setSaving(true);
+      const capacityValue =
+        roomCategory === 'area_comun'
+          ? null
+          : roomType === 'doble'
+          ? capacityParsed
+          : roomType === 'individual'
+          ? 1
+          : null;
       if (isCreateMode) {
         const createdRoom = await roomService.createRoom(payload);
         const uploaded = await Promise.all(
@@ -419,6 +545,7 @@ export const RoomEditScreen: React.FC = () => {
           room_id: createdRoom.id,
           category: roomCategory,
           room_type: roomType ?? null,
+          capacity: capacityValue,
           common_area_type: commonAreaType ?? null,
           common_area_custom: commonAreaCustom.trim() || null,
           photos: photoPaths,
@@ -446,6 +573,7 @@ export const RoomEditScreen: React.FC = () => {
           room_id: room.id,
           category: roomCategory,
           room_type: roomType ?? null,
+          capacity: capacityValue,
           common_area_type: commonAreaType ?? null,
           common_area_custom: commonAreaCustom.trim() || null,
           photos: allPaths,
@@ -485,7 +613,12 @@ export const RoomEditScreen: React.FC = () => {
             style={StyleSheet.absoluteFillObject}
           />
         </ImageBackground>
-        <View style={styles.header}>
+        <View
+          style={[
+            styles.header,
+            { paddingTop: insets.top + spacing.md, paddingBottom: spacing.md },
+          ]}
+        >
           <BlurView
             blurType="light"
             blurAmount={16}
@@ -554,7 +687,12 @@ export const RoomEditScreen: React.FC = () => {
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + spacing.md, paddingBottom: spacing.md },
+        ]}
+      >
         <BlurView
           blurType="light"
           blurAmount={16}
@@ -579,7 +717,17 @@ export const RoomEditScreen: React.FC = () => {
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: insets.bottom + keyboardHeight + 24 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onScroll={(event) => {
+          scrollYRef.current = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
+      >
         {isCreateMode && (
           <FormSection title="Piso" iconName="business-outline" required>
             {flatsLoading ? (
@@ -685,6 +833,16 @@ export const RoomEditScreen: React.FC = () => {
                 );
               })}
             </View>
+            {roomType === 'doble' ? (
+              <Input
+                label="Plazas en la habitacion"
+                value={roomCapacity}
+                onChangeText={setRoomCapacity}
+                onFocus={handleInputFocus}
+                keyboardType="number-pad"
+                required
+              />
+            ) : null}
           </FormSection>
         )}
 
@@ -719,6 +877,7 @@ export const RoomEditScreen: React.FC = () => {
                 label="Tipo de area"
                 value={commonAreaCustom}
                 onChangeText={setCommonAreaCustom}
+                onFocus={handleInputFocus}
                 placeholder="Escribe el tipo de area"
                 required
               />
@@ -731,6 +890,7 @@ export const RoomEditScreen: React.FC = () => {
             label={roomCategory === 'area_comun' ? 'Titulo del area' : 'Titulo'}
             value={title}
             onChangeText={setTitle}
+            onFocus={handleInputFocus}
             required
           />
           <TextArea
@@ -741,6 +901,7 @@ export const RoomEditScreen: React.FC = () => {
             }
             value={description}
             onChangeText={setDescription}
+            onFocus={handleInputFocus}
             maxLength={500}
             placeholder={
               roomCategory === 'area_comun'
@@ -753,6 +914,7 @@ export const RoomEditScreen: React.FC = () => {
               label="Precio por mes (EUR)"
               value={price}
               onChangeText={setPrice}
+              onFocus={handleInputFocus}
               keyboardType="numeric"
               required
             />
@@ -761,6 +923,7 @@ export const RoomEditScreen: React.FC = () => {
             label="Metros cuadrados"
             value={size}
             onChangeText={setSize}
+            onFocus={handleInputFocus}
             keyboardType="numeric"
           />
         </FormSection>

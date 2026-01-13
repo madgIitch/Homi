@@ -13,6 +13,7 @@ import {
 } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/theme/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
+import { PremiumProvider } from './src/context/PremiumContext';
 import { SwipeFiltersProvider } from './src/context/SwipeFiltersContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { configureGoogleSignIn } from './src/config/google';
@@ -50,9 +51,11 @@ function App() {
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <ThemeProvider>
         <AuthProvider>
-          <SwipeFiltersProvider>
-            <AppNavigator />
-          </SwipeFiltersProvider>
+          <PremiumProvider>
+            <SwipeFiltersProvider>
+              <AppNavigator />
+            </SwipeFiltersProvider>
+          </PremiumProvider>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>

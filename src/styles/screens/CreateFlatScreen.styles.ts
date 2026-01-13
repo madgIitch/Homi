@@ -40,9 +40,9 @@ export const styles = StyleSheet.create({
     borderRadius: borderRadius.s18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.glassSurface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassBorderSoft,
   },
   content: {
     flex: 1,

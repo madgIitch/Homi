@@ -1,5 +1,13 @@
+// @refresh reset
 // src/screens/ProfileDetailScreen.tsx
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -13,29 +21,35 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   Animated,
+  useWindowDimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { BlurView } from '@react-native-community/blur';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
 import Share from 'react-native-share';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../theme/ThemeContext';
-import { colors } from '../theme';
+import { useTheme, useThemeController } from '../theme/ThemeContext';
+import { sizes, spacing } from '../theme';
 import { API_CONFIG } from '../config/api';
+import { supabaseClient } from '../services/authService';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { shareService } from '../services/shareService';
 import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
+import { locationService } from '../services/locationService';
 import { AuthContext } from '../context/AuthContext';
-import { INTERESES_OPTIONS, ZONAS_OPTIONS } from '../constants/swipeFilters';
+import { INTERESES_OPTIONS } from '../constants/swipeFilters';
 import type { Profile, ProfilePhoto } from '../types/profile';
 import type { Flat, Room, RoomExtras } from '../types/room';
 import { ProfileDetailScreenStyles as styles } from '../styles/screens';
+import { getUserName } from '../utils/name';
 
 interface ProfileDetailScreenProps {
   userId?: string;
@@ -64,10 +78,6 @@ const interestLabelById = new Map(
   INTERESES_OPTIONS.map((option) => [option.id, option.label])
 );
 
-const zoneLabelById = new Map(
-  ZONAS_OPTIONS.map((option) => [option.id, option.label])
-);
-
 const LIGHTBOX_MIN_SCALE = 1;
 const LIGHTBOX_MAX_SCALE = 3;
 
@@ -88,8 +98,8 @@ const SUB_RULE_TYPE_MAP = new Map<
   ['permitidas bajo acuerdo', { ruleType: 'mascotas', isNegative: false }],
 ]);
 
-const getRuleIcon = (rule: string) => {
-  const normalized = rule.toLowerCase().trim();
+const getRuleIcon = (rule?: string | null) => {
+  const normalized = typeof rule === 'string' ? rule.toLowerCase().trim() : '';
   const subRuleMatch = SUB_RULE_TYPE_MAP.get(normalized);
   const ruleType = subRuleMatch?.ruleType ?? (() => {
     if (
@@ -157,8 +167,8 @@ const getRuleIcon = (rule: string) => {
   return isNegative ? emoji.negative : emoji.positive;
 };
 
-const getServiceIcon = (serviceName: string) => {
-  const normalized = serviceName.toLowerCase();
+const getServiceIcon = (serviceName?: string | null) => {
+  const normalized = typeof serviceName === 'string' ? serviceName.toLowerCase() : '';
   if (normalized.includes('luz') || normalized.includes('electric')) {
     return '\u{26A1}';
   }
@@ -178,13 +188,92 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   userId,
 }) => {
   const theme = useTheme();
+  const { isDark, toggleTheme } = useThemeController();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const headerFillStyle = useMemo(
+    () => ({ backgroundColor: theme.colors.glassUltraLightAlt }),
+    [theme.colors.glassUltraLightAlt]
+  );
+  const headerIconStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.glassSurface,
+      borderColor: theme.colors.glassBorderSoft,
+    }),
+    [theme.colors.glassBorderSoft, theme.colors.glassSurface]
+  );
+  const tabBaseStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.glassUltraLightAlt,
+      borderColor: theme.colors.glassBorderSoft,
+    }),
+    [theme.colors.glassBorderSoft, theme.colors.glassUltraLightAlt]
+  );
+  const tabActiveStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.primaryTint,
+      borderColor: theme.colors.primaryMuted,
+    }),
+    [theme.colors.primaryMuted, theme.colors.primaryTint]
+  );
+  const tabTextStyle = useMemo(
+    () => ({ color: theme.colors.textSecondary }),
+    [theme.colors.textSecondary]
+  );
+  const tabTextActiveStyle = useMemo(
+    () => ({ color: theme.colors.primary }),
+    [theme.colors.primary]
+  );
+  const badgeStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.glassUltraLightAlt,
+      borderColor: theme.colors.glassBorderSoft,
+    }),
+    [theme.colors.glassBorderSoft, theme.colors.glassUltraLightAlt]
+  );
+  const badgeTextStyle = useMemo(
+    () => ({ color: theme.colors.text }),
+    [theme.colors.text]
+  );
+  const badgeLightStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.primaryTint,
+      borderColor: theme.colors.primaryMuted,
+    }),
+    [theme.colors.primaryMuted, theme.colors.primaryTint]
+  );
+  const badgeLightTextStyle = useMemo(
+    () => ({ color: theme.colors.primary }),
+    [theme.colors.primary]
+  );
+  const compactChipStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.glassSurface,
+      borderColor: theme.colors.glassBorderSoft,
+    }),
+    [theme.colors.glassBorderSoft, theme.colors.glassSurface]
+  );
+  const compactChipTextStyle = useMemo(
+    () => ({ color: theme.colors.text }),
+    [theme.colors.text]
+  );
+  const flatCardStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.glassSurface,
+      borderColor: theme.colors.glassBorderSoft,
+    }),
+    [theme.colors.glassBorderSoft, theme.colors.glassSurface]
+  );
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
+  const [zoneNameById, setZoneNameById] = useState<Record<string, string>>({});
+  const [zoneCityById, setZoneCityById] = useState<Record<string, string>>({});
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxFrameWidth, setLightboxFrameWidth] = useState(0);
+  const [isSearchEnabled, setIsSearchEnabled] = useState(true);
+  const [isTogglingSearch, setIsTogglingSearch] = useState(false);
   const lightboxScrollRef = useRef<ScrollView>(null);
   const lightboxScaleStates = useRef<
     Array<{ base: Animated.Value; pinch: Animated.Value; lastScale: number }>
@@ -195,23 +284,87 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [flatExtras, setFlatExtras] = useState<Record<string, RoomExtras | null>>({});
   const [flatLoading, setFlatLoading] = useState(false);
   const [flatAssignments, setFlatAssignments] = useState<Record<string, boolean>>({});
+  const [flatHasAssignments, setFlatHasAssignments] = useState<
+    Record<string, boolean>
+  >({});
   const [flatAssignmentsToMe, setFlatAssignmentsToMe] = useState<
     Record<string, boolean>
   >({});
+  const [hasAcceptedRoomForProfile, setHasAcceptedRoomForProfile] = useState(false);
   const [expandedRules, setExpandedRules] = useState<Record<string, boolean>>({});
   const [activeFlatIndex, setActiveFlatIndex] = useState(0);
   const [isSharing, setIsSharing] = useState(false);
+  const profileChannelRef = useRef<RealtimeChannel | null>(null);
+  const photoChannelRef = useRef<RealtimeChannel | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+  const acceptedAssignmentChannelRef = useRef<RealtimeChannel | null>(null);
 
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const parentType = navigation.getParent()?.getState()?.type;
+  const bottomInset = useMemo(() => {
+    if (parentType !== 'tab') {
+      return insets.bottom;
+    }
+    const layoutPct = {
+      tabBarTop: 0.87,
+      tabBarBottom: 0.94,
+    };
+    const screenHeight = windowHeight + insets.top + insets.bottom;
+    const rawTabBarBottom = Math.round(
+      screenHeight * (1 - layoutPct.tabBarBottom)
+    );
+    const rawTabBarHeight = Math.max(
+      0,
+      Math.round(screenHeight * (layoutPct.tabBarBottom - layoutPct.tabBarTop))
+    );
+    const maxHeight = Math.max(0, windowHeight - insets.bottom);
+    const tabBarHeight = Math.min(rawTabBarHeight, maxHeight);
+    const maxBottom = Math.max(0, maxHeight - tabBarHeight);
+    const tabBarBottom = Math.min(Math.max(0, rawTabBarBottom), maxBottom);
+    return tabBarBottom + tabBarHeight;
+  }, [insets.bottom, insets.top, parentType, windowHeight]);
   const route = useRoute();
   const authContext = useContext(AuthContext);
   const currentUserId = authContext?.user?.id ?? '';
-  const routeParams = route as { params?: { profile?: Profile; fromMatch?: boolean } };
+  const routeParams = route as {
+    params?: { profile?: Profile; fromMatch?: boolean; userId?: string };
+  };
   const routeProfile = routeParams.params?.profile;
+  const routeUserId = routeParams.params?.userId;
   const isFromMatch = Boolean(routeParams.params?.fromMatch);
   const isOwnProfile =
-    (!routeProfile && (!userId || userId === currentUserId)) ||
+    (!routeProfile &&
+      (!routeUserId && (!userId || userId === currentUserId))) ||
     routeProfile?.id === currentUserId;
+  const assignmentChannelRef = useRef<RealtimeChannel | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
+      if (profileChannelRef.current) {
+        supabaseClient.removeChannel(profileChannelRef.current);
+        profileChannelRef.current = null;
+      }
+      if (photoChannelRef.current) {
+        supabaseClient.removeChannel(photoChannelRef.current);
+        photoChannelRef.current = null;
+      }
+      if (acceptedAssignmentChannelRef.current) {
+        supabaseClient.removeChannel(acceptedAssignmentChannelRef.current);
+        acceptedAssignmentChannelRef.current = null;
+      }
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+    };
+  }, []);
 
   const handleLogout = () => {
     if (!authContext?.logout) return;
@@ -234,6 +387,124 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     ]);
   };
 
+  const toggleSearchEnabled = async () => {
+    if (isTogglingSearch) return;
+    const nextValue = !isSearchEnabled;
+    setIsSearchEnabled(nextValue);
+    setIsTogglingSearch(true);
+    try {
+      await profileService.updateProfile({ is_searchable: nextValue });
+    } catch (error) {
+      console.error('Error actualizando visibilidad:', error);
+      setIsSearchEnabled(!nextValue);
+      Alert.alert('Error', 'No se pudo actualizar tu visibilidad.');
+    } finally {
+      setIsTogglingSearch(false);
+    }
+  };
+
+  const loadProfile = useCallback(async () => {
+    try {
+      const data = await profileService.getProfile();
+      if (isMountedRef.current) {
+        setProfile(data);
+        setIsSearchEnabled(data.is_searchable ?? true);
+      }
+    } catch (error) {
+      console.error('Error cargando perfil:', error);
+      Alert.alert('Error', 'No se pudo cargar el perfil');
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  const loadPhotos = useCallback(async () => {
+    try {
+      const data = await profilePhotoService.getPhotos();
+      if (isMountedRef.current) {
+        setProfilePhotos(data);
+      }
+    } catch (error) {
+      console.error('Error cargando fotos:', error);
+    }
+  }, []);
+
+  const loadProfileById = useCallback(async (profileId: string) => {
+    try {
+      const { data, error } = await supabaseClient
+        .from('profiles')
+        .select('*, users!profiles_id_fkey(birth_date, first_name, last_name)')
+        .eq('id', profileId)
+        .single();
+
+      if (error || !data) {
+        throw error || new Error('Perfil no encontrado');
+      }
+
+      const { users, ...profileData } = data as Profile & {
+        users?: {
+          birth_date?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+        };
+      };
+      const nextProfile: Profile = {
+        ...profileData,
+        birth_date: users?.birth_date ?? null,
+        first_name: users?.first_name ?? profileData.first_name ?? null,
+        last_name: users?.last_name ?? profileData.last_name ?? null,
+      };
+      if (isMountedRef.current) {
+        setProfile(nextProfile);
+      }
+    } catch (error) {
+      console.error('Error cargando perfil remoto:', error);
+    }
+  }, []);
+
+  const loadProfilePhotosById = useCallback(
+    async (profileId: string) => {
+      try {
+        const data = isOwnProfile
+          ? await profilePhotoService.getPhotos()
+          : await profilePhotoService.getPhotosForProfile(profileId);
+        if (isMountedRef.current) {
+          setProfilePhotos(data);
+        }
+      } catch (error) {
+        console.error('Error cargando fotos de perfil:', error);
+      }
+    },
+    [isOwnProfile]
+  );
+
+  const refreshProfileAndPhotos = useCallback(
+    async (profileId: string) => {
+      if (!profileId) return;
+      if (isOwnProfile) {
+        await loadProfile();
+      } else {
+        await loadProfileById(profileId);
+      }
+      await loadProfilePhotosById(profileId);
+    },
+    [isOwnProfile, loadProfile, loadProfileById, loadProfilePhotosById]
+  );
+
+  const scheduleProfileRefresh = useCallback(
+    (profileId: string) => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      refreshTimeoutRef.current = setTimeout(() => {
+        refreshProfileAndPhotos(profileId).catch(() => undefined);
+      }, 400);
+    },
+    [refreshProfileAndPhotos]
+  );
+
   useEffect(() => {
     if (routeProfile) {
       setProfile(routeProfile);
@@ -245,36 +516,280 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           .catch((error) =>
             console.error('Error cargando fotos externas:', error)
           );
+        const hasNames = Boolean(routeProfile.first_name || routeProfile.last_name);
+        if (!hasNames) {
+          loadProfileById(routeProfile.id).catch((error) =>
+            console.error('Error cargando perfil remoto:', error)
+          );
+        }
       } else {
         setProfilePhotos([]);
       }
       return;
     }
 
+    const targetUserId = routeUserId ?? userId;
+    if (targetUserId && targetUserId !== currentUserId) {
+      setLoading(true);
+      loadProfileById(targetUserId)
+        .then(() => loadProfilePhotosById(targetUserId))
+        .catch((error) =>
+          console.error('Error cargando perfil remoto:', error)
+        )
+        .finally(() => {
+          if (isMountedRef.current) {
+            setLoading(false);
+          }
+        });
+      return;
+    }
+
     loadProfile();
     loadPhotos();
-  }, [userId, routeProfile, currentUserId]);
+  }, [
+    userId,
+    routeProfile,
+    routeUserId,
+    currentUserId,
+    loadProfile,
+    loadPhotos,
+    loadProfileById,
+    loadProfilePhotosById,
+  ]);
 
-  const loadProfile = async () => {
-    try {
-      const data = await profileService.getProfile();
-      setProfile(data);
-    } catch (error) {
-      console.error('Error cargando perfil:', error);
-      Alert.alert('Error', 'No se pudo cargar el perfil');
-    } finally {
-      setLoading(false);
+  const refreshAcceptedRoomForProfile = useCallback(async () => {
+    if (isOwnProfile || !profile?.id || !currentUserId) {
+      if (isMountedRef.current) {
+        setHasAcceptedRoomForProfile(false);
+      }
+      return;
     }
-  };
 
-  const loadPhotos = async () => {
     try {
-      const data = await profilePhotoService.getPhotos();
-      setProfilePhotos(data);
+      const { assignments } = await roomAssignmentService.getAssignmentsForAssignee();
+      const hasAccepted = assignments.some(
+        (assignment) => assignment.room?.owner_id === profile.id
+      );
+      if (isMountedRef.current) {
+        setHasAcceptedRoomForProfile(hasAccepted);
+      }
     } catch (error) {
-      console.error('Error cargando fotos:', error);
+      console.warn('Error comprobando asignaciones aceptadas:', error);
+      if (isMountedRef.current) {
+        setHasAcceptedRoomForProfile(false);
+      }
     }
-  };
+  }, [currentUserId, isOwnProfile, profile?.id]);
+
+  useEffect(() => {
+    if (isOwnProfile || !profile?.id || !currentUserId) {
+      setHasAcceptedRoomForProfile(false);
+      if (acceptedAssignmentChannelRef.current) {
+        supabaseClient.removeChannel(acceptedAssignmentChannelRef.current);
+        acceptedAssignmentChannelRef.current = null;
+      }
+      return;
+    }
+
+    let isMounted = true;
+    const subscribeToAcceptedAssignments = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (acceptedAssignmentChannelRef.current) {
+        supabaseClient.removeChannel(acceptedAssignmentChannelRef.current);
+        acceptedAssignmentChannelRef.current = null;
+      }
+
+      const filter = `assignee_id=eq.${currentUserId}`;
+      const channel = supabaseClient
+        .channel(`room-assignments:viewer:${currentUserId}:${profile.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'room_assignments', filter },
+          () => {
+            if (!isMounted) return;
+            refreshAcceptedRoomForProfile();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'room_assignments', filter },
+          () => {
+            if (!isMounted) return;
+            refreshAcceptedRoomForProfile();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'room_assignments', filter },
+          () => {
+            if (!isMounted) return;
+            refreshAcceptedRoomForProfile();
+          }
+        )
+        .subscribe();
+
+      acceptedAssignmentChannelRef.current = channel;
+    };
+
+    refreshAcceptedRoomForProfile();
+    void subscribeToAcceptedAssignments();
+
+    return () => {
+      isMounted = false;
+      if (acceptedAssignmentChannelRef.current) {
+        supabaseClient.removeChannel(acceptedAssignmentChannelRef.current);
+        acceptedAssignmentChannelRef.current = null;
+      }
+    };
+  }, [currentUserId, isOwnProfile, profile?.id, refreshAcceptedRoomForProfile]);
+
+  useEffect(() => {
+    let isActive = true;
+    const loadZoneNames = async () => {
+      const preferredZones = profile?.preferred_zones ?? [];
+      if (preferredZones.length === 0) {
+        if (isActive) {
+          setZoneNameById({});
+          setZoneCityById({});
+        }
+        return;
+      }
+
+      try {
+        const entries = await Promise.all(
+          preferredZones.map(async (zoneId) => {
+            const place = await locationService.getPlaceById(zoneId);
+            if (!place) return null;
+            const cityId = place.city_id ?? null;
+            const city =
+              cityId ? await locationService.getCityById(cityId) : null;
+            return {
+              id: zoneId,
+              name: place.name,
+              cityName: city?.name ?? null,
+            };
+          })
+        );
+        if (!isActive) return;
+        const nameMap: Record<string, string> = {};
+        const cityMap: Record<string, string> = {};
+        entries.forEach((entry) => {
+          if (!entry) return;
+          nameMap[entry.id] = entry.name;
+          if (entry.cityName) {
+            cityMap[entry.id] = entry.cityName;
+          }
+        });
+        setZoneNameById(nameMap);
+        setZoneCityById(cityMap);
+      } catch (error) {
+        console.warn('[ProfileDetail] Error cargando zonas:', error);
+      }
+    };
+
+    void loadZoneNames();
+    return () => {
+      isActive = false;
+    };
+  }, [profile?.preferred_zones]);
+
+  useEffect(() => {
+    const profileId = routeProfile?.id ?? userId ?? currentUserId;
+    if (!profileId) return;
+    let isMounted = true;
+
+    const subscribeToProfileUpdates = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (profileChannelRef.current) {
+        supabaseClient.removeChannel(profileChannelRef.current);
+        profileChannelRef.current = null;
+      }
+      if (photoChannelRef.current) {
+        supabaseClient.removeChannel(photoChannelRef.current);
+        photoChannelRef.current = null;
+      }
+
+      const profileChannel = supabaseClient
+        .channel(`profiles:${profileId}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${profileId}` },
+          () => {
+            if (!isMounted) return;
+            scheduleProfileRefresh(profileId);
+          }
+        )
+        .subscribe();
+
+      const photoChannel = supabaseClient
+        .channel(`profile-photos:${profileId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'profile_photos',
+            filter: `profile_id=eq.${profileId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleProfileRefresh(profileId);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'profile_photos',
+            filter: `profile_id=eq.${profileId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleProfileRefresh(profileId);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'profile_photos',
+            filter: `profile_id=eq.${profileId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleProfileRefresh(profileId);
+          }
+        )
+        .subscribe();
+
+      profileChannelRef.current = profileChannel;
+      photoChannelRef.current = photoChannel;
+    };
+
+    subscribeToProfileUpdates().catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+      if (profileChannelRef.current) {
+        supabaseClient.removeChannel(profileChannelRef.current);
+        profileChannelRef.current = null;
+      }
+      if (photoChannelRef.current) {
+        supabaseClient.removeChannel(photoChannelRef.current);
+        photoChannelRef.current = null;
+      }
+    };
+  }, [routeProfile?.id, userId, currentUserId, scheduleProfileRefresh]);
 
   const loadFlatData = useCallback(async () => {
     if (!profile?.id) {
@@ -283,18 +798,21 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       setFlatRooms([]);
       setFlatExtras({});
       setFlatAssignments({});
+      setFlatHasAssignments({});
       setFlatAssignmentsToMe({});
       return;
     }
 
-    try {
-      setFlatLoading(true);
-      if (profile.housing_situation === 'offering') {
-        const [flatsData, roomsData] = await Promise.all([
-          roomService.getFlatsByOwner(profile.id),
-          roomService.getRoomsByOwner(profile.id),
-        ]);
-        setFlats(flatsData);
+      try {
+        setFlatLoading(true);
+        const shouldLoadOwnedFlats =
+          !isOwnProfile || profile.housing_situation === 'offering';
+        if (shouldLoadOwnedFlats) {
+          const [flatsData, roomsData] = await Promise.all([
+            roomService.getFlatsByOwner(profile.id),
+            roomService.getRoomsByOwner(profile.id),
+          ]);
+          setFlats(flatsData);
         setFlatRooms(roomsData);
         const extras = await roomExtrasService.getExtrasForRooms(
           roomsData.map((room) => room.id)
@@ -304,16 +822,22 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         );
         setFlatExtras(extrasMap);
         const acceptedMap: Record<string, boolean> = {};
+        const hasAssignmentsMap: Record<string, boolean> = {};
         await Promise.all(
           roomsData.map(async (roomItem) => {
             try {
               const assignmentsResponse =
                 await roomAssignmentService.getAssignmentsForRoom(roomItem.id);
+              hasAssignmentsMap[roomItem.id] =
+                assignmentsResponse.assignments.length > 0 ||
+                Boolean(assignmentsResponse.match_assignment);
               const hasAcceptedAssignment =
                 assignmentsResponse.assignments.some(
-                  (assignment) => assignment.status === 'accepted'
+                  (assignment) =>
+                    assignment.status === 'accepted' && Boolean(assignment.assignee)
                 ) ||
-                assignmentsResponse.match_assignment?.status === 'accepted';
+                (assignmentsResponse.match_assignment?.status === 'accepted' &&
+                  Boolean(assignmentsResponse.match_assignment.assignee));
               if (hasAcceptedAssignment) {
                 acceptedMap[roomItem.id] = true;
               }
@@ -327,22 +851,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           })
         );
         setFlatAssignments(acceptedMap);
-        setFlatAssignmentsToMe({});
-        return;
-      }
+          setFlatHasAssignments(hasAssignmentsMap);
+          setFlatAssignmentsToMe({});
+          return;
+        }
 
-      if (!isOwnProfile) {
-        setActiveTab('perfil');
-        setFlats([]);
-        setFlatRooms([]);
-      setFlatExtras({});
-      setFlatAssignments({});
-      setFlatAssignmentsToMe({});
-      return;
-      }
-
-      const assignmentsResponse =
-        await roomAssignmentService.getAssignmentsForAssignee();
+        const assignmentsResponse =
+          await roomAssignmentService.getAssignmentsForAssignee();
       const assignments = assignmentsResponse.assignments.filter(
         (assignment) => assignment.room?.flat?.id
       );
@@ -360,6 +875,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         setFlatRooms([]);
         setFlatExtras({});
         setFlatAssignments({});
+        setFlatHasAssignments({});
         setFlatAssignmentsToMe({});
         return;
       }
@@ -375,6 +891,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       );
       setFlatExtras(extrasMap);
       const acceptedMap: Record<string, boolean> = {};
+      const hasAssignmentsMap: Record<string, boolean> = {};
       const assignedToMeMap: Record<string, boolean> = {};
       assignments.forEach((assignment) => {
         if (assignment.room_id) {
@@ -385,13 +902,18 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       await Promise.all(
         roomsInFlats.map(async (roomItem) => {
           try {
-            const assignmentsResponse =
+            const roomAssignmentsResponse =
               await roomAssignmentService.getAssignmentsForRoom(roomItem.id);
+            hasAssignmentsMap[roomItem.id] =
+              roomAssignmentsResponse.assignments.length > 0 ||
+              Boolean(roomAssignmentsResponse.match_assignment);
             const hasAcceptedAssignment =
-              assignmentsResponse.assignments.some(
-                (assignment) => assignment.status === 'accepted'
+              roomAssignmentsResponse.assignments.some(
+                (assignment) =>
+                  assignment.status === 'accepted' && Boolean(assignment.assignee)
               ) ||
-              assignmentsResponse.match_assignment?.status === 'accepted';
+              (roomAssignmentsResponse.match_assignment?.status === 'accepted' &&
+                Boolean(roomAssignmentsResponse.match_assignment.assignee));
             if (hasAcceptedAssignment) {
               acceptedMap[roomItem.id] = true;
             }
@@ -406,6 +928,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       );
 
       setFlatAssignments(acceptedMap);
+      setFlatHasAssignments(hasAssignmentsMap);
       setFlatAssignmentsToMe(assignedToMeMap);
     } catch (error) {
       console.error('Error cargando piso:', error);
@@ -442,6 +965,92 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     }, [activeTab, loadFlatData])
   );
 
+  useEffect(() => {
+    if (activeTab !== 'piso') {
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+      return;
+    }
+    if (!profile?.id) return;
+
+    let isMounted = true;
+    const subscribeToAssignments = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+
+      let filter: string | null = null;
+      if (profile.housing_situation === 'offering') {
+        const roomIds = flatRooms.map((room) => room.id).filter(Boolean);
+        if (roomIds.length === 0) return;
+        filter =
+          roomIds.length === 1
+            ? `room_id=eq.${roomIds[0]}`
+            : `room_id=in.(${roomIds.join(',')})`;
+      } else if (isOwnProfile && currentUserId) {
+        filter = `assignee_id=eq.${currentUserId}`;
+      } else {
+        return;
+      }
+
+      const channel = supabaseClient
+        .channel(`room-assignments:piso:${profile.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'room_assignments', filter },
+          () => {
+            if (!isMounted) return;
+            loadFlatData();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'room_assignments', filter },
+          () => {
+            if (!isMounted) return;
+            loadFlatData();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'room_assignments', filter },
+          () => {
+            if (!isMounted) return;
+            loadFlatData();
+          }
+        )
+        .subscribe();
+
+      assignmentChannelRef.current = channel;
+    };
+
+    void subscribeToAssignments();
+
+    return () => {
+      isMounted = false;
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+    };
+  }, [
+    activeTab,
+    currentUserId,
+    flatRooms,
+    isOwnProfile,
+    loadFlatData,
+    profile?.housing_situation,
+    profile?.id,
+  ]);
+
   const handlePrevFlat = () => {
     if (flats.length <= 1) return;
     setActiveFlatIndex((prev) => (prev - 1 + flats.length) % flats.length);
@@ -450,16 +1059,6 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const handleNextFlat = () => {
     if (flats.length <= 1) return;
     setActiveFlatIndex((prev) => (prev + 1) % flats.length);
-  };
-
-  const handleLightboxPrev = () => {
-    if (lightboxCount <= 1) return;
-    setLightboxIndex((prev) => (prev - 1 + lightboxCount) % lightboxCount);
-  };
-
-  const handleLightboxNext = () => {
-    if (lightboxCount <= 1) return;
-    setLightboxIndex((prev) => (prev + 1) % lightboxCount);
   };
 
   useEffect(() => {
@@ -502,9 +1101,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     if (isSharing) return;
     try {
       setIsSharing(true);
+      console.log('[ProfileDetail] Share profile', {
+        profileId: profile?.id ?? null,
+        preferredZones: profile?.preferred_zones ?? [],
+      });
       const normalizedPath = await shareService.getProfileShareImageFile(
         profile?.id
       );
+      console.log('[ProfileDetail] Share image path', normalizedPath);
       await Share.open({
         title: 'Compartir perfil',
         url: normalizedPath,
@@ -535,45 +1139,48 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     );
   }
 
-  const lifestyleItems = (
-    profile.lifestyle_preferences
-      ? Object.values(profile.lifestyle_preferences)
-      : []
-  ).filter((item): item is string => Boolean(item));
   const interests = profile.interests ?? [];
   const preferredZones = profile.preferred_zones ?? [];
   const interestLabels = interests.map(
     (interest) => interestLabelById.get(interest) ?? interest
   );
-  const preferredZoneLabels = preferredZones.map(
-    (zone) => zoneLabelById.get(zone) ?? zone
-  );
-  const convivenciaItems = [
+  const preferredZoneLabels = preferredZones.map((zone) => {
+    const name = zoneNameById[zone] ?? zone;
+    const city = zoneCityById[zone];
+    return city ? `${name}, ${city}` : name;
+  });
+  const lifestyleDetails = [
     {
       key: 'schedule',
       label: 'Horario',
       value: profile.lifestyle_preferences?.schedule,
-      icon: 'time-outline',
-      color: '#7C3AED',
-      bg: '#F3E8FF',
+      icon: 'time-outline' as const,
     },
     {
       key: 'cleaning',
-      label: 'Limpieza',
+      label: 'Orden y limpieza',
       value: profile.lifestyle_preferences?.cleaning,
-      icon: 'star-outline',
-      color: '#2563EB',
-      bg: '#DBEAFE',
+      icon: 'sparkles-outline' as const,
     },
     {
       key: 'guests',
-      label: 'Invitados',
+      label: 'Visitas',
       value: profile.lifestyle_preferences?.guests,
-      icon: 'people-outline',
-      color: '#16A34A',
-      bg: '#DCFCE7',
+      icon: 'people-outline' as const,
     },
-  ].filter((item) => item.value);
+    {
+      key: 'smoking',
+      label: 'Fumar',
+      value: profile.lifestyle_preferences?.smoking,
+      icon: 'cloud-outline' as const,
+    },
+    {
+      key: 'pets',
+      label: 'Mascotas',
+      value: profile.lifestyle_preferences?.pets,
+      icon: 'paw-outline' as const,
+    },
+  ];
 
   const formatBudget = () => {
     if (profile.budget_min != null && profile.budget_max != null) {
@@ -588,49 +1195,30 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     return '-';
   };
 
-  const getLifestyleIcon = (label: string) => {
-    const normalized = label.toLowerCase();
-    if (normalized.includes('orden')) return 'star';
-    if (normalized.includes('nocturn') || normalized.includes('noche'))
-      return 'moon';
-    if (normalized.includes('fuma')) return 'ban';
-    if (normalized.includes('mascot')) return 'paw';
-    if (normalized.includes('invitad')) return 'people';
-    if (normalized.includes('flexible')) return 'options';
-    return 'sparkles';
-  };
 
   const aboutText = profile.bio ?? 'Sin descripcion por ahora.';
   const housingBadge =
-    profile.housing_situation === 'seeking'
+    profile.housing_situation === 'offering'
+      ? profile.is_seeking
+        ? 'Ofrezco y busco'
+        : 'Ofrezco piso'
+      : profile.housing_situation === 'seeking'
       ? 'Busco piso'
-      : profile.housing_situation === 'offering'
-      ? `Tengo piso en ${preferredZoneLabels[0] ?? 'zona preferida'}`
       : null;
   const memberSinceYear = profile.created_at
     ? new Date(profile.created_at).getFullYear()
     : null;
-  const birthDateString = isOwnProfile
-    ? profile.birth_date ?? authContext?.user?.birth_date ?? null
-    : profile.birth_date ?? null;
-  const birthDateValue = birthDateString
-    ? (() => {
-        const date = new Date(birthDateString);
-        if (Number.isNaN(date.getTime())) return null;
-        const today = new Date();
-        let age = today.getFullYear() - date.getFullYear();
-        const monthDelta = today.getMonth() - date.getMonth();
-        if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < date.getDate())) {
-          age -= 1;
-        }
-        return `${age} años`;
-      })()
-    : null;
-  const aboutBadges = [housingBadge].filter(
-    (badge): badge is string => Boolean(badge)
-  );
+  const bottomActionsHeight = sizes.s58 + spacing.sm + spacing.lg;
+  const bottomActionsInset =
+    !isOwnProfile && !isFromMatch
+      ? bottomActionsHeight + bottomInset
+      : bottomInset;
+  const contentBottomInset =
+    bottomActionsInset + spacing.lg + spacing.s20 + (isOwnProfile ? sizes.s58 : 0);
   const shouldShowFlatTab =
-    profile.housing_situation === 'offering' || (isOwnProfile && flats.length > 0);
+    profile.housing_situation === 'offering' ||
+    (isOwnProfile && flats.length > 0) ||
+    (!isOwnProfile && hasAcceptedRoomForProfile);
 
   const resolvedAvatarUrl =
     profile.avatar_url && !profile.avatar_url.startsWith('http')
@@ -653,6 +1241,15 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         ]
       : [];
   const lightboxCount = carouselPhotos.length;
+  const handleLightboxPrev = () => {
+    if (lightboxCount <= 1) return;
+    setLightboxIndex((prev) => (prev - 1 + lightboxCount) % lightboxCount);
+  };
+
+  const handleLightboxNext = () => {
+    if (lightboxCount <= 1) return;
+    setLightboxIndex((prev) => (prev + 1) % lightboxCount);
+  };
   const normalizedOccupation = profile.occupation?.trim() ?? '';
   const normalizedUniversity = profile.university?.trim() ?? '';
   const showOccupation =
@@ -664,12 +1261,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     profile.university ?? null,
     formatBudget() !== '-' ? formatBudget() : null,
   ].filter((item): item is string => Boolean(item));
-  const lifestyleChips = [...lifestyleItems, ...interestLabels].filter(
+  const lifestyleChips = lifestyleDetails.filter((item) => item.value);
+  const interestChips = interestLabels.filter(
     (item): item is string => Boolean(item)
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
@@ -678,53 +1276,74 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <View style={styles.header}>
+      <View
+          style={[
+            styles.header,
+            {
+              paddingTop: insets.top + spacing.md,
+              paddingBottom: spacing.md,
+              borderBottomColor: theme.colors.glassBorderSoft,
+            },
+          ]}
+        >
         <BlurView
           blurType="light"
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
-        <View style={styles.headerFill} />
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={22} color="#111827" />
-        </TouchableOpacity>
+          <View style={[styles.headerFill, headerFillStyle]} />
+          <TouchableOpacity
+            style={[styles.headerIconButton, headerIconStyle]}
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              }
+            }}
+          >
+            <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
+          </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Perfil
         </Text>
         {isOwnProfile ? (
           <View style={styles.headerActions}>
             {!(activeTab === 'piso' && profile.housing_situation !== 'offering') ? (
+                <TouchableOpacity
+                  style={[styles.headerIconButton, headerIconStyle]}
+                  onPress={() =>
+                    activeTab === 'piso'
+                      ? navigation.navigate('RoomManagement')
+                      : navigation.navigate('EditProfile')
+                  }
+                >
+                    <Ionicons name="create-outline" size={18} color={theme.colors.text} />
+                  </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
-                style={styles.headerIconButton}
-                onPress={() =>
-                  activeTab === 'piso'
-                    ? navigation.navigate('RoomManagement')
-                    : navigation.navigate('EditProfile')
-                }
+                style={[
+                  styles.headerIconButton,
+                  headerIconStyle,
+                  isSharing && styles.headerIconButtonDisabled,
+                ]}
+                onPress={handleShareProfile}
+                disabled={isSharing}
               >
-                  <Ionicons name="create-outline" size={18} color="#111827" />
-                </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              style={[
-                styles.headerIconButton,
-                isSharing && styles.headerIconButtonDisabled,
-              ]}
-              onPress={handleShareProfile}
-              disabled={isSharing}
-            >
-              <Ionicons name="share-social-outline" size={18} color="#111827" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.headerIconButton, styles.headerIconDanger]}
-              onPress={handleLogout}
-            >
-              <Ionicons name="log-out-outline" size={18} color="#DC2626" />
+                <Ionicons name="share-social-outline" size={18} color={theme.colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.headerIconButton, headerIconStyle]}
+                onPress={toggleTheme}
+              >
+              <Ionicons
+                name={isDark ? 'sunny-outline' : 'moon-outline'}
+                size={18}
+                color={theme.colors.text}
+              />
             </TouchableOpacity>
           </View>
         ) : (
@@ -734,49 +1353,67 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        contentContainerStyle={{
+          paddingBottom: contentBottomInset,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {shouldShowFlatTab && (
           <View style={styles.tabsContainer}>
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                activeTab === 'perfil' && styles.tabButtonActive,
-              ]}
-              onPress={() => setActiveTab('perfil')}
-            >
-              <Text
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  activeTab === 'perfil' && styles.tabTextActive,
+                  styles.tabButton,
+                  tabBaseStyle,
+                  activeTab === 'perfil' && styles.tabButtonActive,
+                  activeTab === 'perfil' && tabActiveStyle,
                 ]}
+                onPress={() => setActiveTab('perfil')}
               >
-                Perfil
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                activeTab === 'piso' && styles.tabButtonActive,
-              ]}
-              onPress={() => setActiveTab('piso')}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.tabText,
+                    tabTextStyle,
+                    activeTab === 'perfil' && styles.tabTextActive,
+                    activeTab === 'perfil' && tabTextActiveStyle,
+                  ]}
+                >
+                  Perfil
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  activeTab === 'piso' && styles.tabTextActive,
+                  styles.tabButton,
+                  tabBaseStyle,
+                  activeTab === 'piso' && styles.tabButtonActive,
+                  activeTab === 'piso' && tabActiveStyle,
                 ]}
+                onPress={() => setActiveTab('piso')}
               >
-                Piso
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.tabText,
+                    tabTextStyle,
+                    activeTab === 'piso' && styles.tabTextActive,
+                    activeTab === 'piso' && tabTextActiveStyle,
+                  ]}
+                >
+                  Piso
+                </Text>
+              </TouchableOpacity>
           </View>
         )}
 
         {activeTab === 'perfil' && (
           <>
-        <View style={styles.identityCard}>
+        <View
+          style={[
+            styles.identityCard,
+            {
+              backgroundColor: theme.colors.glassSurface,
+              borderColor: theme.colors.glassBorderSoft,
+            },
+          ]}
+        >
           <TouchableOpacity
             style={styles.avatarWrap}
             activeOpacity={0.8}
@@ -794,75 +1431,183 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               />
             ) : (
               <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={26} color="#9CA3AF" />
+                <Ionicons name="person" size={26} color={theme.colors.textTertiary} />
               </View>
             )}
           </TouchableOpacity>
-          <Text style={styles.identityName}>{profile.display_name ?? 'Usuario'}</Text>
-          <View style={styles.identityBadges}>
-            {memberSinceYear ? (
-              <View style={styles.identityBadge}>
-                <Ionicons name="shield-checkmark" size={14} color="#111827" />
-                <Text style={styles.identityBadgeText}>
-                  Miembro desde {memberSinceYear}
+          <Text style={styles.identityName}>{getUserName(profile, 'Usuario')}</Text>
+            <View style={styles.identityBadges}>
+              {memberSinceYear ? (
+                <View style={[styles.identityBadge, badgeStyle]}>
+                  <Ionicons name="shield-checkmark" size={14} color={theme.colors.text} />
+                  <Text style={[styles.identityBadgeText, badgeTextStyle]}>
+                    Miembro desde {memberSinceYear}
+                  </Text>
+                </View>
+              ) : null}
+              {housingBadge ? (
+                <View style={[styles.identityBadgeLight, badgeLightStyle]}>
+                  <Text style={[styles.identityBadgeLightText, badgeLightTextStyle]}>
+                    {housingBadge}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            {isOwnProfile && (
+              <TouchableOpacity
+                style={styles.profileStatusRow}
+                onPress={toggleSearchEnabled}
+                disabled={isTogglingSearch}
+                activeOpacity={0.7}
+              >
+                <View style={styles.profileStatusTextRow}>
+                  <View style={[
+                    styles.statusDot,
+                    { backgroundColor: isSearchEnabled ? '#10B981' : '#9CA3AF' }
+                  ]} />
+                  <Text style={[styles.profileStatusText, { color: theme.colors.text }]}>
+                    {isSearchEnabled ? 'Perfil activo' : 'Perfil inactivo'}
+                  </Text>
+                </View>
+                <Text style={[styles.profileStatusSubtext, { color: theme.colors.textSecondary }]}>
+                  {isSearchEnabled
+                    ? 'Aparecer\u00e1s en b\u00fasquedas y swipes'
+                    : 'No aparecer\u00e1s en b\u00fasquedas'}
                 </Text>
-              </View>
-            ) : null}
-            {housingBadge ? (
-              <View style={styles.identityBadgeLight}>
-                <Text style={styles.identityBadgeLightText}>{housingBadge}</Text>
-              </View>
-            ) : null}
-          </View>
+              </TouchableOpacity>
+            )}
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="person" size={20} color="#111827" />
+            <Ionicons name="person" size={20} color={theme.colors.text} />
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               Sobre
             </Text>
           </View>
-          <View style={styles.detailCard}>
+          <View
+            style={[
+              styles.detailCard,
+              {
+                backgroundColor: theme.colors.glassSurface,
+                borderColor: theme.colors.glassBorderSoft,
+              },
+            ]}
+          >
             <Text style={styles.aboutText}>{aboutText}</Text>
           </View>
         </View>
 
         {infoChips.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionMutedTitle}>Datos clave</Text>
+            <Text
+              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+            >
+              Datos clave
+            </Text>
             <View style={styles.compactChips}>
-              {infoChips.map((chip, index) => (
-                <View key={`${chip}-${index}`} style={styles.compactChip}>
-                  <Text style={styles.compactChipText}>{chip}</Text>
-                </View>
-              ))}
+                {infoChips.map((chip, index) => (
+                  <View
+                    key={`${chip}-${index}`}
+                    style={[
+                      styles.compactChip,
+                      compactChipStyle,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.compactChipText, compactChipTextStyle]}
+                    >
+                      {chip}
+                    </Text>
+                  </View>
+                ))}
             </View>
           </View>
         )}
 
         {lifestyleChips.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionMutedTitle}>Estilo e intereses</Text>
+            <Text
+              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+            >
+              Estilo de vida
+            </Text>
             <View style={styles.compactChips}>
-              {lifestyleChips.map((chip, index) => (
-                <View key={`${chip}-${index}`} style={styles.compactChip}>
-                  <Text style={styles.compactChipText}>{chip}</Text>
-                </View>
-              ))}
+                {lifestyleChips.map((chip) => (
+                  <View
+                    key={chip.key}
+                    style={[
+                      styles.compactChip,
+                      compactChipStyle,
+                    ]}
+                  >
+                  <Ionicons
+                    name={chip.icon}
+                    size={12}
+                    color={theme.colors.textSecondary}
+                    style={styles.chipIcon}
+                  />
+                    <Text
+                      style={[styles.compactChipText, compactChipTextStyle]}
+                    >
+                      {chip.label}: {chip.value}
+                    </Text>
+                  </View>
+                ))}
+            </View>
+          </View>
+        )}
+
+        {interestChips.length > 0 && (
+          <View style={styles.section}>
+            <Text
+              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+            >
+              Intereses
+            </Text>
+            <View style={styles.compactChips}>
+                {interestChips.map((chip, index) => (
+                  <View
+                    key={`${chip}-${index}`}
+                    style={[
+                      styles.compactChip,
+                      compactChipStyle,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.compactChipText, compactChipTextStyle]}
+                    >
+                      {chip}
+                    </Text>
+                  </View>
+                ))}
             </View>
           </View>
         )}
 
         {preferredZoneLabels.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionMutedTitle}>Zonas de interes</Text>
+            <Text
+              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+            >
+              Zonas de interes
+            </Text>
             <View style={styles.compactChips}>
-              {preferredZoneLabels.map((zone, index) => (
-                <View key={`${zone}-${index}`} style={styles.compactChip}>
-                  <Text style={styles.compactChipText}>{zone}</Text>
-                </View>
-              ))}
+                {preferredZoneLabels.map((zone, index) => (
+                  <View
+                    key={`${zone}-${index}`}
+                    style={[
+                      styles.compactChip,
+                      compactChipStyle,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.compactChipText, compactChipTextStyle]}
+                    >
+                      {zone}
+                    </Text>
+                  </View>
+                ))}
             </View>
           </View>
         )}
@@ -870,7 +1615,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         {carouselPhotos.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="images-outline" size={18} color="#111827" />
+              <Ionicons name="images-outline" size={18} color={theme.colors.text} />
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
                 Momentos
               </Text>
@@ -882,7 +1627,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             >
               {carouselPhotos.map((photo, index) => (
                 <TouchableOpacity
-                  key={photo.id}
+                  key={photo.id ?? photo.path ?? photo.signedUrl ?? `photo-${index}`}
                   style={styles.photoTileWide}
                   onPress={() => {
                     setLightboxIndex(index);
@@ -896,13 +1641,25 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           </View>
         )}
 
+        {isOwnProfile && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+            >
+              <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.logoutButtonText}>Cerrar sesion</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
           </>
         )}
 
         {activeTab === 'piso' && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="home" size={20} color="#111827" />
+              <Ionicons name="home" size={20} color={theme.colors.text} />
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
                 Piso
               </Text>
@@ -912,7 +1669,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                     style={styles.flatPagerButton}
                     onPress={handlePrevFlat}
                   >
-                    <Ionicons name="chevron-back" size={18} color="#111827" />
+                    <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
                   </TouchableOpacity>
                   <Text style={styles.flatPagerText}>
                     {activeFlatIndex + 1}/{flats.length}
@@ -921,7 +1678,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                     style={styles.flatPagerButton}
                     onPress={handleNextFlat}
                   >
-                    <Ionicons name="chevron-forward" size={18} color="#111827" />
+                    <Ionicons name="chevron-forward" size={18} color={theme.colors.text} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -956,7 +1713,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                   const canToggleRules = rules.length > 3;
 
                   return (
-                    <View key={flat.id} style={styles.flatCard}>
+                      <View
+                        key={flat.id}
+                        style={[
+                          styles.flatCard,
+                          flatCardStyle,
+                        ]}
+                      >
                       <Text style={styles.flatTitle}>{flat.address}</Text>
                       <Text style={styles.flatMeta}>
                         {flat.city}
@@ -966,24 +1729,52 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                       <View style={styles.flatInfoBlock}>
                         <Text style={styles.flatSectionTitle}>Info del piso</Text>
                         <View style={styles.locationRow}>
-                          <View style={styles.locationChip}>
+                          <View
+                            style={[
+                              styles.locationChip,
+                              {
+                                backgroundColor: theme.colors.glassSurface,
+                                borderColor: theme.colors.glassBorderSoft,
+                              },
+                            ]}
+                          >
                             <Ionicons
                               name="location-outline"
                               size={14}
-                              color="#6B7280"
+                              color={theme.colors.textStrong}
                             />
                             <Text style={styles.locationChipText}>
                               {flat.district || flat.city}
                             </Text>
                           </View>
+                          {typeof flat.capacity_total === 'number' ? (
+                            <View
+                              style={[
+                                styles.locationChip,
+                                {
+                                  backgroundColor: theme.colors.glassSurface,
+                                  borderColor: theme.colors.glassBorderSoft,
+                                },
+                              ]}
+                            >
+                              <Ionicons
+                                name="people-outline"
+                                size={14}
+                                color={theme.colors.textStrong}
+                              />
+                              <Text style={styles.locationChipText}>
+                                {flat.capacity_total} plazas
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
 
                         {rules.length > 0 && (
                           <View style={styles.flatSubSection}>
                             <Text style={styles.flatSubTitle}>Reglas</Text>
                             <View style={styles.listContainer}>
-                              {visibleRules.map((rule) => (
-                                <Text key={rule} style={styles.listItem}>
+                              {visibleRules.map((rule, index) => (
+                                <Text key={`${rule}-${index}`} style={styles.listItem}>
                                   <Text style={styles.listBullet}>• </Text>
                                   {getRuleIcon(rule)} {rule}
                                 </Text>
@@ -1006,8 +1797,11 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                           <View style={styles.flatSubSection}>
                             <Text style={styles.flatSubTitle}>Servicios</Text>
                             <View style={styles.listContainer}>
-                              {services.map((service) => (
-                                <Text key={service.name} style={styles.listItem}>
+                              {services.map((service, index) => (
+                                <Text
+                                  key={service.name ? `${service.name}-${index}` : `service-${index}`}
+                                  style={styles.listItem}
+                                >
                                   <Text style={styles.listBullet}>• </Text>
                                   {getServiceIcon(service.name)} {service.name}
                                   {service.price != null
@@ -1030,6 +1824,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                               const typeLabel = extras?.room_type
                                 ? roomTypeLabel.get(extras.room_type) ?? extras.room_type
                                 : '';
+                              const hasAssignments = flatHasAssignments[room.id];
                               const statusLabel = flatAssignmentsToMe[room.id]
                                 ? 'Ocupada por ti'
                                 : flatAssignments[room.id]
@@ -1037,14 +1832,22 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                 : room.is_available === true
                                 ? 'Disponible'
                                 : room.is_available === false
-                                ? 'Ocupada'
+                                ? hasAssignments
+                                  ? 'Ocupada'
+                                  : 'Disponible'
                                 : 'Sin estado';
                               const isAvailable = statusLabel === 'Disponible';
                               const isUnknown = statusLabel === 'Sin estado';
                               return (
                                 <TouchableOpacity
                                   key={room.id}
-                                  style={styles.roomCard}
+                                  style={[
+                                    styles.roomCard,
+                                    {
+                                      backgroundColor: theme.colors.glassSurface,
+                                      borderColor: theme.colors.glassBorderSoft,
+                                    },
+                                  ]}
                                   onPress={() =>
                                     navigation.navigate('RoomDetail', {
                                       room,
@@ -1059,11 +1862,16 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                       style={styles.roomPhoto}
                                     />
                                   ) : (
-                                    <View style={styles.roomPhotoPlaceholder}>
+                                    <View
+                                      style={[
+                                        styles.roomPhotoPlaceholder,
+                                        { backgroundColor: theme.colors.surfaceLight },
+                                      ]}
+                                    >
                                       <Ionicons
                                         name="image-outline"
                                         size={20}
-                                        color="#9CA3AF"
+                                        color={theme.colors.textTertiary}
                                       />
                                     </View>
                                   )}
@@ -1139,7 +1947,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                               return (
                                 <TouchableOpacity
                                   key={room.id}
-                                  style={styles.roomCard}
+                                  style={[
+                                    styles.roomCard,
+                                    {
+                                      backgroundColor: theme.colors.glassSurface,
+                                      borderColor: theme.colors.glassBorderSoft,
+                                    },
+                                  ]}
                                   onPress={() =>
                                     navigation.navigate('RoomDetail', {
                                       room,
@@ -1154,11 +1968,16 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                       style={styles.roomPhoto}
                                     />
                                   ) : (
-                                    <View style={styles.roomPhotoPlaceholder}>
+                                    <View
+                                      style={[
+                                        styles.roomPhotoPlaceholder,
+                                        { backgroundColor: theme.colors.surfaceLight },
+                                      ]}
+                                    >
                                       <Ionicons
                                         name="image-outline"
                                         size={20}
-                                        color="#9CA3AF"
+                                        color={theme.colors.textTertiary}
                                       />
                                     </View>
                                   )}
@@ -1203,26 +2022,17 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       </ScrollView>
 
       {!isOwnProfile && !isFromMatch && (
-        <View style={styles.bottomActions}>
-          <TouchableOpacity style={[styles.bottomButton, styles.rejectButton]}>
-            <BlurView
-              style={StyleSheet.absoluteFillObject}
-              blurType="light"
-              blurAmount={14}
-              reducedTransparencyFallbackColor={theme.colors.glassOverlayStrong}
-            />
-            <View style={[styles.glassTint, styles.rejectTint]} />
-            <Ionicons name="close" size={24} color="#EF4444" />
+        <View
+          style={[
+            styles.bottomActions,
+            { paddingBottom: spacing.lg + bottomInset },
+          ]}
+        >
+          <TouchableOpacity style={styles.bottomButton}>
+            <Ionicons name="close" size={22} color={theme.colors.textStrong} />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.bottomButton, styles.likeButton]}>
-            <BlurView
-              style={StyleSheet.absoluteFillObject}
-              blurType="light"
-              blurAmount={14}
-              reducedTransparencyFallbackColor={theme.colors.glassOverlayStrong}
-            />
-            <View style={[styles.glassTint, styles.likeTint]} />
-            <Ionicons name="heart" size={24} color="#7C3AED" />
+          <TouchableOpacity style={styles.bottomButton}>
+            <Ionicons name="heart" size={22} color={theme.colors.textStrong} />
           </TouchableOpacity>
         </View>
       )}
@@ -1235,7 +2045,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       >
         <View style={styles.lightboxOverlay}>
           <LinearGradient
-            colors={[colors.overlayLight, colors.overlayDark]}
+            colors={[theme.colors.overlayLight, theme.colors.overlayDark]}
             style={StyleSheet.absoluteFillObject}
           />
           <TouchableOpacity
@@ -1250,7 +2060,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                 style={styles.lightboxClose}
                 onPress={() => setLightboxVisible(false)}
               >
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
+                <Ionicons name="close" size={18} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
             <View style={styles.lightboxDivider} />
@@ -1298,7 +2108,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                     };
                     return (
                       <PinchGestureHandler
-                        key={photo.id}
+                        key={photo.id ?? photo.path ?? photo.signedUrl ?? `photo-${index}`}
                         onGestureEvent={onPinchEvent as any}
                         onHandlerStateChange={onPinchStateChange}
                       >
@@ -1328,14 +2138,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                   <Ionicons
                     name="chevron-back"
                     size={20}
-                    color={colors.textSecondary}
+                    color={theme.colors.textSecondary}
                   />
                 </TouchableOpacity>
                 <View style={styles.lightboxCounterChip}>
                   <Ionicons
                     name="image-outline"
                     size={14}
-                    color={colors.textSecondary}
+                    color={theme.colors.textSecondary}
                   />
                   <Text style={styles.lightboxCounter}>
                     {lightboxIndex + 1}/{lightboxCount}
@@ -1348,7 +2158,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                   <Ionicons
                     name="chevron-forward"
                     size={20}
-                    color={colors.textSecondary}
+                    color={theme.colors.textSecondary}
                   />
                 </TouchableOpacity>
               </View>

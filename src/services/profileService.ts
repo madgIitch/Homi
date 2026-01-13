@@ -221,6 +221,27 @@ class ProfileService {
     return data.data;
   }
 
+  async deleteProfile(): Promise<void> {
+    console.log('[ProfileService.deleteProfile] Deleting profile...');
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    console.log('[ProfileService.deleteProfile] Response:', {
+      status: response.status,
+      ok: response.ok,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('[ProfileService.deleteProfile] Error:', error);
+      throw new Error(error.error || 'Error al eliminar el perfil');
+    }
+  }
+
   async createOrUpdateProfile(
     profileData: ProfileCreateRequest
   ): Promise<Profile> {

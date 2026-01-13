@@ -42,6 +42,8 @@ export const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
   },
   headerActions: {
     flexDirection: 'row',
@@ -63,20 +65,6 @@ export const styles = StyleSheet.create({
   headerIconDanger: {
     backgroundColor: colors.errorSoft,
     borderColor: colors.errorBorder,
-  },
-  actionButton: {
-    width: semanticSizes.control,
-    height: semanticSizes.control,
-    borderRadius: borderRadius.s18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  rejectButton: {
-    borderColor: colors.dangerBorderSoft,
-  },
-  likeButton: {
-    borderColor: colors.textBorderSoft,
   },
   content: {
     flex: 1,
@@ -180,6 +168,44 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary,
   },
+  identityBadgeMini: {
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.s6,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+  },
+  identityBadgeMiniText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  profileStatusRow: {
+    alignItems: 'center',
+    marginTop: spacing.s14,
+    paddingVertical: spacing.s10,
+    paddingHorizontal: spacing.s14,
+  },
+  profileStatusTextRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: spacing.sm,
+  },
+  profileStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  profileStatusSubtext: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
   photoScroller: {
     gap: spacing.s12,
     paddingRight: spacing.sm,
@@ -247,7 +273,7 @@ export const styles = StyleSheet.create({
     borderRadius: semanticRadii.soft,
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
-    paddingHorizontal: spacing.s16,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.s14,
     shadowOpacity: 0,
     elevation: 0,
@@ -295,13 +321,14 @@ export const styles = StyleSheet.create({
     gap: spacing.md,
   },
   flatCard: {
-    borderRadius: semanticRadii.card,
+    borderRadius: semanticRadii.sheet,
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
     paddingHorizontal: spacing.s18,
-    paddingVertical: spacing.s16,
+    paddingVertical: spacing.md,
     backgroundColor: colors.glassSurface,
     paddingBottom: spacing.lg,
+    overflow: 'hidden',
   },
   flatTitle: {
     fontSize: 16,
@@ -311,7 +338,7 @@ export const styles = StyleSheet.create({
   flatMeta: {
     marginTop: spacing.s6,
     fontSize: 12,
-    color: colors.textSecondary,
+    color: colors.text,
   },
   locationRow: {
     flexDirection: 'row',
@@ -322,7 +349,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.s6,
     paddingHorizontal: spacing.s14,
-    paddingVertical: spacing.s8,
+    paddingVertical: spacing.sm,
     borderRadius: semanticRadii.chip,
     borderWidth: 1,
     borderColor: colors.primaryMuted,
@@ -331,14 +358,14 @@ export const styles = StyleSheet.create({
   locationChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: colors.textStrong,
   },
   flatSection: {
     marginTop: spacing.md,
   },
   flatInfoBlock: {
     marginTop: spacing.s14,
-    paddingVertical: spacing.s8,
+    paddingVertical: spacing.sm,
     backgroundColor: 'transparent',
   },
   flatSubSection: {
@@ -347,17 +374,17 @@ export const styles = StyleSheet.create({
   flatSectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.textStrong,
     marginBottom: spacing.s10,
   },
   flatSubTitle: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text,
-    marginBottom: spacing.s8,
+    color: colors.textStrong,
+    marginBottom: spacing.sm,
   },
   listContainer: {
-    gap: spacing.s8,
+    gap: spacing.sm,
   },
   rulesToggle: {
     marginTop: spacing.s10,
@@ -373,7 +400,7 @@ export const styles = StyleSheet.create({
   listItem: {
     fontSize: 12,
     lineHeight: 18,
-    color: colors.textSecondary,
+    color: colors.text,
   },
   listBullet: {
     color: colors.textTertiary,
@@ -389,7 +416,7 @@ export const styles = StyleSheet.create({
     borderRadius: semanticRadii.card,
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
-    backgroundColor: colors.glassSurface,
+    backgroundColor: colors.glassUltraLightAlt,
   },
   roomPhoto: {
     width: semanticSizes.avatarMd,
@@ -427,13 +454,13 @@ export const styles = StyleSheet.create({
   roomMeta: {
     marginTop: spacing.xs,
     fontSize: 12,
-    color: colors.textTertiary,
+    color: colors.text,
   },
   roomFooter: {
     marginTop: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.s8,
+    gap: spacing.sm,
   },
   statusBadge: {
     height: sizes.s24,
@@ -443,13 +470,13 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statusAvailable: {
-    backgroundColor: colors.successLight,
+    backgroundColor: colors.successSoft,
   },
   statusOccupied: {
     backgroundColor: colors.errorSoft,
   },
   statusNeutral: {
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.glassSurface,
   },
   statusText: {
     fontSize: 11,
@@ -464,7 +491,7 @@ export const styles = StyleSheet.create({
   statusNeutralText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.text,
   },
   roomCta: {
     flexDirection: 'row',
@@ -475,7 +502,7 @@ export const styles = StyleSheet.create({
   roomCtaText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.textStrong,
   },
   manageCard: {
     borderRadius: semanticRadii.card,
@@ -535,6 +562,8 @@ export const styles = StyleSheet.create({
     gap: spacing.s10,
   },
   compactChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing.s14,
     paddingVertical: spacing.sm,
     borderRadius: semanticRadii.chip,
@@ -550,6 +579,20 @@ export const styles = StyleSheet.create({
   chipIcon: {
     marginRight: spacing.s6,
   },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.s10,
+    paddingVertical: spacing.s14,
+    borderRadius: semanticRadii.pill,
+    backgroundColor: colors.dangerStrong,
+  },
+  logoutButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   ctaButton: {
     marginBottom: spacing.xl,
     backgroundColor: colors.primary,
@@ -564,14 +607,13 @@ export const styles = StyleSheet.create({
   },
   bottomActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.s20,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    paddingTop: spacing.sm,
-    backgroundColor: colors.background,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    paddingHorizontal: spacing.s18,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   bottomButton: {
     width: sizes.s58,
@@ -579,25 +621,9 @@ export const styles = StyleSheet.create({
     borderRadius: borderRadius.s29,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    backgroundColor: colors.glassSurface,
-    borderColor: colors.glassBorder,
-    overflow: 'hidden',
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  glassTint: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: borderRadius.s29,
-  },
-  rejectTint: {
-    backgroundColor: colors.dangerTint,
-  },
-  likeTint: {
-    backgroundColor: colors.primaryTint,
+    borderColor: colors.glassBorderSoft,
   },
   lightboxOverlay: {
     flex: 1,

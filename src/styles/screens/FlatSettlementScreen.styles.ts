@@ -1,14 +1,9 @@
 import { StyleSheet } from 'react-native';
-import {
-  borderRadius,
-  colors,
-  semanticRadii,
-  semanticSizes,
-  sizes,
-  spacing,
-} from '../../theme';
+import type { Theme } from '../../theme';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const { borderRadius, colors, semanticRadii, semanticSizes, sizes, spacing } = theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surfaceMutedAlt,
@@ -243,4 +238,5 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
-});
+  });
+};

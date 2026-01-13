@@ -22,7 +22,8 @@ const supabaseClient = createClient(
 
 interface ProfileValidationData {
   id?: string;
-  display_name?: string;
+  first_name?: string;
+  last_name?: string;
   avatar_url?: string;
   bio?: string;
   gender?: string;
@@ -40,9 +41,13 @@ interface ProfileValidationData {
     guests?: string;
   };
   housing_situation?: 'seeking' | 'offering';
+  is_seeking?: boolean;
   preferred_zones?: string[];
   budget_min?: number;
   budget_max?: number;
+  desired_roommates_min?: number;
+  desired_roommates_max?: number;
+  is_searchable?: boolean;
 }
 
 function extractAvatarPath(avatarUrl: string): string | null {
@@ -90,7 +95,7 @@ async function getSignedAvatarUrl(avatarUrl: string): Promise<string | null> {
 async function getProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabaseClient
     .from('profiles')
-    .select('*, users!profiles_id_fkey(birth_date)')
+    .select('*, users!profiles_id_fkey(birth_date, first_name, last_name)')
     .eq('id', userId)
     .single();
 
@@ -99,11 +104,17 @@ async function getProfile(userId: string): Promise<Profile | null> {
   }
 
   const { users, ...profileData } = data as Profile & {
-    users?: { birth_date?: string | null };
+    users?: {
+      birth_date?: string | null;
+      first_name?: string | null;
+      last_name?: string | null;
+    };
   };
   const profile: Profile = {
     ...profileData,
     birth_date: users?.birth_date ?? null,
+    first_name: users?.first_name ?? profileData.first_name ?? null,
+    last_name: users?.last_name ?? profileData.last_name ?? null,
   };
   if (profile.avatar_url) {
     const signedUrl = await getSignedAvatarUrl(profile.avatar_url);
@@ -153,8 +164,12 @@ function validateProfileData(data: ProfileValidationData): {
 } {
   const errors: string[] = [];
 
-  if (data.display_name && typeof data.display_name !== 'string') {
-    errors.push('Display name must be a string');
+  if (data.first_name && typeof data.first_name !== 'string') {
+    errors.push('First name must be a string');
+  }
+
+  if (data.last_name && typeof data.last_name !== 'string') {
+    errors.push('Last name must be a string');
   }
 
   if (data.bio && typeof data.bio !== 'string') {
@@ -214,6 +229,10 @@ function validateProfileData(data: ProfileValidationData): {
     errors.push('Housing situation must be "seeking" or "offering"');
   }
 
+  if (data.is_seeking !== undefined && typeof data.is_seeking !== 'boolean') {
+    errors.push('is_seeking must be a boolean');
+  }
+
   if (data.preferred_zones && !Array.isArray(data.preferred_zones)) {
     errors.push('Preferred zones must be an array');
   }
@@ -224,11 +243,53 @@ function validateProfileData(data: ProfileValidationData): {
   if (data.budget_max !== undefined && typeof data.budget_max !== 'number') {
     errors.push('Budget max must be a number');
   }
+  if (
+    data.desired_roommates_min != null &&
+    typeof data.desired_roommates_min !== 'number'
+  ) {
+    errors.push('desired_roommates_min must be a number');
+  }
+  if (
+    data.desired_roommates_max != null &&
+    typeof data.desired_roommates_max !== 'number'
+  ) {
+    errors.push('desired_roommates_max must be a number');
+  }
+  if (data.is_searchable !== undefined && typeof data.is_searchable !== 'boolean') {
+    errors.push('is_searchable must be a boolean');
+  }
 
   return {
     isValid: errors.length === 0,
     errors,
   };
+}
+
+async function updateUserNames(
+  userId: string,
+  firstName?: string | null,
+  lastName?: string | null
+) {
+  if (!firstName && !lastName) return;
+  const updates: Record<string, string | null> = {};
+  if (firstName !== undefined) updates.first_name = firstName?.trim() || null;
+  if (lastName !== undefined) updates.last_name = lastName?.trim() || null;
+
+  const { error } = await supabaseClient
+    .from('users')
+    .update(updates)
+    .eq('id', userId);
+
+  if (error) {
+    throw new Error(`Failed to update user names: ${error.message}`);
+  }
+
+  await supabaseClient.auth.admin.updateUserById(userId, {
+    user_metadata: {
+      ...(firstName !== undefined ? { first_name: updates.first_name } : {}),
+      ...(lastName !== undefined ? { last_name: updates.last_name } : {}),
+    },
+  });
 }
 
 const handler = withAuth(
@@ -266,10 +327,22 @@ const handler = withAuth(
           );
         }
 
-        const body: ProfileCreateRequest = await req.json();
-        body.id = userId;
+        const body: ProfileCreateRequest & {
+          first_name?: string;
+          last_name?: string;
+        } = await req.json();
+        const firstName =
+          typeof body.first_name === 'string' ? body.first_name : undefined;
+        const lastName =
+          typeof body.last_name === 'string' ? body.last_name : undefined;
+        const { first_name, last_name, ...profileData } = body;
+        profileData.id = userId;
 
-        const validation = validateProfileData(body);
+        const validation = validateProfileData({
+          ...profileData,
+          ...(firstName !== undefined ? { first_name: firstName } : {}),
+          ...(lastName !== undefined ? { last_name: lastName } : {}),
+        });
         if (!validation.isValid) {
           return new Response(
             JSON.stringify({
@@ -283,7 +356,10 @@ const handler = withAuth(
           );
         }
 
-        const profile = await createProfile(body);
+        const profile = await createProfile(profileData);
+        if (firstName !== undefined || lastName !== undefined) {
+          await updateUserNames(userId, firstName, lastName);
+        }
         const response: ApiResponse<Profile> = { data: profile };
 
         return new Response(JSON.stringify(response), {
@@ -304,10 +380,18 @@ const handler = withAuth(
         const updates = await req.json();
         delete updates.id;
         delete updates.updated_at;
+        const firstName =
+          typeof updates.first_name === 'string' ? updates.first_name : undefined;
+        const lastName =
+          typeof updates.last_name === 'string' ? updates.last_name : undefined;
+        delete updates.first_name;
+        delete updates.last_name;
 
         const validation = validateProfileData({
           ...existingProfile,
           ...updates,
+          ...(firstName !== undefined ? { first_name: firstName } : {}),
+          ...(lastName !== undefined ? { last_name: lastName } : {}),
         });
         if (!validation.isValid) {
           return new Response(
@@ -323,6 +407,9 @@ const handler = withAuth(
         }
 
         const updatedProfile = await updateProfile(userId, updates);
+        if (firstName !== undefined || lastName !== undefined) {
+          await updateUserNames(userId, firstName, lastName);
+        }
         if (
           updatedProfile.gender &&
           updatedProfile.gender !== existingProfile.gender
@@ -341,6 +428,152 @@ const handler = withAuth(
         const response: ApiResponse<Profile> = { data: updatedProfile };
 
         return new Response(JSON.stringify(response), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (method === 'DELETE') {
+        const { data: flatRows, error: flatError } = await supabaseClient
+          .from('flats')
+          .select('id')
+          .eq('owner_id', userId);
+        if (flatError) {
+          return new Response(JSON.stringify({ error: 'Failed to load flats' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const flatIds = (flatRows ?? []).map((row) => row.id);
+        const { data: ownedRooms, error: roomsError } = await supabaseClient
+          .from('rooms')
+          .select('id')
+          .eq('owner_id', userId);
+        if (roomsError) {
+          return new Response(JSON.stringify({ error: 'Failed to load rooms' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const roomIds = new Set<string>((ownedRooms ?? []).map((row) => row.id));
+        if (flatIds.length > 0) {
+          const { data: flatRooms } = await supabaseClient
+            .from('rooms')
+            .select('id')
+            .in('flat_id', flatIds);
+          (flatRooms ?? []).forEach((row) => {
+            if (row?.id) {
+              roomIds.add(row.id);
+            }
+          });
+        }
+
+        const roomIdList = Array.from(roomIds);
+        if (roomIdList.length > 0) {
+          await supabaseClient.from('room_extras').delete().in('room_id', roomIdList);
+          await supabaseClient
+            .from('room_invitations')
+            .delete()
+            .in('room_id', roomIdList);
+          await supabaseClient
+            .from('room_interests')
+            .delete()
+            .in('room_id', roomIdList);
+          await supabaseClient
+            .from('room_assignments')
+            .delete()
+            .in('room_id', roomIdList);
+        }
+
+        await supabaseClient
+          .from('room_invitations')
+          .delete()
+          .or(`owner_id.eq.${userId},used_by.eq.${userId}`);
+        await supabaseClient
+          .from('room_interests')
+          .delete()
+          .eq('user_id', userId);
+        await supabaseClient
+          .from('room_assignments')
+          .delete()
+          .eq('assignee_id', userId);
+
+        if (roomIdList.length > 0) {
+          await supabaseClient.from('rooms').delete().in('id', roomIdList);
+        }
+
+        if (flatIds.length > 0) {
+          const { data: expenseRows } = await supabaseClient
+            .from('flat_expenses')
+            .select('id')
+            .in('flat_id', flatIds);
+          const expenseIds = (expenseRows ?? []).map((row) => row.id);
+          if (expenseIds.length > 0) {
+            await supabaseClient
+              .from('flat_expense_participants')
+              .delete()
+              .in('expense_id', expenseIds);
+            await supabaseClient.from('flat_expenses').delete().in('id', expenseIds);
+          }
+          await supabaseClient
+            .from('flat_settlement_payments')
+            .delete()
+            .in('flat_id', flatIds);
+          await supabaseClient.from('flats').delete().in('id', flatIds);
+        }
+
+        await supabaseClient
+          .from('flat_expense_participants')
+          .delete()
+          .eq('member_id', userId);
+        await supabaseClient
+          .from('flat_expenses')
+          .delete()
+          .eq('created_by', userId);
+        await supabaseClient
+          .from('flat_settlement_payments')
+          .delete()
+          .or(`from_id.eq.${userId},to_id.eq.${userId},marked_by.eq.${userId}`);
+
+        const { data: matchRows } = await supabaseClient
+          .from('matches')
+          .select('id')
+          .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+        const matchIds = (matchRows ?? []).map((row) => row.id);
+        if (matchIds.length > 0) {
+          await supabaseClient
+            .from('room_assignments')
+            .delete()
+            .in('match_id', matchIds);
+          const { data: chatRows } = await supabaseClient
+            .from('chats')
+            .select('id')
+            .in('match_id', matchIds);
+          const chatIds = (chatRows ?? []).map((row) => row.id);
+          if (chatIds.length > 0) {
+            await supabaseClient
+              .from('messages')
+              .delete()
+              .in('chat_id', chatIds);
+            await supabaseClient.from('chats').delete().in('id', chatIds);
+          }
+          await supabaseClient.from('matches').delete().in('id', matchIds);
+        }
+
+        await supabaseClient
+          .from('swipe_rejections')
+          .delete()
+          .or(`user_id.eq.${userId},rejected_profile_id.eq.${userId}`);
+        await supabaseClient.from('profile_photos').delete().eq('profile_id', userId);
+        await supabaseClient.from('push_tokens').delete().eq('user_id', userId);
+
+        await supabaseClient.from('profiles').delete().eq('id', userId);
+        await supabaseClient.from('users').delete().eq('id', userId);
+        await supabaseClient.auth.admin.deleteUser(userId);
+
+        return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

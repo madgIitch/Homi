@@ -7,12 +7,28 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:786671462069:android:50fd338351efc3a48ec0fc",
+        "mobilesdk_app_id": "1:786671462069:android:0bad0cd50c8a58bd8ec0fc",
         "android_client_info": {
           "package_name": "com.homimatchapp"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "786671462069-lj0vpdavgd7qgn4t6vmdd89alotvs5jm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.homimatchapp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "786671462069-m90rvrgrj5obal2o1m581qo7fdhg4q53.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.homimatchapp",
+            "certificate_hash": "98c4abb30803fab854a464a7e0e9f6a74e759ace"
+          }
+        },
         {
           "client_id": "786671462069-dl3od58kbd9rb6hn33b0o43uomu1i87e.apps.googleusercontent.com",
           "client_type": 3
@@ -20,7 +36,7 @@
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyArzqWTOvI98jIaKf5allz85twtpRFKXkk"
+          "current_key": "AIzaSyAOi5rrNeQqbf-z3G8H_KtspDici4YZCis"
         }
       ],
       "services": {

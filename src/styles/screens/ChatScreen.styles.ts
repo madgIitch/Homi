@@ -79,6 +79,11 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  assignmentHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s8,
+  },
   assignmentTitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -106,6 +111,12 @@ export const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginTop: spacing.s6,
   },
+  assignmentNote: {
+    width: '100%',
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
   assignButton: {
     alignSelf: 'flex-start',
     paddingHorizontal: spacing.s14,
@@ -114,12 +125,15 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.text,
   },
   assignButtonDisabled: {
-    backgroundColor: colors.border,
+    backgroundColor: colors.textMuted,
   },
   assignButtonText: {
     fontSize: 12,
     fontWeight: '600',
     color: colors.background,
+  },
+  assignButtonTextDisabled: {
+    color: colors.surfaceLight,
   },
   offerCard: {
     borderRadius: semanticRadii.soft,
@@ -192,6 +206,11 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
   },
+  roommatesHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s8,
+  },
   roommatesTitle: {
     fontSize: 15,
     fontWeight: '700',
@@ -210,6 +229,16 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.primary,
+  },
+  roommatesToggle: {
+    width: sizes.s28,
+    height: sizes.s28,
+    borderRadius: borderRadius.s14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassUltraLightAlt,
   },
   roommatesEmpty: {
     marginTop: spacing.sm,
@@ -251,16 +280,16 @@ export const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   bubble: {
-    maxWidth: '72%',
-    paddingHorizontal: spacing.s14,
-    paddingVertical: spacing.s12,
-    borderRadius: borderRadius.xl,
+    maxWidth: '74%',
+    paddingHorizontal: spacing.s18,
+    paddingTop: spacing.s8,
+    paddingBottom: spacing.s10,
+    borderRadius: 24,
     overflow: 'hidden',
   },
   bubbleMine: {
-    borderTopRightRadius: borderRadius.s6,
     borderWidth: 1,
-    borderColor: colors.glassBorder,
+    borderColor: colors.primaryMuted,
     shadowColor: colors.shadowDark,
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 6 },
@@ -268,7 +297,6 @@ export const styles = StyleSheet.create({
     elevation: 2,
   },
   bubbleOther: {
-    borderTopLeftRadius: borderRadius.s6,
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
     shadowColor: colors.shadowDark,
@@ -281,10 +309,10 @@ export const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   bubbleGlassFillMine: {
-    backgroundColor: colors.glassUltraLight,
+    backgroundColor: colors.primarySoftAlt,
   },
   bubbleGlassFillOther: {
-    backgroundColor: colors.glassLight,
+    backgroundColor: colors.glassUltraLightAlt,
   },
   bubbleText: {
     fontSize: 14,
@@ -292,7 +320,7 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   bubbleTextMine: {
-    color: colors.textDark,
+    color: colors.text,
   },
   bubbleTextOther: {
     color: colors.text,
@@ -302,6 +330,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
   },
   bubbleMetaOther: {
     justifyContent: 'flex-start',
@@ -352,6 +381,9 @@ export const styles = StyleSheet.create({
     bottom: 0,
     paddingTop: spacing.s40,
     paddingBottom: spacing.s10,
+  },
+  inputFooter: {
+    paddingTop: spacing.sm,
   },
   inputGlass: {
     marginHorizontal: spacing.md,

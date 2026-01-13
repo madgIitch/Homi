@@ -3,6 +3,7 @@ import {
   FlatList,
   Image,
   ImageBackground,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -16,7 +17,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
 import { BlurView } from '@react-native-community/blur';
 import { useTheme } from '../theme/ThemeContext';
-import { colors } from '../theme';
+import { colors, spacing } from '../theme';
 import { chatService } from '../services/chatService';
 import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
@@ -34,6 +35,7 @@ export const MatchesScreen: React.FC = () => {
     Record<string, string>
   >({});
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const matchesChannelRef = useRef<RealtimeChannel | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = React.useCallback(async () => {
@@ -43,7 +45,13 @@ export const MatchesScreen: React.FC = () => {
         chatService.getMatches(),
         chatService.getChats(),
       ]);
-      setMatches(nextMatches);
+      setMatches(
+        nextMatches.filter((match) =>
+          ['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(
+            match.status ?? 'pending'
+          )
+        )
+      );
       setChats(nextChats);
     } catch (error) {
       console.error('Error cargando matches/chats:', error);
@@ -54,12 +62,12 @@ export const MatchesScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void loadData();
+    loadData().catch(() => undefined);
   }, [loadData]);
 
   useFocusEffect(
     React.useCallback(() => {
-      void loadData();
+      loadData().catch(() => undefined);
     }, [loadData])
   );
 
@@ -68,7 +76,7 @@ export const MatchesScreen: React.FC = () => {
       clearTimeout(refreshTimeoutRef.current);
     }
     refreshTimeoutRef.current = setTimeout(() => {
-      void loadData();
+      loadData().catch(() => undefined);
     }, 400);
   }, [loadData]);
 
@@ -117,7 +125,7 @@ export const MatchesScreen: React.FC = () => {
       channelRef.current = channel;
     };
 
-    void subscribeToChats();
+    subscribeToChats().catch(() => undefined);
 
     return () => {
       isMounted = false;
@@ -125,9 +133,61 @@ export const MatchesScreen: React.FC = () => {
         supabaseClient.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      if (matchesChannelRef.current) {
+        supabaseClient.removeChannel(matchesChannelRef.current);
+        matchesChannelRef.current = null;
+      }
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
         refreshTimeoutRef.current = null;
+      }
+    };
+  }, [scheduleRefresh]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const subscribeToMatches = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (matchesChannelRef.current) {
+        supabaseClient.removeChannel(matchesChannelRef.current);
+        matchesChannelRef.current = null;
+      }
+
+      const channel = supabaseClient
+        .channel('matches:list')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'matches' },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'matches' },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .subscribe();
+
+      matchesChannelRef.current = channel;
+    };
+
+    void subscribeToMatches();
+
+    return () => {
+      isMounted = false;
+      if (matchesChannelRef.current) {
+        supabaseClient.removeChannel(matchesChannelRef.current);
+        matchesChannelRef.current = null;
       }
     };
   }, [scheduleRefresh]);
@@ -190,7 +250,7 @@ export const MatchesScreen: React.FC = () => {
       }
     };
 
-    void loadMatchPhotos();
+    loadMatchPhotos().catch(() => undefined);
   }, [unmatched, chats, matchPhotoByProfile]);
 
   const emptyMessage = useMemo(() => {
@@ -202,12 +262,21 @@ export const MatchesScreen: React.FC = () => {
 
   const handleOpenMatch = async (match: Match) => {
     try {
-      const chat = await chatService.getOrCreateChat(match.id);
+      const chat = await chatService.getChatByMatchId(match.id);
+      if (chat) {
+        navigation.navigate('Chat', {
+          chatId: chat.id,
+          matchId: chat.matchId,
+          name: chat.name,
+          avatarUrl: chat.avatarUrl,
+          profile: chat.profile,
+        });
+        return;
+      }
       navigation.navigate('Chat', {
-        chatId: chat.id,
-        name: chat.name,
-        avatarUrl: chat.avatarUrl,
-        profile: chat.profile,
+        matchId: match.id,
+        name: match.name,
+        avatarUrl: match.avatarUrl,
       });
     } catch (error) {
       console.error('Error abriendo chat del match:', error);
@@ -217,9 +286,12 @@ export const MatchesScreen: React.FC = () => {
   const renderMatch = ({ item }: { item: Match }) => {
     const photoUrl = matchPhotoByProfile[item.profileId] || item.avatarUrl;
     return (
-      <TouchableOpacity
-        style={styles.matchItem}
-        onPress={() => void handleOpenMatch(item)}
+      <Pressable
+        style={({ pressed }) => [
+          styles.matchItem,
+          pressed && { opacity: 0.7 },
+        ]}
+        onPress={() => handleOpenMatch(item).catch(() => undefined)}
       >
         <View style={styles.avatarWrapper}>
           <Image source={{ uri: photoUrl }} style={styles.avatar} />
@@ -227,16 +299,24 @@ export const MatchesScreen: React.FC = () => {
         <Text style={[styles.matchName, { color: theme.colors.text }]}>
           {item.name}
         </Text>
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 
   const renderChat = ({ item }: { item: Chat }) => (
-    <TouchableOpacity
-      style={styles.chatRow}
+    <Pressable
+      style={({ pressed }) => [
+        styles.chatRow,
+        {
+          backgroundColor: theme.colors.glassSurface,
+          borderColor: theme.colors.glassBorderSoft,
+        },
+        pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
+      ]}
       onPress={() =>
         navigation.navigate('Chat', {
           chatId: item.id,
+          matchId: item.matchId,
           name: item.name,
           avatarUrl: item.avatarUrl,
           profile: item.profile,
@@ -276,11 +356,11 @@ export const MatchesScreen: React.FC = () => {
           )}
         </View>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
@@ -289,7 +369,7 @@ export const MatchesScreen: React.FC = () => {
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
@@ -297,7 +377,7 @@ export const MatchesScreen: React.FC = () => {
         <BlurView
           blurType="light"
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.headerFill} />
@@ -322,7 +402,7 @@ export const MatchesScreen: React.FC = () => {
           renderItem={renderChat}
           contentContainerStyle={[
             styles.chatList,
-            { paddingBottom: insets.bottom + 110 },
+            { paddingBottom: insets.bottom + spacing.lg + spacing.s20 },
           ]}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={

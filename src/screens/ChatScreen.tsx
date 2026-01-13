@@ -12,6 +12,7 @@ import {
   ImageBackground,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -27,8 +28,10 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
-import { colors } from '../theme';
-import { useTheme } from '../theme/ThemeContext';
+import { spacing } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme, useThemeController } from '../theme/ThemeContext';
+import { getUserName } from '../utils/name';
 import { chatService } from '../services/chatService';
 import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
@@ -46,7 +49,8 @@ import type { RoomExtras } from '../types/room';
 import type { RoomAssignment } from '../types/roomAssignment';
 
 type RouteParams = {
-  chatId: string;
+  chatId?: string;
+  matchId?: string;
   name: string;
   avatarUrl: string;
   profile?: Profile;
@@ -55,35 +59,55 @@ type RouteParams = {
 const GlassCard: React.FC<{ style?: object; children: React.ReactNode }> = ({
   style,
   children,
-}) => (
-  <View style={[styles.glassCard, style]}>
-    <BlurView
-      blurType="light"
-      blurAmount={16}
-      reducedTransparencyFallbackColor={colors.glassOverlay}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <View style={styles.glassFill} />
-    {children}
-  </View>
-);
+}) => {
+  const theme = useTheme();
+  return (
+    <View style={[styles.glassCard, style]}>
+      <BlurView
+        blurType="light"
+        blurAmount={16}
+        reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View
+        style={[
+          styles.glassFill,
+          { backgroundColor: theme.colors.glassUltraLightAlt },
+        ]}
+      />
+      {children}
+    </View>
+  );
+};
 
 export const ChatScreen: React.FC = () => {
   const theme = useTheme();
+  const { isDark } = useThemeController();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
   const authContext = useContext(AuthContext);
   const currentUserId = authContext?.user?.id ?? null;
-  const { chatId, name, avatarUrl, profile } = route.params as RouteParams;
+  const {
+    chatId: routeChatId,
+    matchId: routeMatchId,
+    name,
+    avatarUrl,
+    profile,
+  } = route.params as RouteParams;
+  const [chatId, setChatId] = useState<string | null>(routeChatId ?? null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [headerAvatarUrl, setHeaderAvatarUrl] = useState(avatarUrl);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const [matchId, setMatchId] = useState<string | null>(null);
+  const [matchId, setMatchId] = useState<string | null>(routeMatchId ?? null);
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [seekerId, setSeekerId] = useState<string | null>(null);
+  const [otherUserId, setOtherUserId] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<RoomAssignment[]>([]);
+  const [ownerRoomAssignments, setOwnerRoomAssignments] = useState<RoomAssignment[]>([]);
+  const [ownerAssignments, setOwnerAssignments] = useState<RoomAssignment[]>([]);
   const [matchAssignment, setMatchAssignment] = useState<RoomAssignment | null>(null);
   const [ownerRooms, setOwnerRooms] = useState<Room[]>([]);
   const [roomExtras, setRoomExtras] = useState<Record<string, RoomExtras | null>>({});
@@ -92,6 +116,8 @@ export const ChatScreen: React.FC = () => {
   const [assignTarget, setAssignTarget] = useState<'seeker' | 'owner'>('seeker');
   const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(false);
+  const [isAssignmentCollapsed, setIsAssignmentCollapsed] = useState(true);
+  const [isRoommatesCollapsed, setIsRoommatesCollapsed] = useState(true);
   const listRef = useRef<FlatList<Message> | null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [showScrollToEnd, setShowScrollToEnd] = useState(false);
@@ -100,8 +126,30 @@ export const ChatScreen: React.FC = () => {
   const didInitialScrollRef = useRef(false);
   const layoutHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
+  const assignmentChannelRef = useRef<RealtimeChannel | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (routeChatId && routeChatId !== chatId) {
+      setChatId(routeChatId);
+    }
+  }, [routeChatId, chatId]);
+
+  useEffect(() => {
+    if (routeMatchId && routeMatchId !== matchId) {
+      setMatchId(routeMatchId);
+    }
+  }, [routeMatchId, matchId]);
 
   const refreshMessages = useCallback(async () => {
+    if (!chatId) return;
     try {
       const data = await chatService.getMessages(chatId);
       setMessages(data);
@@ -167,16 +215,27 @@ export const ChatScreen: React.FC = () => {
   }, [profile?.id]);
 
   useEffect(() => {
+    if (!chatId && !matchId) return;
     let isMounted = true;
 
     const loadMatchDetails = async () => {
       try {
-        const chatDetail = await chatService.getChatDetails(chatId);
-        if (!chatDetail || !isMounted) return;
-        setMatchId(chatDetail.matchId);
-        setMatchStatus(chatDetail.matchStatus ?? null);
+        let resolvedMatchId = matchId;
+        let resolvedMatchStatus = matchStatus;
 
-        const match = await matchService.getMatch(chatDetail.matchId);
+        if (chatId) {
+          const chatDetail = await chatService.getChatDetails(chatId);
+          if (!chatDetail || !isMounted) return;
+          resolvedMatchId = chatDetail.matchId;
+          resolvedMatchStatus = chatDetail.matchStatus ?? null;
+          if (isMounted) {
+            setMatchId(chatDetail.matchId);
+            setMatchStatus(chatDetail.matchStatus ?? null);
+          }
+        }
+
+        if (!resolvedMatchId) return;
+        const match = await matchService.getMatch(resolvedMatchId);
         if (!match || !isMounted) return;
 
         const owner =
@@ -184,12 +243,26 @@ export const ChatScreen: React.FC = () => {
             ? match.user_a_id
             : match.user_b?.housing_situation === 'offering'
             ? match.user_b_id
-            : match.user_a_id;
+            : null;
         const seeker =
-          owner === match.user_a_id ? match.user_b_id : match.user_a_id;
+          owner != null
+            ? owner === match.user_a_id
+              ? match.user_b_id
+              : match.user_a_id
+            : null;
+        const other =
+          currentUserId && currentUserId === match.user_a_id
+            ? match.user_b_id
+            : match.user_a_id;
 
-        setOwnerId(owner);
-        setSeekerId(seeker);
+        if (isMounted) {
+          setOwnerId(owner);
+          setSeekerId(seeker);
+          setOtherUserId(other ?? null);
+          if (!resolvedMatchStatus && match.status) {
+            setMatchStatus(match.status);
+          }
+        }
       } catch (error) {
         console.error('Error cargando detalles del match:', error);
       }
@@ -199,68 +272,184 @@ export const ChatScreen: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [chatId]);
+  }, [chatId, matchId, matchStatus]);
 
-  useEffect(() => {
+  const loadAssignments = useCallback(async () => {
     if (!matchId) return;
-    let isMounted = true;
-
-    const loadAssignments = async () => {
-      try {
+    try {
+      if (isMountedRef.current) {
         setLoadingAssignments(true);
-        const data = await roomAssignmentService.getAssignments(matchId);
-        if (!isMounted) return;
-        setOwnerId(data.owner_id);
-        setAssignments(data.assignments);
-        setMatchAssignment(data.match_assignment ?? null);
-      } catch (error) {
-        console.error('Error cargando asignaciones:', error);
-      } finally {
-        if (isMounted) {
-          setLoadingAssignments(false);
-        }
       }
-    };
-
-    void loadAssignments();
-    return () => {
-      isMounted = false;
-    };
+      const data = await roomAssignmentService.getAssignments(matchId);
+      if (!isMountedRef.current) return;
+      const nextAssignments = data.assignments.filter(
+        (assignment) => assignment.match_id === matchId
+      );
+      setAssignments(nextAssignments);
+      setMatchAssignment(data.match_assignment ?? null);
+    } catch (error) {
+      console.error('Error cargando asignaciones:', error);
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingAssignments(false);
+      }
+    }
   }, [matchId]);
 
   useEffect(() => {
-    if (!ownerId) return;
-    let isMounted = true;
+    void loadAssignments();
+  }, [loadAssignments]);
 
-    const loadOwnerRooms = async () => {
-      try {
-        setLoadingRooms(true);
-        const rooms = isOwner
-          ? await roomService.getMyRooms()
-          : await roomService.getRoomsByOwner(ownerId);
-        if (!isMounted) return;
-        setOwnerRooms(rooms);
-        const extras = await roomExtrasService.getExtrasForRooms(
-          rooms.map((room) => room.id)
-        );
-        const extrasMap = Object.fromEntries(
-          extras.map((extra) => [extra.room_id, extra])
-        );
-        setRoomExtras(extrasMap);
-      } catch (error) {
-        console.error('Error cargando habitaciones del owner:', error);
-      } finally {
-        if (isMounted) {
-          setLoadingRooms(false);
-        }
+  const loadOwnerAssignments = useCallback(async () => {
+    if (!currentUserId) return;
+    try {
+      const data = await roomAssignmentService.getAssignmentsForAssignee();
+      if (!isMountedRef.current) return;
+      setOwnerAssignments(data.assignments);
+    } catch (error) {
+      console.error('Error cargando asignaciones del owner:', error);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const isOwnerValue = Boolean(currentUserId && ownerId === currentUserId);
+    if (!isOwnerValue) {
+      setOwnerAssignments([]);
+      return;
+    }
+    void loadOwnerAssignments();
+  }, [currentUserId, ownerId, loadOwnerAssignments]);
+
+  const loadOwnerRoomAssignments = useCallback(async () => {
+    if (!currentUserId) return;
+    try {
+      const data = await roomAssignmentService.getAssignmentsForOwner();
+      if (!isMountedRef.current) return;
+      setOwnerRoomAssignments(data.assignments);
+    } catch (error) {
+      console.error('Error cargando asignaciones de habitaciones:', error);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const isOwnerValue = Boolean(currentUserId && ownerId === currentUserId);
+    if (!isOwnerValue) {
+      setOwnerRoomAssignments([]);
+      return;
+    }
+    void loadOwnerRoomAssignments();
+  }, [currentUserId, ownerId, loadOwnerRoomAssignments]);
+
+  useEffect(() => {
+    if (!matchId) {
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
       }
+      return;
+    }
+
+    let isMounted = true;
+    const subscribeToAssignments = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+
+      const channel = supabaseClient
+        .channel(`room-assignments:${matchId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'room_assignments',
+            filter: `match_id=eq.${matchId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            void loadAssignments();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'room_assignments',
+            filter: `match_id=eq.${matchId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            void loadAssignments();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'room_assignments',
+            filter: `match_id=eq.${matchId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            void loadAssignments();
+          }
+        )
+        .subscribe();
+
+      assignmentChannelRef.current = channel;
     };
 
-    void loadOwnerRooms();
+    void subscribeToAssignments();
+
     return () => {
       isMounted = false;
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
     };
-  }, [ownerId, isOwner, canSeeAssignees]);
+  }, [loadAssignments, matchId]);
+
+  const refreshOwnerRooms = useCallback(async () => {
+    if (!ownerId) return;
+    try {
+      if (isMountedRef.current) {
+        setLoadingRooms(true);
+      }
+      const isOwnerValue = Boolean(currentUserId && ownerId === currentUserId);
+      const rooms = isOwnerValue
+        ? await roomService.getMyRooms()
+        : await roomService.getRoomsByOwner(ownerId);
+      if (!isMountedRef.current) return;
+      setOwnerRooms(rooms);
+      const extras = await roomExtrasService.getExtrasForRooms(
+        rooms.map((room) => room.id)
+      );
+      if (!isMountedRef.current) return;
+      const extrasMap = Object.fromEntries(
+        extras.map((extra) => [extra.room_id, extra])
+      );
+      setRoomExtras(extrasMap);
+    } catch (error) {
+      console.error('Error cargando habitaciones del owner:', error);
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingRooms(false);
+      }
+    }
+  }, [currentUserId, ownerId]);
+
+  useEffect(() => {
+    void refreshOwnerRooms();
+  }, [refreshOwnerRooms]);
 
   const isOwner = Boolean(currentUserId && ownerId === currentUserId);
   const isSeeker = Boolean(currentUserId && seekerId === currentUserId);
@@ -278,19 +467,44 @@ export const ChatScreen: React.FC = () => {
     );
   }, [acceptedAssignments, currentUserId, isOwner, matchAssignment?.status]);
 
-  const ownerHasRoom = useMemo(
-    () => acceptedAssignments.some((assignment) => assignment.assignee_id === ownerId),
-    [acceptedAssignments, ownerId]
+  const ownerHasRoom = useMemo(() => {
+    return ownerAssignments.some((assignment) => assignment.status === 'accepted');
+  }, [ownerAssignments]);
+
+  const ownerAssignment = useMemo(
+    () => ownerAssignments.find((assignment) => assignment.status === 'accepted') ?? null,
+    [ownerAssignments]
+  );
+  const hasVisibleAssignments = useMemo(
+    () => acceptedAssignments.length > 0 || (isOwner && ownerAssignment !== null),
+    [acceptedAssignments.length, isOwner, ownerAssignment]
   );
 
-  const assignedRoomIds = useMemo(
-    () =>
-      new Set(
-        acceptedAssignments.map((assignment) => assignment.room_id)
-      ),
-    [acceptedAssignments]
-  );
-  const isChatWithSeeker = profile?.housing_situation === 'seeking';
+  const occupiedRoomIds = useMemo(() => {
+    const ids = new Set<string>();
+    acceptedAssignments.forEach((assignment) => ids.add(assignment.room_id));
+    ownerRoomAssignments
+      .filter((assignment) => assignment.status === 'accepted')
+      .forEach((assignment) => ids.add(assignment.room_id));
+    return ids;
+  }, [acceptedAssignments, ownerRoomAssignments]);
+  const isCurrentTenant = useMemo(() => {
+    if (!currentUserId || isOwner || !ownerId) return false;
+    return acceptedAssignments.some(
+      (assignment) => assignment.assignee_id === currentUserId
+    );
+  }, [acceptedAssignments, currentUserId, isOwner, ownerId]);
+
+  const isOtherTenant = useMemo(() => {
+    if (!otherUserId || !ownerId) return false;
+    return acceptedAssignments.some(
+      (assignment) => assignment.assignee_id === otherUserId
+    );
+  }, [acceptedAssignments, otherUserId, ownerId]);
+
+  const shouldShowAssignmentCard = Boolean(ownerId && (isOwner || isSeeker));
+  const shouldShowRoommatesCard =
+    Boolean(ownerId && isOwner) || (isCurrentTenant && isOtherTenant);
 
   const privateRooms = useMemo(
     () => ownerRooms.filter((room) => roomExtras[room.id]?.category !== 'area_comun'),
@@ -300,9 +514,9 @@ export const ChatScreen: React.FC = () => {
   const availableRooms = useMemo(() => {
     if (!isOwner) return [];
     return privateRooms.filter(
-      (room) => room.is_available && !assignedRoomIds.has(room.id)
+      (room) => room.is_available && !occupiedRoomIds.has(room.id)
     );
-  }, [isOwner, privateRooms, assignedRoomIds]);
+  }, [isOwner, privateRooms, occupiedRoomIds]);
 
   const assignRoom = async () => {
     if (!selectedRoomId) return;
@@ -329,6 +543,13 @@ export const ChatScreen: React.FC = () => {
       }
       if (assignTarget === 'seeker') {
         setMatchStatus('room_offer');
+      }
+      if (currentUserId && ownerId === currentUserId) {
+        await Promise.all([
+          refreshOwnerRooms(),
+          loadOwnerAssignments(),
+          loadOwnerRoomAssignments(),
+        ]);
       }
     } catch (error) {
       console.error('Error asignando habitacion:', error);
@@ -365,6 +586,7 @@ export const ChatScreen: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!chatId) return;
     let isMounted = true;
 
     const subscribeToMessages = async () => {
@@ -472,7 +694,20 @@ export const ChatScreen: React.FC = () => {
     setInputValue('');
     updateTypingState(false);
     try {
-      const next = await chatService.sendMessage(chatId, trimmed);
+      let resolvedChatId = chatId;
+      if (!resolvedChatId) {
+        if (!matchId) {
+          console.error('No se pudo enviar mensaje: falta matchId');
+          return;
+        }
+        const created = await chatService.createChat(matchId);
+        resolvedChatId = created.id;
+        if (isMountedRef.current) {
+          setChatId(created.id);
+          setMatchId(created.matchId ?? matchId);
+        }
+      }
+      const next = await chatService.sendMessage(resolvedChatId, trimmed);
       setMessages((prev) => upsertMessage(prev, next));
     } catch (error) {
       console.error('Error enviando mensaje:', error);
@@ -497,7 +732,7 @@ export const ChatScreen: React.FC = () => {
           <BlurView
             blurType="light"
             blurAmount={14}
-            reducedTransparencyFallbackColor={colors.glassUltraLight}
+            reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
             style={StyleSheet.absoluteFillObject}
           />
           <View
@@ -520,9 +755,29 @@ export const ChatScreen: React.FC = () => {
               !isMine && styles.bubbleMetaOther,
             ]}
           >
-            <Text style={styles.bubbleTime}>{item.createdAt}</Text>
+            <Text
+              style={[
+                styles.bubbleTime,
+                {
+                  color: isDark
+                    ? theme.colors.primaryLight
+                    : isMine
+                    ? theme.colors.textStrong
+                    : theme.colors.textSubtle,
+                },
+              ]}
+            >
+              {item.createdAt}
+            </Text>
             {isMine && item.status && (
-              <Text style={styles.bubbleStatus}>{statusLabel(item.status)}</Text>
+              <Text
+                style={[
+                  styles.bubbleStatus,
+                  { color: isDark ? theme.colors.primaryLight : theme.colors.textStrong },
+                ]}
+              >
+                {statusLabel(item.status)}
+              </Text>
             )}
           </View>
         </View>
@@ -540,15 +795,20 @@ export const ChatScreen: React.FC = () => {
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + spacing.s10, paddingBottom: spacing.s10 },
+        ]}
+      >
         <BlurView
           blurType="light"
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.headerFill} />
@@ -576,7 +836,7 @@ export const ChatScreen: React.FC = () => {
           <BlurView
             blurType="light"
             blurAmount={14}
-            reducedTransparencyFallbackColor={colors.glassOverlay}
+            reducedTransparencyFallbackColor={theme.colors.glassOverlay}
             style={StyleSheet.absoluteFillObject}
           />
           <View style={styles.typingFill} />
@@ -584,137 +844,237 @@ export const ChatScreen: React.FC = () => {
         </View>
       )}
 
-      {(isOwner || isSeeker) && (
-        <GlassCard style={styles.assignmentPanel}>
+      {shouldShowAssignmentCard && (
+        <GlassCard
+          style={[
+            styles.assignmentPanel,
+            {
+              backgroundColor: theme.colors.glassSurface,
+              borderColor: theme.colors.glassBorderSoft,
+            },
+          ]}
+        >
           <View style={styles.assignmentHeader}>
             <View>
               <Text style={styles.assignmentTitle}>Gestion de habitacion</Text>
-              <Text style={styles.assignmentSubtitle}>
+              <Text
+                style={[styles.assignmentSubtitle, { color: theme.colors.textSecondary }]}
+              >
                 {isOwner ? 'Asigna habitaciones y gestiona ofertas.' : 'Revisa tu estado de habitacion.'}
               </Text>
             </View>
-            {matchStatus && (
-              <View style={styles.assignmentStatusPill}>
-                <Text style={styles.assignmentStatusText}>
-                  {matchStatusLabel(matchStatus)}
-                </Text>
-              </View>
-            )}
+            <View style={styles.assignmentHeaderActions}>
+              {matchStatus && (
+                <View style={styles.assignmentStatusPill}>
+                  <Text style={styles.assignmentStatusText}>
+                    {matchStatusLabel(matchStatus)}
+                  </Text>
+                </View>
+              )}
+              <TouchableOpacity
+                style={styles.roommatesToggle}
+                onPress={() => setIsAssignmentCollapsed((prev) => !prev)}
+              >
+                <Ionicons
+                  name={isAssignmentCollapsed ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
-          {isOwner && (
-            <View style={styles.assignActions}>
-              <TouchableOpacity
-                style={[
-                  styles.assignButton,
-                  availableRooms.length === 0 && styles.assignButtonDisabled,
-                ]}
-                onPress={() => {
-                  setAssignTarget('seeker');
-                  setSelectedRoomId(null);
-                  setAssignModalVisible(true);
-                }}
-                disabled={availableRooms.length === 0}
-              >
-                <Text style={styles.assignButtonText}>Asignar habitacion</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.assignButton,
-                  (ownerHasRoom || availableRooms.length === 0) &&
-                    styles.assignButtonDisabled,
-                ]}
-                onPress={() => {
-                  setAssignTarget('owner');
-                  setSelectedRoomId(null);
-                  setAssignModalVisible(true);
-                }}
-                disabled={ownerHasRoom || availableRooms.length === 0}
-              >
-                <Text style={styles.assignButtonText}>Asignarme una habitacion</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {isSeeker && matchAssignment?.status === 'offered' && (
-            <View style={styles.offerCard}>
-              <Text style={styles.offerTitle}>Propuesta de habitacion</Text>
-              <Text style={styles.offerSubtitle}>
-                {matchAssignment.room?.title ?? 'Habitacion asignada'}
-              </Text>
-              <View style={styles.offerActions}>
-                <TouchableOpacity
-                  style={[styles.offerButton, styles.offerAccept]}
-                  onPress={() => respondToAssignment('accepted')}
-                >
-                  <Text style={styles.offerButtonText}>Aceptar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.offerButton, styles.offerReject]}
-                  onPress={() => respondToAssignment('rejected')}
-                >
-                  <Text style={styles.offerRejectText}>Rechazar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+          {!isAssignmentCollapsed && (
+            <>
+              {isOwner && (
+                <View style={styles.assignActions}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.assignButton,
+                      availableRooms.length === 0 && styles.assignButtonDisabled,
+                      pressed && availableRooms.length > 0 && { opacity: 0.9 },
+                    ]}
+                    onPress={() => {
+                      setAssignTarget('seeker');
+                      setSelectedRoomId(null);
+                      setAssignModalVisible(true);
+                    }}
+                    disabled={availableRooms.length === 0}
+                  >
+                    <Text
+                      style={[
+                        styles.assignButtonText,
+                        availableRooms.length === 0 && styles.assignButtonTextDisabled,
+                      ]}
+                    >
+                      Asignar habitacion
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.assignButton,
+                      (ownerHasRoom || availableRooms.length === 0) &&
+                        styles.assignButtonDisabled,
+                      pressed && !(ownerHasRoom || availableRooms.length === 0) && {
+                        opacity: 0.9,
+                      },
+                    ]}
+                    onPress={() => {
+                      setAssignTarget('owner');
+                      setSelectedRoomId(null);
+                      setAssignModalVisible(true);
+                    }}
+                    disabled={ownerHasRoom || availableRooms.length === 0}
+                  >
+                    <Text
+                      style={[
+                        styles.assignButtonText,
+                        (ownerHasRoom || availableRooms.length === 0) &&
+                          styles.assignButtonTextDisabled,
+                      ]}
+                    >
+                      Asignarme una habitacion
+                    </Text>
+                  </Pressable>
+                  {ownerHasRoom && (
+                    <Text
+                      style={[styles.assignmentNote, { color: theme.colors.textSecondary }]}
+                    >
+                      Ya tienes una habitacion asignada.
+                    </Text>
+                  )}
+                </View>
+              )}
+              {isSeeker && matchAssignment?.status === 'offered' && (
+                <View style={styles.offerCard}>
+                  <Text style={styles.offerTitle}>Propuesta de habitacion</Text>
+                  <Text
+                    style={[styles.offerSubtitle, { color: theme.colors.textSecondary }]}
+                  >
+                    {matchAssignment.room?.title ?? 'Habitacion asignada'}
+                  </Text>
+                  <View style={styles.offerActions}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.offerButton,
+                        styles.offerAccept,
+                        pressed && { opacity: 0.9 },
+                      ]}
+                      onPress={() => respondToAssignment('accepted')}
+                    >
+                      <Text style={styles.offerButtonText}>Aceptar</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.offerButton,
+                        styles.offerReject,
+                        pressed && { opacity: 0.9 },
+                      ]}
+                      onPress={() => respondToAssignment('rejected')}
+                    >
+                      <Text style={styles.offerRejectText}>Rechazar</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+            </>
           )}
         </GlassCard>
       )}
 
-      {!isChatWithSeeker && (
-        <GlassCard style={styles.roommatesPanel}>
-        <View style={styles.roommatesHeader}>
-          <Text style={styles.roommatesTitle}>Companeros y habitaciones</Text>
-          <View style={styles.roommatesBadge}>
-            <Text style={styles.roommatesBadgeText}>
-              {privateRooms.length}
-            </Text>
+      {shouldShowRoommatesCard && (
+        <GlassCard
+          style={[
+            styles.roommatesPanel,
+            {
+              backgroundColor: theme.colors.glassSurface,
+              borderColor: theme.colors.glassBorderSoft,
+            },
+          ]}
+        >
+          <View style={styles.roommatesHeader}>
+            <Text style={styles.roommatesTitle}>Companeros y habitaciones</Text>
+            <View style={styles.roommatesHeaderActions}>
+              <View style={styles.roommatesBadge}>
+                <Text style={styles.roommatesBadgeText}>
+                  {privateRooms.length}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.roommatesToggle}
+                onPress={() => setIsRoommatesCollapsed((prev) => !prev)}
+              >
+                <Ionicons
+                  name={isRoommatesCollapsed ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-        {loadingAssignments || loadingRooms ? (
-          <Text style={styles.roommatesEmpty}>Cargando...</Text>
-        ) : canSeeAssignees ? (
-          <>
-            {acceptedAssignments.length === 0 ? (
-              <Text style={styles.roommatesEmpty}>Aun no hay asignaciones.</Text>
+          {!isRoommatesCollapsed &&
+            (loadingAssignments || loadingRooms ? (
+              <Text style={styles.roommatesEmpty}>Cargando...</Text>
+            ) : canSeeAssignees ? (
+              <>
+                {!hasVisibleAssignments ? (
+                  <Text style={styles.roommatesEmpty}>
+                    Aun no hay asignaciones.
+                  </Text>
+                ) : (
+                  <View style={styles.roommatesList}>
+                    {isOwner && ownerAssignment && (
+                      <View style={styles.roommateRow}>
+                        <Text style={styles.roommateName}>Tu</Text>
+                        <Text style={styles.roommateRoom}>
+                          {ownerAssignment.room?.title ?? 'Habitacion'}
+                        </Text>
+                      </View>
+                    )}
+                    {acceptedAssignments.map((assignment) => (
+                      <View key={assignment.id} style={styles.roommateRow}>
+                        <Text style={styles.roommateName}>
+                          {getUserName(assignment.assignee, 'Companero')}
+                        </Text>
+                        <Text style={styles.roommateRoom}>
+                          {assignment.room?.title ?? 'Habitacion'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            ) : privateRooms.length === 0 ? (
+              <Text style={styles.roommatesEmpty}>No hay habitaciones.</Text>
             ) : (
               <View style={styles.roommatesList}>
-                {acceptedAssignments.map((assignment) => (
-                  <View key={assignment.id} style={styles.roommateRow}>
+                {privateRooms.map((room) => (
+                  <View key={room.id} style={styles.roommateRow}>
                     <Text style={styles.roommateName}>
-                      {assignment.assignee?.display_name ?? 'Companero'}
+                      {renderRoomTitle(room)}
                     </Text>
                     <Text style={styles.roommateRoom}>
-                      {assignment.room?.title ?? 'Habitacion'}
+                      {occupiedRoomIds.has(room.id) ? 'Ocupada' : 'Disponible'}
                     </Text>
                   </View>
                 ))}
               </View>
-            )}
-          </>
-        ) : privateRooms.length === 0 ? (
-          <Text style={styles.roommatesEmpty}>No hay habitaciones.</Text>
-        ) : (
-          <View style={styles.roommatesList}>
-            {privateRooms.map((room) => (
-              <View key={room.id} style={styles.roommateRow}>
-                <Text style={styles.roommateName}>{renderRoomTitle(room)}</Text>
-                <Text style={styles.roommateRoom}>
-                  {assignedRoomIds.has(room.id) ? 'Ocupada' : 'Disponible'}
-                </Text>
-              </View>
             ))}
-          </View>
-        )}
         </GlassCard>
       )}
 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+        style={{ flex: 1 }}
+      >
       <FlatList
         ref={listRef}
         data={orderedMessages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
         contentContainerStyle={styles.messagesList}
-        ListFooterComponent={<View style={styles.messagesFooter} />}
         showsVerticalScrollIndicator={false}
+        style={{ flex: 1 }}
         onScroll={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
             event.nativeEvent;
@@ -759,20 +1119,24 @@ export const ChatScreen: React.FC = () => {
           }
         }}
       />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
-        style={styles.inputContainer}
+      <View
+        style={[
+          styles.inputFooter,
+          { paddingBottom: Math.max(insets.bottom, 8) },
+        ]}
       >
         {showScrollToEnd && (
-          <TouchableOpacity
-            style={styles.scrollToEndButton}
+          <Pressable
+            style={({ pressed }) => [
+              styles.scrollToEndButton,
+              pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
+            ]}
             onPress={() => listRef.current?.scrollToEnd({ animated: true })}
           >
             <BlurView
               blurType="light"
               blurAmount={14}
-              reducedTransparencyFallbackColor={colors.glassOverlay}
+              reducedTransparencyFallbackColor={theme.colors.glassOverlay}
               style={StyleSheet.absoluteFillObject}
             />
             <View style={styles.scrollToEndFill} />
@@ -782,13 +1146,13 @@ export const ChatScreen: React.FC = () => {
               color={theme.colors.primary}
             />
             <Text style={styles.scrollToEndText}>Ir al ultimo mensaje</Text>
-          </TouchableOpacity>
+          </Pressable>
         )}
         <View style={styles.inputGlass}>
           <BlurView
             blurType="light"
             blurAmount={16}
-            reducedTransparencyFallbackColor={colors.glassOverlay}
+            reducedTransparencyFallbackColor={theme.colors.glassOverlay}
             style={StyleSheet.absoluteFillObject}
           />
           <View style={styles.inputGlassFill} />
@@ -797,19 +1161,34 @@ export const ChatScreen: React.FC = () => {
               value={inputValue}
               onChangeText={handleInputChange}
               placeholder="Escribe un mensaje..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.colors.textTertiary}
               style={styles.input}
             />
-            <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.sendButton,
+                pressed && { opacity: 0.9 },
+              ]}
+              onPress={sendMessage}
+            >
               <Ionicons name="send" size={18} color="#FFFFFF" />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
+      </View>
       </KeyboardAvoidingView>
 
       <Modal visible={assignModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View
+            style={[
+              styles.modalContent,
+              {
+                backgroundColor: theme.colors.glassSurface,
+                borderColor: theme.colors.glassBorderSoft,
+              },
+            ]}
+          >
             <Text style={styles.modalTitle}>
               {assignTarget === 'owner' ? 'Asignarme habitacion' : 'Asignar habitacion'}
             </Text>
@@ -829,7 +1208,17 @@ export const ChatScreen: React.FC = () => {
                       key={room.id}
                       style={[
                         styles.modalRoomItem,
-                        isSelected && styles.modalRoomItemActive,
+                        {
+                          backgroundColor: theme.colors.surfaceLight,
+                          borderColor: theme.colors.border,
+                        },
+                        isSelected && [
+                          styles.modalRoomItemActive,
+                          {
+                            backgroundColor: theme.colors.primarySoft,
+                            borderColor: theme.colors.primaryMuted,
+                          },
+                        ],
                       ]}
                       onPress={() => setSelectedRoomId(room.id)}
                     >
@@ -837,11 +1226,12 @@ export const ChatScreen: React.FC = () => {
                         style={[
                           styles.modalRoomTitle,
                           isSelected && styles.modalRoomTitleActive,
+                          { color: theme.colors.text },
                         ]}
                       >
                         {renderRoomTitle(room)}
                       </Text>
-                      <Text style={styles.modalRoomMeta}>
+                      <Text style={[styles.modalRoomMeta, { color: theme.colors.textSecondary }]}>
                         {room.price_per_month} EUR/mes
                       </Text>
                     </TouchableOpacity>
@@ -851,13 +1241,22 @@ export const ChatScreen: React.FC = () => {
             </ScrollView>
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancel]}
+                style={[
+                  styles.modalButton,
+                  styles.modalCancel,
+                  {
+                    backgroundColor: theme.colors.surfaceLight,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
                 onPress={() => {
                   setAssignModalVisible(false);
                   setSelectedRoomId(null);
                 }}
               >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
+                <Text style={[styles.modalCancelText, { color: theme.colors.text }]}>
+                  Cancelar
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[

@@ -1,7 +1,8 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
+  Pressable,
   TouchableOpacity,
   FlatList,
   Image,
@@ -15,19 +16,24 @@ import {
   Alert,
   StyleSheet,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { BlurView } from '@react-native-community/blur';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
-import { useTheme } from '../theme/ThemeContext';
-import { colors } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme, useThemeController } from '../theme/ThemeContext';
+import { spacing } from '../theme';
 import { AuthContext } from '../context/AuthContext';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomService } from '../services/roomService';
 import { roomInvitationService } from '../services/roomInvitationService';
+import { supabaseClient } from '../services/authService';
 import type { Flat, Room, RoomExtras } from '../types/room';
 import { Button } from '../components/Button';
 import { RoomDetailScreenStyles as styles } from '../styles/screens';
@@ -77,8 +83,8 @@ const SUB_RULE_TYPE_MAP = new Map<
   ['permitidas bajo acuerdo', { ruleType: 'mascotas', isNegative: false }],
 ]);
 
-const getRuleIcon = (rule: string) => {
-  const normalized = rule.toLowerCase().trim();
+const getRuleIcon = (rule?: string | null) => {
+  const normalized = typeof rule === 'string' ? rule.toLowerCase().trim() : '';
   const subRuleMatch = SUB_RULE_TYPE_MAP.get(normalized);
   const ruleType = subRuleMatch?.ruleType ?? (() => {
     if (
@@ -146,8 +152,8 @@ const getRuleIcon = (rule: string) => {
   return isNegative ? emoji.negative : emoji.positive;
 };
 
-const getServiceIcon = (serviceName: string) => {
-  const normalized = serviceName.toLowerCase();
+const getServiceIcon = (serviceName?: string | null) => {
+  const normalized = typeof serviceName === 'string' ? serviceName.toLowerCase() : '';
   if (normalized.includes('luz') || normalized.includes('electric')) {
     return '\u{26A1}';
   }
@@ -165,6 +171,8 @@ const getServiceIcon = (serviceName: string) => {
 
 export const RoomDetailScreen: React.FC = () => {
   const theme = useTheme();
+  const { isDark } = useThemeController();
+  const insets = useSafeAreaInsets();
   const authContext = useContext(AuthContext);
   const currentUserId = authContext?.user?.id ?? '';
   const navigation = useNavigation<StackNavigationProp<any>>();
@@ -177,6 +185,10 @@ export const RoomDetailScreen: React.FC = () => {
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [isAssigned, setIsAssigned] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [inviteExpires, setInviteExpires] = useState('');
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxFrameWidth, setLightboxFrameWidth] = useState(0);
@@ -184,11 +196,26 @@ export const RoomDetailScreen: React.FC = () => {
   const lightboxScaleStates = useRef<
     Array<{ base: Animated.Value; pinch: Animated.Value; lastScale: number }>
   >([]);
+  const inviteCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const assignmentChannelRef = useRef<RealtimeChannel | null>(null);
+  const isMountedRef = useRef(true);
+  const [hasAssignments, setHasAssignments] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
+    return () => {
+      if (inviteCopyTimeoutRef.current) {
+        clearTimeout(inviteCopyTimeoutRef.current);
+      }
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+      isMountedRef.current = false;
+    };
+  }, []);
 
-    const refreshRoom = async () => {
+  const refreshRoom = useCallback(async () => {
       try {
         const isOwner = room.owner_id === currentUserId;
         const assignmentsResponse =
@@ -197,13 +224,13 @@ export const RoomDetailScreen: React.FC = () => {
         if (isOwner) {
           const rooms = await roomService.getRoomsByOwner(room.owner_id);
           const updated = rooms.find((item) => item.id === room.id);
-          if (updated && isMounted) {
+          if (updated && isMountedRef.current) {
             setRoomState(updated);
           }
         } else {
           try {
             const updated = await roomService.getRoomById(room.id);
-            if (updated && isMounted) {
+            if (updated && isMountedRef.current) {
               setRoomState(updated);
             }
           } catch (error) {
@@ -216,31 +243,143 @@ export const RoomDetailScreen: React.FC = () => {
         }
 
         const extrasData = await roomExtrasService.getExtrasForRooms([room.id]);
-        if (isMounted) {
+        if (isMountedRef.current) {
           setExtrasState(extrasData[0] ?? null);
+          setHasAssignments(
+            assignmentsResponse.assignments.length > 0 ||
+              Boolean(assignmentsResponse.match_assignment)
+          );
           const assigned =
             assignmentsResponse.assignments.some(
               (assignment) =>
-                assignment.room_id === room.id && assignment.status === 'accepted'
-            ) || assignmentsResponse.match_assignment?.status === 'accepted';
+                assignment.room_id === room.id &&
+                assignment.status === 'accepted' &&
+                Boolean(assignment.assignee)
+            ) ||
+            (assignmentsResponse.match_assignment?.status === 'accepted' &&
+              Boolean(assignmentsResponse.match_assignment.assignee));
           setIsAssigned(assigned);
         }
       } catch (error) {
         console.error('Error cargando detalle de habitacion:', error);
       }
+    },
+    [room.id, room.owner_id, currentUserId]
+  );
+
+  useEffect(() => {
+    void refreshRoom();
+  }, [refreshRoom]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const subscribeToAssignments = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+
+      const channel = supabaseClient
+        .channel(`room-assignments:room:${room.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'room_assignments',
+            filter: `room_id=eq.${room.id}`,
+          },
+          () => {
+            if (!isMounted) return;
+            void refreshRoom();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'room_assignments',
+            filter: `room_id=eq.${room.id}`,
+          },
+          () => {
+            if (!isMounted) return;
+            void refreshRoom();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'room_assignments',
+            filter: `room_id=eq.${room.id}`,
+          },
+          () => {
+            if (!isMounted) return;
+            void refreshRoom();
+          }
+        )
+        .subscribe();
+
+      assignmentChannelRef.current = channel;
     };
 
-    refreshRoom();
+    void subscribeToAssignments();
+
     return () => {
       isMounted = false;
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
     };
-  }, [room.id, room.owner_id, currentUserId]);
+  }, [refreshRoom, room.id]);
 
   const photos = extrasState?.photos ?? [];
   const carouselWidth = Dimensions.get('window').width - 40;
   const isCommonArea = extrasState?.category === 'area_comun';
   const isOwner = room.owner_id === currentUserId;
   const lightboxCount = photos.length;
+  const detailCardStyle = useMemo(
+    () => ({
+      backgroundColor: isDark ? theme.colors.surfaceLight : theme.colors.glassSurface,
+      borderColor: isDark ? theme.colors.border : theme.colors.glassBorderSoft,
+    }),
+    [isDark, theme.colors.border, theme.colors.glassBorderSoft, theme.colors.glassSurface, theme.colors.surfaceLight]
+  );
+  const detailNoteStyle = useMemo(
+    () => ({
+      backgroundColor: isDark ? theme.colors.surfaceLight : theme.colors.glassSurface,
+      borderColor: isDark ? theme.colors.border : theme.colors.glassBorderSoft,
+    }),
+    [isDark, theme.colors.border, theme.colors.glassBorderSoft, theme.colors.glassSurface, theme.colors.surfaceLight]
+  );
+  const sectionTitleStyle = useMemo(
+    () => ({ color: theme.colors.text }),
+    [theme.colors.text]
+  );
+  const detailLabelStyle = useMemo(
+    () => ({ color: theme.colors.textSecondary }),
+    [theme.colors.textSecondary]
+  );
+  const detailValueStyle = useMemo(
+    () => ({ color: theme.colors.text }),
+    [theme.colors.text]
+  );
+  const detailNoteTextStyle = useMemo(
+    () => ({ color: theme.colors.textSecondary }),
+    [theme.colors.textSecondary]
+  );
+  const statusTextStyle = useMemo(
+    () => ({ color: theme.colors.text }),
+    [theme.colors.text]
+  );
 
   useEffect(() => {
     if (lightboxCount === 0) {
@@ -317,7 +456,9 @@ export const RoomDetailScreen: React.FC = () => {
       : roomState.is_available === true
       ? 'Disponible'
       : roomState.is_available === false
-      ? 'Ocupada'
+      ? hasAssignments
+        ? 'Ocupada'
+        : 'Disponible'
       : 'Sin estado'
     : null;
   const statusTone =
@@ -337,13 +478,28 @@ export const RoomDetailScreen: React.FC = () => {
       const expiresText = invite.expires_at
         ? `Caduca: ${invite.expires_at}`
         : 'Sin caducidad';
-      Alert.alert('Invitacion creada', `Codigo: ${invite.code}\n${expiresText}`);
+      setInviteCode(invite.code);
+      setInviteExpires(expiresText);
+      setInviteCopied(false);
+      setInviteModalVisible(true);
     } catch (error) {
       console.error('Error creando invitacion:', error);
       Alert.alert('Error', 'No se pudo crear la invitacion');
     } finally {
       setInviteLoading(false);
     }
+  };
+
+  const handleCopyInvite = () => {
+    if (!inviteCode) return;
+    Clipboard.setString(inviteCode);
+    setInviteCopied(true);
+    if (inviteCopyTimeoutRef.current) {
+      clearTimeout(inviteCopyTimeoutRef.current);
+    }
+    inviteCopyTimeoutRef.current = setTimeout(() => {
+      setInviteCopied(false);
+    }, 1600);
   };
 
   return (
@@ -356,30 +512,43 @@ export const RoomDetailScreen: React.FC = () => {
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + spacing.md, paddingBottom: spacing.md },
+        ]}
+      >
         <BlurView
           blurType="light"
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.headerFill} />
-        <TouchableOpacity
-          style={styles.headerBackButton}
+        <Pressable
+          style={({ pressed }) => [
+            styles.headerBackButton,
+            { backgroundColor: theme.colors.surfaceLight, borderColor: theme.colors.border },
+            pressed && styles.pressed,
+          ]}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={20} color="#111827" />
-        </TouchableOpacity>
+          <Ionicons name="arrow-back" size={20} color={theme.colors.text} />
+        </Pressable>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           {room.title}
         </Text>
         {isOwner && !isCommonArea ? (
-          <TouchableOpacity
-            style={styles.headerAction}
+          <Pressable
+            style={({ pressed }) => [
+              styles.headerAction,
+              { backgroundColor: theme.colors.surfaceLight, borderColor: theme.colors.border },
+              pressed && styles.pressed,
+            ]}
             onPress={() =>
               navigation.navigate('RoomInterests', {
                 roomId: room.id,
@@ -388,7 +557,7 @@ export const RoomDetailScreen: React.FC = () => {
             }
           >
             <Ionicons name="people-outline" size={20} color={theme.colors.text} />
-          </TouchableOpacity>
+          </Pressable>
         ) : (
           <View style={styles.headerSpacer} />
         )}
@@ -445,22 +614,30 @@ export const RoomDetailScreen: React.FC = () => {
         )}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Informacion</Text>
-          <View style={styles.detailCard}>
+          <Text style={[styles.sectionTitle, sectionTitleStyle]}>Informacion</Text>
+          <View style={[styles.detailCard, detailCardStyle]}>
             {typeLabel ? (
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelRow}>
-                  <Ionicons name="home-outline" size={16} color="#6B7280" />
-                  <Text style={styles.detailLabel}>Tipo</Text>
+                  <Ionicons
+                    name="home-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={[styles.detailLabel, detailLabelStyle]}>Tipo</Text>
                 </View>
-                <Text style={styles.detailValue}>{typeLabel}</Text>
+                <Text style={[styles.detailValue, detailValueStyle]}>{typeLabel}</Text>
               </View>
             ) : null}
             {!isCommonArea && roomState.price_per_month != null ? (
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelRow}>
-                  <Ionicons name="card-outline" size={16} color="#6B7280" />
-                  <Text style={styles.detailLabel}>Precio</Text>
+                  <Ionicons
+                    name="card-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={[styles.detailLabel, detailLabelStyle]}>Precio</Text>
                 </View>
                 <View style={styles.pricePill}>
                   <Text style={styles.pricePillText}>
@@ -472,26 +649,40 @@ export const RoomDetailScreen: React.FC = () => {
             {!isCommonArea && statusLabel ? (
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelRow}>
-                  <Ionicons name="pulse-outline" size={16} color="#6B7280" />
-                  <Text style={styles.detailLabel}>Estado</Text>
+                  <Ionicons
+                    name="pulse-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={[styles.detailLabel, detailLabelStyle]}>Estado</Text>
                 </View>
                 <View style={[styles.statusPill, statusTone]}>
-                  <Text style={styles.statusPillText}>{statusLabel}</Text>
+                  <Text style={[styles.statusPillText, statusTextStyle]}>
+                    {statusLabel}
+                  </Text>
                 </View>
               </View>
             ) : null}
             {roomState.size_m2 != null ? (
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelRow}>
-                  <Ionicons name="resize-outline" size={16} color="#6B7280" />
-                  <Text style={styles.detailLabel}>Tamano</Text>
+                  <Ionicons
+                    name="resize-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={[styles.detailLabel, detailLabelStyle]}>Tamano</Text>
                 </View>
-                <Text style={styles.detailValue}>{roomState.size_m2} m2</Text>
+                <Text style={[styles.detailValue, detailValueStyle]}>
+                  {roomState.size_m2} m2
+                </Text>
               </View>
             ) : null}
             {roomState.description ? (
-              <View style={styles.detailNote}>
-                <Text style={styles.detailNoteText}>{roomState.description}</Text>
+              <View style={[styles.detailNote, detailNoteStyle]}>
+                <Text style={[styles.detailNoteText, detailNoteTextStyle]}>
+                  {roomState.description}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -522,21 +713,31 @@ export const RoomDetailScreen: React.FC = () => {
 
         {flat && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Piso</Text>
-            <View style={styles.detailCard}>
+            <Text style={[styles.sectionTitle, sectionTitleStyle]}>Piso</Text>
+            <View style={[styles.detailCard, detailCardStyle]}>
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelRow}>
-                  <Ionicons name="location-outline" size={16} color="#6B7280" />
-                  <Text style={styles.detailLabel}>Direccion</Text>
+                  <Ionicons
+                    name="location-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={[styles.detailLabel, detailLabelStyle]}>Direccion</Text>
                 </View>
-                <Text style={styles.detailValue}>{flat.address}</Text>
+                <Text style={[styles.detailValue, detailValueStyle]}>
+                  {flat.address}
+                </Text>
               </View>
               <View style={styles.detailRow}>
                 <View style={styles.detailLabelRow}>
-                  <Ionicons name="map-outline" size={16} color="#6B7280" />
-                  <Text style={styles.detailLabel}>Zona</Text>
+                  <Ionicons
+                    name="map-outline"
+                    size={16}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={[styles.detailLabel, detailLabelStyle]}>Zona</Text>
                 </View>
-                <Text style={styles.detailValue}>
+                <Text style={[styles.detailValue, detailValueStyle]}>
                   {flat.city}
                   {flat.district ? ` - ${flat.district}` : ''}
                 </Text>
@@ -547,10 +748,10 @@ export const RoomDetailScreen: React.FC = () => {
 
         {rules.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Reglas</Text>
-            <View style={styles.detailCard}>
+            <Text style={[styles.sectionTitle, sectionTitleStyle]}>Reglas</Text>
+            <View style={[styles.detailCard, detailCardStyle]}>
               {rules.map((rule) => (
-                <Text key={rule} style={styles.detailNoteText}>
+                <Text key={rule} style={[styles.detailNoteText, detailNoteTextStyle]}>
                   {getRuleIcon(rule)} {rule}
                 </Text>
               ))}
@@ -560,10 +761,13 @@ export const RoomDetailScreen: React.FC = () => {
 
         {services.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Servicios</Text>
-            <View style={styles.detailCard}>
+            <Text style={[styles.sectionTitle, sectionTitleStyle]}>Servicios</Text>
+            <View style={[styles.detailCard, detailCardStyle]}>
               {services.map((service) => (
-                <Text key={service.name} style={styles.detailNoteText}>
+                <Text
+                  key={service.name}
+                  style={[styles.detailNoteText, detailNoteTextStyle]}
+                >
                   {getServiceIcon(service.name)} {service.name}
                   {service.price != null ? ` (${service.price} EUR)` : ''}
                 </Text>
@@ -573,6 +777,81 @@ export const RoomDetailScreen: React.FC = () => {
         )}
       </ScrollView>
 
+      <Modal transparent animationType="fade" visible={inviteModalVisible}>
+        <View style={styles.inviteOverlay}>
+          <LinearGradient
+            colors={[theme.colors.overlayLight, theme.colors.overlay]}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setInviteModalVisible(false)}
+          />
+          <View
+            style={[
+              styles.inviteCard,
+              {
+                backgroundColor: theme.colors.glassUltraLightAlt,
+                borderColor: theme.colors.glassBorderSoft,
+              },
+            ]}
+          >
+            <BlurView
+              blurType="light"
+              blurAmount={14}
+              reducedTransparencyFallbackColor={theme.colors.glassUltraLightAlt}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View
+              style={[
+                styles.inviteCardFill,
+                { backgroundColor: theme.colors.glassUltraLightAlt },
+              ]}
+            />
+            <View style={styles.inviteHeader}>
+              <Ionicons
+                name="mail-open-outline"
+                size={20}
+                color={theme.colors.primary}
+              />
+              <Text style={styles.inviteTitleText}>Invitacion creada</Text>
+            </View>
+            <Text style={styles.inviteCodeLabel}>Codigo</Text>
+            <View style={styles.inviteCodeRow}>
+              <Text style={styles.inviteCodeValue}>{inviteCode}</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.inviteCopyButton,
+                  pressed && styles.pressed,
+                ]}
+                onPress={handleCopyInvite}
+              >
+                <Ionicons
+                  name={inviteCopied ? 'checkmark' : 'copy-outline'}
+                  size={16}
+                  color={
+                    inviteCopied ? theme.colors.successDark : theme.colors.primary
+                  }
+                />
+                <Text style={styles.inviteCopyText}>
+                  {inviteCopied ? 'Copiado' : 'Copiar'}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={styles.inviteExpiresText}>{inviteExpires}</Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.inviteCloseButton,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => setInviteModalVisible(false)}
+            >
+              <Text style={styles.inviteCloseText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={lightboxVisible}
         transparent
@@ -581,7 +860,7 @@ export const RoomDetailScreen: React.FC = () => {
       >
         <View style={styles.lightboxOverlay}>
           <LinearGradient
-            colors={[colors.overlayLight, colors.overlayDark]}
+            colors={[theme.colors.overlayLight, theme.colors.overlayDark]}
             style={StyleSheet.absoluteFillObject}
           />
           <TouchableOpacity
@@ -592,12 +871,19 @@ export const RoomDetailScreen: React.FC = () => {
           <View style={styles.lightboxContent}>
             <View style={styles.lightboxTopBar}>
               <Text style={styles.lightboxTitle}>Fotos</Text>
-              <TouchableOpacity
-                style={styles.lightboxClose}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.lightboxClose,
+                  pressed && styles.pressed,
+                ]}
                 onPress={() => setLightboxVisible(false)}
               >
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
+                <Ionicons
+                  name="close"
+                  size={18}
+                  color={theme.colors.textSecondary}
+                />
+              </Pressable>
             </View>
             <View style={styles.lightboxDivider} />
             <View
@@ -667,36 +953,42 @@ export const RoomDetailScreen: React.FC = () => {
             </View>
             {lightboxCount > 1 && (
               <View style={styles.lightboxNav}>
-                <TouchableOpacity
-                  style={styles.lightboxNavButton}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.lightboxNavButton,
+                    pressed && styles.pressed,
+                  ]}
                   onPress={handleLightboxPrev}
                 >
                   <Ionicons
                     name="chevron-back"
                     size={20}
-                    color={colors.textSecondary}
+                    color={theme.colors.textSecondary}
                   />
-                </TouchableOpacity>
+                </Pressable>
                 <View style={styles.lightboxCounterChip}>
                   <Ionicons
                     name="image-outline"
                     size={14}
-                    color={colors.textSecondary}
+                    color={theme.colors.textSecondary}
                   />
                   <Text style={styles.lightboxCounter}>
                     {lightboxIndex + 1}/{lightboxCount}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.lightboxNavButton}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.lightboxNavButton,
+                    pressed && styles.pressed,
+                  ]}
                   onPress={handleLightboxNext}
                 >
                   <Ionicons
                     name="chevron-forward"
                     size={20}
-                    color={colors.textSecondary}
+                    color={theme.colors.textSecondary}
                   />
-                </TouchableOpacity>
+                </Pressable>
               </View>
             )}
           </View>

@@ -21,6 +21,13 @@ interface SwipeRejectionCreate {
   rejected_profile_id?: string;
 }
 
+type MatchRow = {
+  id: string;
+  status: string;
+  user_a_id: string;
+  user_b_id: string;
+};
+
 function validateRejection(
   data: SwipeRejectionCreate,
   userId: string
@@ -72,6 +79,27 @@ async function createRejection(
   return data as SwipeRejection;
 }
 
+async function rejectPendingMatch(userId: string, otherUserId: string) {
+  const { data, error } = await supabaseClient
+    .from('matches')
+    .select('id,status,user_a_id,user_b_id')
+    .or(
+      `and(user_a_id.eq.${userId},user_b_id.eq.${otherUserId}),and(user_a_id.eq.${otherUserId},user_b_id.eq.${userId})`
+    )
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch match for rejection: ${error.message}`);
+  }
+
+  const match = data as MatchRow | null;
+  if (!match || match.status !== 'pending') {
+    return;
+  }
+
+  await supabaseClient.from('matches').update({ status: 'rejected' }).eq('id', match.id);
+}
+
 const handler = withAuth(
   async (req: Request, payload: JWTPayload): Promise<Response> => {
     const userId = getUserId(payload);
@@ -100,6 +128,7 @@ const handler = withAuth(
           );
         }
 
+        await rejectPendingMatch(userId, body.rejected_profile_id!);
         const rejection = await createRejection(userId, body.rejected_profile_id!);
         const response: ApiResponse<SwipeRejection> = { data: rejection };
         return new Response(JSON.stringify(response), {

@@ -26,8 +26,13 @@ interface PushTokenRow {
 
 interface ProfileRow {
   id: string;
-  display_name?: string | null;
   avatar_url?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  users?: {
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null;
 }
 
 interface RoomRow {
@@ -160,6 +165,12 @@ const resolveAvatarUrl = (avatarUrl?: string | null) => {
   return `${SUPABASE_URL}/storage/v1/object/public/avatars/${avatarUrl}`;
 };
 
+const buildProfileName = (profile?: ProfileRow | null) => {
+  const firstName = profile?.users?.first_name ?? profile?.first_name ?? '';
+  const lastName = profile?.users?.last_name ?? profile?.last_name ?? '';
+  return [firstName, lastName].map((value) => value.trim()).filter(Boolean).join(' ');
+};
+
 const statusContent = (
   status: string,
   roomTitle: string,
@@ -252,7 +263,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
-      .select('id, display_name, avatar_url')
+      .select('id, avatar_url, users!profiles_id_fkey(first_name, last_name)')
       .in('id', Array.from(recipients));
 
     const profileMap = new Map<string, ProfileRow>();
@@ -311,7 +322,7 @@ Deno.serve(async (req: Request) => {
 
     for (const recipientId of recipients) {
       const actorProfile = profileMap.get(recipientId === roomRow.owner_id ? record.assignee_id : roomRow.owner_id);
-      const actorName = actorProfile?.display_name ?? 'HomiMatch';
+      const actorName = buildProfileName(actorProfile) || 'HomiMatch';
       const actorAvatar = resolveAvatarUrl(actorProfile?.avatar_url ?? null);
       const { title, body } = statusContent(status, roomRow.title, actorName);
 

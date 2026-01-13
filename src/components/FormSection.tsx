@@ -11,6 +11,7 @@ interface FormSectionProps {
   iconName?: string;
   required?: boolean;
   requiredLabel?: string;
+  variant?: 'glass' | 'flat';
   children: React.ReactNode;
 }
 
@@ -20,10 +21,12 @@ export const FormSection: React.FC<FormSectionProps> = ({
   iconName,
   required = false,
   requiredLabel,
+  variant = 'glass',
   children,
 }) => {
   const theme = useTheme();
   const showHeader = Boolean(title || subtitle || iconName || requiredLabel);
+  const isFlat = variant === 'flat';
 
   return (
     <View style={styles.container}>
@@ -31,18 +34,28 @@ export const FormSection: React.FC<FormSectionProps> = ({
         style={[
           styles.card,
           {
-            borderRadius: theme.borderRadius.lg,
+            borderRadius: isFlat ? theme.semanticRadii.sheet : theme.borderRadius.lg,
             borderColor: theme.colors.glassBorderSoft,
+            backgroundColor: isFlat ? theme.colors.glassSurface : 'transparent',
           },
         ]}
       >
-        <BlurView
-          blurType="light"
-          blurAmount={16}
-          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
-          style={StyleSheet.absoluteFillObject}
-        />
-        <View style={[styles.cardFill, { backgroundColor: theme.colors.glassUltraLightAlt }]} />
+        {!isFlat && (
+          <>
+            <BlurView
+              blurType="light"
+              blurAmount={16}
+              reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View
+              style={[
+                styles.cardFill,
+                { backgroundColor: theme.colors.glassUltraLightAlt },
+              ]}
+            />
+          </>
+        )}
         {showHeader && (
           <View style={styles.header}>
             <View style={styles.titleRow}>

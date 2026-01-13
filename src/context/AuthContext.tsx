@@ -18,6 +18,9 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);  
 
 const AUTH_REFRESH_TOKEN_KEY = 'authRefreshToken';
+const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
+const JOINED_WITH_INVITE_KEY = 'joinedWithInvite';
+const FORCE_ONBOARDING_KEY = 'forceOnboarding';
   
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {  
   const [user, setUser] = useState<User | null>(null);  
@@ -94,6 +97,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     await AsyncStorage.removeItem('authUser');  
     await AsyncStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
+    await AsyncStorage.removeItem(ONBOARDING_COMPLETED_KEY);
+    await AsyncStorage.removeItem(JOINED_WITH_INVITE_KEY);
+    await AsyncStorage.removeItem(FORCE_ONBOARDING_KEY);
     setUser(null);  
   };  
   

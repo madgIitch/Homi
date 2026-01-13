@@ -1,18 +1,17 @@
 import { StyleSheet } from 'react-native';
-import {
-  borderRadius,
-  colors,
-  semanticRadii,
-  semanticSizes,
-  sizes,
-  spacing,
-} from '../../theme';
-import { commonStyles } from '../common';
+import type { Theme } from '../../theme';
+import { createCommonStyles } from '../common';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const commonStyles = createCommonStyles(theme);
+  const { colors, spacing, borderRadius, semanticRadii, semanticSizes } = theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.surfaceMutedAlt,
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
   },
   header: {
     flexDirection: 'row',
@@ -21,16 +20,46 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.s20,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.background,
+    borderBottomColor: colors.glassBorderSoft,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  headerFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.glassUltraLightAlt,
+  },
+  headerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s10,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
   },
   title: {
     fontSize: 20,
     fontWeight: '600',
     color: colors.text,
+    textAlign: 'left',
   },
   resetText: {
     fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  headerIconButton: {
+    width: semanticSizes.control,
+    height: semanticSizes.control,
+    borderRadius: borderRadius.s18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
+  },
+  headerActionText: {
+    fontSize: 12,
     fontWeight: '600',
     color: colors.text,
   },
@@ -44,31 +73,119 @@ export const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.s10,
   },
+  inlineLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.s10,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+    borderRadius: semanticRadii.soft,
+    paddingHorizontal: spacing.s14,
+    paddingVertical: spacing.s12,
+    color: colors.text,
+    marginBottom: spacing.s10,
+  },
+  searchHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: spacing.s10,
+  },
   segmentRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.s10,
+    padding: spacing.s6,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
   },
   segmentButton: {
     flex: 1,
-    paddingVertical: spacing.s10,
+    paddingVertical: spacing.s8,
+    paddingHorizontal: spacing.s12,
     borderRadius: semanticRadii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
     alignItems: 'center',
+    minHeight: semanticSizes.control,
   },
   segmentButtonActive: {
-    backgroundColor: colors.text,
-    borderColor: colors.text,
+    backgroundColor: colors.primaryTint,
+    borderColor: colors.primaryMuted,
+    shadowColor: colors.primaryMuted,
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 2,
   },
   segmentButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: colors.textSecondary,
+    letterSpacing: 0.2,
   },
   segmentButtonTextActive: {
-    color: colors.background,
+    color: colors.primary,
+  },
+  checkGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.s10,
+  },
+  checkItem: {
+    width: '48%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s10,
+    paddingVertical: spacing.s12,
+    paddingHorizontal: spacing.s12,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+    minHeight: semanticSizes.control,
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  checkItemActive: {
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+    shadowColor: colors.primaryMuted,
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  checkItemPressed: {
+    backgroundColor: colors.primaryTint,
+  },
+  checkBox: {
+    width: semanticSizes.iconSm,
+    height: semanticSizes.iconSm,
+    borderRadius: borderRadius.s6,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.glassSurface,
+  },
+  checkLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    letterSpacing: 0.2,
+  },
+  checkLabelActive: {
+    color: colors.primary,
   },
   budgetValues: {
     flexDirection: 'row',
@@ -83,8 +200,83 @@ export const styles = StyleSheet.create({
   footer: {
     padding: spacing.s20,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    borderTopColor: colors.glassBorderSoft,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  footerFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+  },
+  applyButton: {
+    width: '100%',
+    backgroundColor: colors.text,
+    borderColor: colors.text,
+  },
+  premiumBanner: {
+    borderRadius: semanticRadii.sheet,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+    padding: spacing.s14,
+    marginBottom: spacing.md,
+  },
+  premiumBannerActive: {
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+  },
+  premiumBannerInactive: {
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+  },
+  premiumBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s10,
+    marginBottom: spacing.sm,
+  },
+  premiumBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  premiumBannerTextActive: {
+    color: colors.primary,
+  },
+  premiumButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.s6,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassUltraLightAlt,
+  },
+  premiumButtonActive: {
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+  },
+  premiumButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  lockedSection: {
+    opacity: 1,
+  },
+  lockOverlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s6,
+    marginBottom: spacing.s6,
+  },
+  lockText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   noticeCard: {
     borderRadius: semanticRadii.card,
@@ -101,6 +293,26 @@ export const styles = StyleSheet.create({
   },
   noticeText: {
     fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.s12,
+  },
+  toggleCopy: {
+    flex: 1,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  toggleHint: {
+    marginTop: spacing.xs,
+    fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 18,
   },
@@ -126,8 +338,8 @@ export const styles = StyleSheet.create({
     ...commonStyles.chip,
   },
   ruleChipActive: {
-    borderColor: colors.text,
-    backgroundColor: colors.text,
+    borderColor: colors.chipSelectedBorder,
+    backgroundColor: colors.chipSelectedBackground,
   },
   ruleChipText: {
     fontSize: 12,
@@ -135,7 +347,7 @@ export const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   ruleChipTextActive: {
-    color: colors.background,
+    color: colors.chipSelectedText,
   },
   sliderTrack: {
     height: spacing.s6,
@@ -182,4 +394,32 @@ export const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
   },
-});
+  lockedSection: {
+    opacity: 0.6,
+    position: 'relative',
+  },
+  lockOverlay: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    zIndex: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+  },
+  lockText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  segmentButtonDisabled: {
+    opacity: 0.5,
+    backgroundColor: colors.glassSurface,
+    borderColor: colors.glassBorderSoft,
+  },
+  });
+};

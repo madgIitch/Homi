@@ -722,7 +722,6 @@ CREATE TABLE public.profile_photos (
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL,
-  display_name text,
   avatar_url text,
   bio text,
   gender text NOT NULL CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'non_binary'::text, 'other'::text, 'undisclosed'::text])),
@@ -856,3 +855,679 @@ CREATE TABLE public.users (
   CONSTRAINT users_pkey PRIMARY KEY (id),
   CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# UI Analysis - Swipe Cards para Propietarios (Owners)
+
+## 📋 Contexto
+
+Los perfiles con `housing_situation === 'offering'` tienen pisos con habitaciones disponibles. Actualmente, las swipe cards no muestran información del piso, lo cual es información crítica para los usuarios que buscan habitación.
+
+---
+
+## 🎯 Opciones de Diseño
+
+### **Opción 1: Sección Expandible "Ver Piso"** ⭐ RECOMENDADA
+
+#### Descripción
+Agregar un botón colapsable/expandible debajo de la bio que revela información del piso al hacer tap.
+
+#### Mockup Visual
+```
+┌─────────────────────────────────────┐
+│         [FOTO PERFIL]               │
+│       (carousel de fotos)           │
+├─────────────────────────────────────┤
+│ Nombre, 25        [Ofrezco piso]    │
+│                                     │
+│ 💰 400 EUR  📍 Malasaña             │
+│ 🎯 Arte  🌟 Activo                  │
+│                                     │
+│ Bio del usuario en tres líneas      │
+│ mostrando su personalidad y...     │
+│                                     │
+│ ┌─────────────────────────────────┐ │
+│ │ ▼ Ver piso (3 habitaciones)     │ │ ← Colapsable
+│ └─────────────────────────────────┘ │
+│                                     │
+│ [Ver perfil completo →]             │
+└─────────────────────────────────────┘
+
+Al expandir ▼:
+
+┌─────────────────────────────────────┐
+│ ▲ Ocultar piso                      │
+├─────────────────────────────────────┤
+│ 📸 [Mini galería - 3 fotos scroll]  │
+│ ┌────┐ ┌────┐ ┌────┐               │
+│ │Hab1│ │Hab2│ │Salón│              │
+│ └────┘ └────┘ └────┘               │
+│                                     │
+│ 🏠 Piso de 120m² en C/ Gran Vía     │
+│ 🚪 3 habitaciones, 2 baños          │
+│ ✨ WiFi, Limpieza incluida          │
+│ 📜 No fumar, Mascotas OK            │
+│                                     │
+│ 💰 Habitaciones desde 350 EUR/mes   │
+└─────────────────────────────────────┘
+```
+
+#### Ventajas
+- ✅ No sobrecarga la card inicialmente
+- ✅ El usuario decide si quiere ver más información
+- ✅ Muestra datos agregados del piso completo
+- ✅ Contexto claro (reglas, servicios, características)
+- ✅ Galería de fotos del piso separada de fotos de perfil
+
+#### Desventajas
+- ❌ Requiere interacción adicional (tap para expandir)
+- ❌ Puede no ser obvio que es colapsable
+- ❌ Aumenta la altura de la card cuando está expandido
+
+#### Implementación
+```typescript
+const [expandedFlats, setExpandedFlats] = useState<Record<string, boolean>>({});
+
+const toggleFlatInfo = (profileId: string) => {
+  setExpandedFlats(prev => ({
+    ...prev,
+    [profileId]: !prev[profileId]
+  }));
+};
+
+// En el renderCard:
+{profile.housing === 'offering' && profile.flat && (
+  <View style={styles.flatSection}>
+    <TouchableOpacity
+      style={styles.flatToggle}
+      onPress={() => toggleFlatInfo(profile.id)}
+    >
+      <Ionicons
+        name={expandedFlats[profile.id] ? 'chevron-up' : 'chevron-down'}
+        size={16}
+      />
+      <Text style={styles.flatToggleText}>
+        {expandedFlats[profile.id] ? 'Ocultar' : 'Ver'} piso
+        ({profile.rooms?.length} habitaciones)
+      </Text>
+    </TouchableOpacity>
+
+    {expandedFlats[profile.id] && (
+      <View style={styles.flatContent}>
+        {/* Galería mini de fotos */}
+        {/* Info del piso */}
+        {/* Servicios y reglas */}
+      </View>
+    )}
+  </View>
+)}
+```
+
+#### Datos Necesarios
+```typescript
+type SwipeProfile = {
+  // ... campos existentes
+  flat?: {
+    id: string;
+    address: string;
+    size?: number;
+    totalRooms: number;
+    bathrooms: number;
+    services: string[];
+    rules: string[];
+    photos: string[]; // Fotos del piso/zonas comunes
+  };
+  rooms?: Array<{
+    id: string;
+    title: string;
+    price: number;
+    photoUrl: string;
+    type: 'individual' | 'doble';
+    isAvailable: boolean;
+  }>;
+};
+```
+
+---
+
+### **Opción 2: Carousel de Fotos Mixto**
+
+#### Descripción
+Mezclar fotos del perfil personal con fotos del piso en el mismo carousel de la swipe card.
+
+#### Mockup Visual
+```
+┌─────────────────────────────────────┐
+│   [FOTO PERFIL]                     │
+│   📷 Foto 1/5                       │
+│   Badge: "Perfil"                   │
+├─────────────────────────────────────┤
+│ Nombre, 25        [Ofrezco piso]    │
+│ ... badges y bio ...                │
+└─────────────────────────────────────┘
+
+← Swipe derecha →
+
+┌─────────────────────────────────────┐
+│   [FOTO HABITACIÓN 1]               │
+│   📷 Foto 2/5                       │
+│   Badge: "🏠 Habitación - 400€"     │
+├─────────────────────────────────────┤
+│ Nombre, 25        [Ofrezco piso]    │
+│ ... badges y bio ...                │
+└─────────────────────────────────────┘
+
+← Swipe derecha →
+
+┌─────────────────────────────────────┐
+│   [FOTO HABITACIÓN 2]               │
+│   📷 Foto 3/5                       │
+│   Badge: "🏠 Habitación - 450€"     │
+├─────────────────────────────────────┤
+│ Nombre, 25        [Ofrezco piso]    │
+│ ... badges y bio ...                │
+└─────────────────────────────────────┘
+
+← Swipe derecha →
+
+┌─────────────────────────────────────┐
+│   [FOTO SALÓN/COCINA]               │
+│   📷 Foto 4/5                       │
+│   Badge: "🏠 Zonas comunes"         │
+├─────────────────────────────────────┤
+│ Nombre, 25        [Ofrezco piso]    │
+│ ... badges y bio ...                │
+└─────────────────────────────────────┘
+```
+
+#### Ventajas
+- ✅ Usa el espacio de fotos existente (no cambia layout)
+- ✅ Flujo natural de navegación (swipe izq/der)
+- ✅ Muestra fotos reales del piso
+- ✅ Fácil de implementar (solo agregar fotos al array)
+- ✅ Badge contextual indica qué es cada foto
+
+#### Desventajas
+- ❌ Puede confundir (mezcla persona y espacio)
+- ❌ Dilluye fotos del perfil personal
+- ❌ No muestra info agregada del piso (servicios, reglas)
+- ❌ Usuario puede no ver todas las fotos del piso
+
+#### Implementación
+```typescript
+const getProfilePhotos = (profile: SwipeProfile) => {
+  const photos: Array<{ url: string; type: 'profile' | 'room' | 'common'; label?: string; price?: number }> = [];
+
+  // Fotos del perfil
+  const profilePhotos = profilePhotosById[profile.id] ?? [profile.photoUrl];
+  profilePhotos.forEach(url => {
+    photos.push({ url, type: 'profile' });
+  });
+
+  // Fotos de habitaciones (si es owner)
+  if (profile.housing === 'offering' && profile.rooms) {
+    profile.rooms.forEach(room => {
+      if (room.photoUrl) {
+        photos.push({
+          url: room.photoUrl,
+          type: 'room',
+          label: room.title,
+          price: room.price
+        });
+      }
+    });
+  }
+
+  // Fotos de zonas comunes
+  if (profile.flat?.photos) {
+    profile.flat.photos.forEach(url => {
+      photos.push({ url, type: 'common', label: 'Zonas comunes' });
+    });
+  }
+
+  return photos;
+};
+
+// En el render de la foto:
+{currentPhoto.type !== 'profile' && (
+  <View style={styles.photoBadge}>
+    <Text style={styles.photoBadgeText}>
+      {currentPhoto.type === 'room'
+        ? `🏠 ${currentPhoto.label} - ${currentPhoto.price}€`
+        : `🏠 ${currentPhoto.label}`
+      }
+    </Text>
+  </View>
+)}
+```
+
+#### Datos Necesarios
+- Mismo que Opción 1, pero solo necesita URLs de fotos
+
+---
+
+### **Opción 3: Modal Bottom Sheet al Tap en Badge**
+
+#### Descripción
+Cuando el usuario hace tap en el badge "Ofrezco piso", se abre un modal tipo bottom sheet con información detallada del piso.
+
+#### Mockup Visual
+```
+Card inicial:
+┌─────────────────────────────────────┐
+│         [FOTO PERFIL]               │
+├─────────────────────────────────────┤
+│ Nombre, 25    [Ofrezco piso] ← TAP  │
+│ ... bio ...                         │
+└─────────────────────────────────────┘
+
+↓ Al hacer tap en "Ofrezco piso"
+
+┌─────────────────────────────────────┐
+│                                     │
+│                                     │
+│  ╔═══════════════════════════════╗  │
+│  ║  🏠 Piso en Malasaña          ║  │
+│  ║                               ║  │
+│  ║  [Carousel 3-4 fotos]         ║  │
+│  ║  ← → Habitaciones             ║  │
+│  ║                               ║  │
+│  ║  📍 C/ Gran Vía 123, 3º izq   ║  │
+│  ║  📏 120m² • 🚪 4 hab • 🚿 2 ba║  │
+│  ║                               ║  │
+│  ║  💰 Habitaciones disponibles: ║  │
+│  ║  • Hab 1: 400 EUR individual  ║  │
+│  ║  • Hab 2: 450 EUR doble       ║  │
+│  ║  • Hab 3: 350 EUR individual  ║  │
+│  ║                               ║  │
+│  ║  ✅ Servicios incluidos:      ║  │
+│  ║  WiFi, Limpieza, Calefacción  ║  │
+│  ║                               ║  │
+│  ║  📜 Reglas:                   ║  │
+│  ║  ❌ No fumar                  ║  │
+│  ║  ✅ Mascotas OK               ║  │
+│  ║  ⏰ Silencio 23:00-08:00      ║  │
+│  ║                               ║  │
+│  ║  [Ver detalles completos →]   ║  │
+│  ║                               ║  │
+│  ║  [Cerrar]                     ║  │
+│  ╚═══════════════════════════════╝  │
+└─────────────────────────────────────┘
+```
+
+#### Ventajas
+- ✅ No modifica la card inicial (limpia y simple)
+- ✅ Espacio ilimitado para mostrar información
+- ✅ Foco total en el piso cuando se abre
+- ✅ Puede incluir botones de acción ("Ver detalles", "Contactar")
+- ✅ Familiar (patrón común en apps)
+
+#### Desventajas
+- ❌ Requiere tap adicional (fricción)
+- ❌ No es obvio que el badge es interactivo
+- ❌ Puede interrumpir el flujo de swipe
+- ❌ Requiere cerrar modal para continuar
+
+#### Implementación
+```typescript
+const [flatModalVisible, setFlatModalVisible] = useState(false);
+const [selectedFlat, setSelectedFlat] = useState<SwipeProfile['flat'] | null>(null);
+
+const openFlatModal = (flat: SwipeProfile['flat']) => {
+  setSelectedFlat(flat);
+  setFlatModalVisible(true);
+};
+
+// En el badge:
+<Pressable
+  style={styles.badge}
+  onPress={() => profile.flat && openFlatModal(profile.flat)}
+>
+  <Text style={styles.badgeText}>Ofrezco piso</Text>
+  <Ionicons name="information-circle-outline" size={12} />
+</Pressable>
+
+// Modal:
+<Modal
+  visible={flatModalVisible}
+  transparent
+  animationType="slide"
+  onRequestClose={() => setFlatModalVisible(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.flatModalContent}>
+      {/* Carousel de fotos */}
+      {/* Info completa del piso */}
+      {/* Botones de acción */}
+    </View>
+  </View>
+</Modal>
+```
+
+#### Datos Necesarios
+- Mismo que Opción 1 + dirección completa del piso
+
+---
+
+### **Opción 4: Mini-Cards Horizontales de Habitaciones** 🌟 FAVORITA
+
+#### Descripción
+Agregar una sección de scroll horizontal con mini-cards de las habitaciones disponibles, mostrando foto, precio y tipo.
+
+#### Mockup Visual
+```
+┌─────────────────────────────────────┐
+│         [FOTO PERFIL]               │
+│       (carousel de fotos)           │
+├─────────────────────────────────────┤
+│ Nombre, 25        [Ofrezco piso]    │
+│                                     │
+│ 💰 400 EUR  📍 Malasaña             │
+│ 🎯 Arte  🌟 Activo                  │
+│                                     │
+│ Bio del usuario en tres líneas      │
+│ mostrando su personalidad...        │
+│                                     │
+│ 🏠 3 habitaciones disponibles:      │
+│                                     │
+│ ┌──────┐ ┌──────┐ ┌──────┐ ← scroll│
+│ │[📸] │ │[📸] │ │[📸] │         │
+│ │      │ │      │ │      │         │
+│ │400 € │ │450 € │ │350 € │         │
+│ │Indiv.│ │Doble │ │Indiv.│         │
+│ └──────┘ └──────┘ └──────┘         │
+│                                     │
+│ 📏 120m² • 🚪 4 hab • 🚿 2 baños    │
+│ ✅ WiFi, Limpieza  ❌ No fumar      │
+│                                     │
+│ [Ver perfil completo →]             │
+└─────────────────────────────────────┘
+```
+
+#### Ventajas
+- ✅ Información clave visible sin interacción
+- ✅ Muestra precio específico de cada habitación
+- ✅ Visual, intuitivo y atractivo
+- ✅ Ocupa poco espacio vertical
+- ✅ Fácil comparación entre habitaciones
+- ✅ No interrumpe el flujo de swipe
+- ✅ Info agregada del piso debajo (tamaño, servicios)
+
+#### Desventajas
+- ❌ Aumenta altura de la card
+- ❌ Puede ser mucha info en pantalla
+- ❌ Scroll horizontal dentro de card (puede confundir con swipe)
+
+#### Implementación
+```typescript
+// En el renderCard, después de la bio:
+{profile.housing === 'offering' && profile.rooms && profile.rooms.length > 0 && (
+  <View style={styles.flatPreview}>
+    <Text style={styles.flatPreviewTitle}>
+      🏠 {profile.rooms.length} habitación{profile.rooms.length > 1 ? 'es' : ''} disponible{profile.rooms.length > 1 ? 's' : ''}
+    </Text>
+
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.roomsScroll}
+    >
+      {profile.rooms.map((room) => (
+        <View key={room.id} style={styles.roomMiniCard}>
+          <Image
+            source={{ uri: room.photoUrl }}
+            style={styles.roomMiniPhoto}
+          />
+          <Text style={styles.roomMiniPrice}>{room.price} €</Text>
+          <Text style={styles.roomMiniType}>
+            {room.type === 'individual' ? 'Indiv.' : 'Doble'}
+          </Text>
+        </View>
+      ))}
+    </ScrollView>
+
+    {/* Info agregada del piso */}
+    <View style={styles.flatInfoRow}>
+      {profile.flat?.size && (
+        <Text style={styles.flatInfoItem}>📏 {profile.flat.size}m²</Text>
+      )}
+      <Text style={styles.flatInfoItem}>
+        🚪 {profile.flat?.totalRooms} hab
+      </Text>
+      <Text style={styles.flatInfoItem}>
+        🚿 {profile.flat?.bathrooms} baños
+      </Text>
+    </View>
+
+    {/* Servicios y reglas principales */}
+    <View style={styles.flatTagsRow}>
+      {profile.flat?.services?.slice(0, 2).map((service) => (
+        <Text key={service} style={styles.flatTag}>✅ {service}</Text>
+      ))}
+      {profile.flat?.rules?.slice(0, 2).map((rule) => (
+        <Text key={rule} style={styles.flatTag}>📜 {rule}</Text>
+      ))}
+    </View>
+  </View>
+)}
+```
+
+#### Estilos Necesarios
+```typescript
+flatPreview: {
+  marginTop: spacing.md,
+  gap: spacing.sm,
+},
+flatPreviewTitle: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: colors.text,
+},
+roomsScroll: {
+  flexDirection: 'row',
+},
+roomMiniCard: {
+  width: 90,
+  marginRight: spacing.sm,
+  borderRadius: borderRadius.md,
+  overflow: 'hidden',
+  backgroundColor: colors.glassSurface,
+  borderWidth: 1,
+  borderColor: colors.glassBorderSoft,
+},
+roomMiniPhoto: {
+  width: '100%',
+  height: 80,
+  backgroundColor: colors.surfaceLight,
+},
+roomMiniPrice: {
+  fontSize: 13,
+  fontWeight: '700',
+  color: colors.text,
+  padding: spacing.xs,
+  textAlign: 'center',
+},
+roomMiniType: {
+  fontSize: 11,
+  color: colors.textSecondary,
+  paddingHorizontal: spacing.xs,
+  paddingBottom: spacing.xs,
+  textAlign: 'center',
+},
+flatInfoRow: {
+  flexDirection: 'row',
+  gap: spacing.sm,
+  flexWrap: 'wrap',
+},
+flatInfoItem: {
+  fontSize: 12,
+  color: colors.textSecondary,
+},
+flatTagsRow: {
+  flexDirection: 'row',
+  gap: spacing.xs,
+  flexWrap: 'wrap',
+},
+flatTag: {
+  fontSize: 11,
+  paddingHorizontal: spacing.sm,
+  paddingVertical: spacing.xs,
+  backgroundColor: colors.glassUltraLightAlt,
+  borderRadius: borderRadius.sm,
+  color: colors.text,
+},
+```
+
+#### Datos Necesarios
+```typescript
+type SwipeProfile = {
+  // ... campos existentes
+  flat?: {
+    id: string;
+    size?: number;
+    totalRooms: number;
+    bathrooms: number;
+    services: string[]; // Ej: ['WiFi', 'Limpieza', 'Calefacción']
+    rules: string[]; // Ej: ['No fumar', 'Mascotas OK']
+  };
+  rooms: Array<{
+    id: string;
+    title: string;
+    price: number;
+    photoUrl: string;
+    type: 'individual' | 'doble';
+    isAvailable: boolean;
+  }>;
+};
+```
+
+---
+
+## 📊 Comparativa de Opciones
+
+| Criterio | Opción 1<br/>Expandible | Opción 2<br/>Carousel Mixto | Opción 3<br/>Modal | Opción 4<br/>Mini-Cards |
+|----------|-------------------------|------------------------------|-------------------|------------------------|
+| **UX** | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| **Info Visible** | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **Fricción** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ |
+| **Espacio** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ |
+| **Implementación** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **Claridad** | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+
+---
+
+## 🎯 Recomendación Final
+
+### **Combinación de Opciones 1 + 4**
+
+**Fase 1 (MVP)**: Implementar **Opción 4 (Mini-Cards)**
+- Mostrar habitaciones en scroll horizontal
+- Info básica del piso (tamaño, hab, baños)
+- 2-3 servicios/reglas principales
+
+**Fase 2 (Futuro)**: Agregar **Opción 1 (Expandible)**
+- Al hacer tap en el título "🏠 3 habitaciones disponibles"
+- Se expande para mostrar más info (todas las reglas, todos los servicios)
+- Galería completa de fotos del piso
+
+### Justificación
+- ✅ Información clave visible sin fricción
+- ✅ No abruma al usuario inicialmente
+- ✅ Permite profundizar si hay interés
+- ✅ Fácil de implementar progresivamente
+- ✅ Mejor conversión (los seekers ven precios reales)
+
+---
+
+## 📝 Notas de Implementación
+
+### Carga de Datos
+Para cualquier opción, necesitamos modificar `getProfileRecommendations` para incluir:
+
+```sql
+-- En el endpoint de recomendaciones
+SELECT
+  p.*,
+  -- Si es owner, cargar flat y rooms
+  (
+    SELECT json_build_object(
+      'id', f.id,
+      'size', f.size,
+      'totalRooms', f.capacity_total,
+      'bathrooms', f.bathrooms,
+      'services', f.services,
+      'rules', f.rules
+    )
+    FROM flats f
+    WHERE f.owner_id = p.id
+    LIMIT 1
+  ) as flat,
+  (
+    SELECT json_agg(json_build_object(
+      'id', r.id,
+      'title', r.title,
+      'price', r.price_per_month,
+      'type', re.room_type,
+      'photoUrl', (
+        SELECT rp.signed_url
+        FROM room_photos rp
+        WHERE rp.room_id = r.id AND rp.is_primary = true
+        LIMIT 1
+      ),
+      'isAvailable', r.is_available
+    ))
+    FROM rooms r
+    LEFT JOIN room_extras re ON re.room_id = r.id
+    WHERE r.owner_id = p.id AND r.is_available = true
+  ) as rooms
+FROM profiles p
+WHERE p.housing_situation = 'offering'
+```
+
+### Performance
+- Usar lazy loading para fotos de habitaciones
+- Cachear datos del piso en memoria
+- Limitar a 3-4 habitaciones en preview inicial
+
+---
+
+## 🔄 Historial de Decisiones
+
+| Fecha | Decisión | Razón |
+|-------|----------|-------|
+| 2026-01-06 | Documento creado | Explorar opciones para swipe cards de owners |
+
+---
+
+## 📚 Referencias
+
+- Tinder: Muestra info básica en card, detalles en perfil completo
+- Bumble: Usa badges interactivos
+- Airbnb: Mini-cards horizontales para propiedades similares
+- Idealista: Carousel de fotos de propiedades

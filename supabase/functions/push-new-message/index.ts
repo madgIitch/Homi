@@ -29,12 +29,23 @@ const WEBHOOK_SECRET = Deno.env.get('PUSH_WEBHOOK_SECRET') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 
 interface SenderProfile {
-  display_name?: string | null;
   avatar_url?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  users?: {
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null;
 }
 
 const truncate = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max - 3)}...` : value;
+
+const buildProfileName = (profile?: SenderProfile | null) => {
+  const firstName = profile?.users?.first_name ?? profile?.first_name ?? '';
+  const lastName = profile?.users?.last_name ?? profile?.last_name ?? '';
+  return [firstName, lastName].map((value) => value.trim()).filter(Boolean).join(' ');
+};
 
 const base64UrlEncode = (input: Uint8Array) => {
   let binary = '';
@@ -233,12 +244,12 @@ Deno.serve(async (req: Request) => {
     stage = 'fetch_sender_profile';
     const { data: senderProfile } = await supabaseAdmin
       .from('profiles')
-      .select('display_name, avatar_url')
+      .select('avatar_url, users!profiles_id_fkey(first_name, last_name)')
       .eq('id', record.sender_id)
       .single();
 
     const senderName =
-      (senderProfile as SenderProfile | null)?.display_name ?? 'Nuevo mensaje';
+      buildProfileName(senderProfile as SenderProfile | null) || 'Nuevo mensaje';
     const senderAvatar =
       (senderProfile as SenderProfile | null)?.avatar_url ?? null;
     const senderAvatarUrl =

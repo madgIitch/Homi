@@ -40,20 +40,29 @@ class ShareService {
     if (profileId) {
       url.searchParams.set('profile_id', profileId);
     }
+    console.log('[ShareService] Request profile share image', {
+      url: url.toString(),
+      hasAuth: Boolean(headers.Authorization),
+    });
 
     let response = await fetch(url.toString(), {
       method: 'GET',
       headers,
     });
+    console.log('[ShareService] Response status', response.status);
 
     if (response.status === 401) {
       const newToken = await authService.refreshToken();
       if (newToken) {
         headers = await this.getAuthHeaders();
+        console.log('[ShareService] Retrying with refreshed token', {
+          hasAuth: Boolean(headers.Authorization),
+        });
         response = await fetch(url.toString(), {
           method: 'GET',
           headers,
         });
+        console.log('[ShareService] Response status after refresh', response.status);
       }
     }
 
@@ -64,6 +73,10 @@ class ShareService {
       } catch {
         errorBody = '';
       }
+      console.error('[ShareService] Share image error body', {
+        status: response.status,
+        errorBody,
+      });
       throw new Error(
         `Error obteniendo imagen (${response.status}) ${errorBody}`.trim()
       );
@@ -85,7 +98,7 @@ class ShareService {
     await RNFS.writeFile(path, base64, 'base64');
     if (Platform.OS === 'android') {
       try {
-        await RNFS.scanFile([{ path, mime: 'image/png' }]);
+        await RNFS.scanFile(path);
       } catch (error) {
         console.warn('[ShareService] No se pudo indexar la imagen:', error);
       }

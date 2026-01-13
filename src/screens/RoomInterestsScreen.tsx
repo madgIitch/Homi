@@ -7,28 +7,26 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  ImageBackground,
+  StyleSheet,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
+import { BlurView } from '@react-native-community/blur';
 import { API_CONFIG } from '../config/api';
-import { useTheme } from '../theme/ThemeContext';
+import { useTheme, useThemeController } from '../theme/ThemeContext';
 import { chatService } from '../services/chatService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
+import { profilePhotoService } from '../services/profilePhotoService';
 import { AuthContext } from '../context/AuthContext';
 import type { Match } from '../types/chat';
 import type { RoomAssignment } from '../types/roomAssignment';
 import { RoomInterestsScreenStyles as styles } from '../styles/screens';
-
-const getInitials = (name?: string | null) => {
-  if (!name) return 'U';
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((chunk) => chunk[0]?.toUpperCase())
-    .join('');
-};
+import { getUserInitials, getUserName } from '../utils/name';
+import { spacing } from '../theme';
 
 const statusLabel = (status: RoomAssignment['status']) => {
   switch (status) {
@@ -51,8 +49,10 @@ const resolveAvatarUrl = (avatarUrl?: string | null) => {
 
 export const RoomInterestsScreen: React.FC = () => {
   const theme = useTheme();
+  const { isDark } = useThemeController();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
   const authContext = useContext(AuthContext);
   const currentUserId = authContext?.user?.id ?? '';
   const routeParams = route.params as { roomId: string; roomTitle?: string };
@@ -62,6 +62,9 @@ export const RoomInterestsScreen: React.FC = () => {
   const [assignments, setAssignments] = useState<RoomAssignment[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [photoUrlByProfileId, setPhotoUrlByProfileId] = useState<
+    Record<string, string>
+  >({});
 
   const loadData = useCallback(async () => {
     try {
@@ -72,6 +75,37 @@ export const RoomInterestsScreen: React.FC = () => {
       ]);
       setMatches(matchesData);
       setAssignments(assignmentsResponse.assignments);
+
+      const uniqueIds = new Set<string>();
+      matchesData.forEach((match) => {
+        if (match.profileId) uniqueIds.add(match.profileId);
+      });
+      assignmentsResponse.assignments.forEach((assignment) => {
+        if (assignment.assignee_id) uniqueIds.add(assignment.assignee_id);
+      });
+      if (uniqueIds.size > 0) {
+        const photoEntries = await Promise.all(
+          Array.from(uniqueIds).map(async (profileId) => {
+            try {
+              const photos =
+                await profilePhotoService.getPhotosForProfile(profileId);
+              const primary =
+                photos.find((photo) => photo.is_primary) ?? photos[0];
+              if (!primary?.signedUrl) return null;
+              return [profileId, primary.signedUrl] as const;
+            } catch {
+              return null;
+            }
+          })
+        );
+        const next: Record<string, string> = {};
+        photoEntries.forEach((entry) => {
+          if (!entry) return;
+          const [profileId, url] = entry;
+          next[profileId] = url;
+        });
+        setPhotoUrlByProfileId(next);
+      }
     } catch (error) {
       console.error('Error cargando interesados:', error);
       Alert.alert('Error', 'No se pudieron cargar los interesados');
@@ -189,11 +223,62 @@ export const RoomInterestsScreen: React.FC = () => {
     );
   };
 
+  const headerFillStyle = useMemo(
+    () => ({ backgroundColor: theme.colors.glassUltraLightAlt }),
+    [theme.colors.glassUltraLightAlt]
+  );
+  const headerIconStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.glassSurface,
+      borderColor: theme.colors.glassBorderSoft,
+    }),
+    [theme.colors.glassBorderSoft, theme.colors.glassSurface]
+  );
+  const cardStyle = useMemo(
+    () => ({
+      backgroundColor: isDark ? theme.colors.surfaceLight : theme.colors.glassSurface,
+      borderColor: isDark ? theme.colors.border : theme.colors.glassBorderSoft,
+    }),
+    [isDark, theme.colors.border, theme.colors.glassBorderSoft, theme.colors.glassSurface, theme.colors.surfaceLight]
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={22} color={theme.colors.text} />
+    <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={StyleSheet.absoluteFillObject}
+      >
+        <LinearGradient
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
+
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + spacing.md,
+            paddingBottom: spacing.md,
+            borderBottomColor: theme.colors.glassBorderSoft,
+          },
+        ]}
+      >
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={[styles.headerFill, headerFillStyle]} />
+        <TouchableOpacity
+          style={[styles.headerIconButton, headerIconStyle]}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Interesados
@@ -202,9 +287,17 @@ export const RoomInterestsScreen: React.FC = () => {
       </View>
 
       {roomTitle && (
-        <View style={styles.roomBanner}>
-          <Text style={styles.roomLabel}>Habitacion</Text>
-          <Text style={styles.roomTitle}>{roomTitle}</Text>
+        <View style={[styles.roomBanner, { backgroundColor: theme.colors.glassSurface, borderColor: theme.colors.glassBorderSoft }]}>
+          <BlurView
+            blurType="light"
+            blurAmount={16}
+            reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.colors.glassUltraLightAlt }]} pointerEvents="none" />
+          <Text style={[styles.roomLabel, { color: theme.colors.textSecondary }]}>Habitacion</Text>
+          <Text style={[styles.roomTitle, { color: theme.colors.text }]}>{ roomTitle}</Text>
         </View>
       )}
 
@@ -220,7 +313,7 @@ export const RoomInterestsScreen: React.FC = () => {
         >
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Asignaciones actuales</Text>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Asignaciones actuales</Text>
               <TouchableOpacity
                 style={[
                   styles.assignOwnerButton,
@@ -234,32 +327,61 @@ export const RoomInterestsScreen: React.FC = () => {
             </View>
 
             {roomAssignments.length === 0 ? (
-              <View style={styles.emptyStateInline}>
-                <Ionicons name="person-outline" size={32} color="#9CA3AF" />
-                <Text style={styles.emptyTitle}>Sin asignaciones</Text>
-                <Text style={styles.emptySubtitle}>
+              <View style={[styles.emptyStateInline, cardStyle]}>
+                {!isDark && (
+                  <>
+                    <BlurView
+                      blurType="light"
+                      blurAmount={16}
+                      reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+                      style={StyleSheet.absoluteFillObject}
+                      pointerEvents="none"
+                    />
+                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.colors.glassUltraLightAlt }]} pointerEvents="none" />
+                  </>
+                )}
+                <Ionicons name="person-outline" size={32} color={theme.colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Sin asignaciones</Text>
+                <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
                   Asigna esta habitacion a un match o a ti mismo.
                 </Text>
               </View>
             ) : (
               roomAssignments.map((assignment) => {
                 const user = assignment.assignee;
-                const displayName =
-                  user?.display_name ||
-                  (assignment.assignee_id === currentUserId ? 'Propietario' : 'Usuario');
-                const avatarUrl = resolveAvatarUrl(user?.avatar_url);
+                const displayName = getUserName(
+                  user,
+                  assignment.assignee_id === currentUserId ? 'Propietario' : 'Usuario'
+                );
+                const avatarUrl =
+                  photoUrlByProfileId[assignment.assignee_id] ??
+                  resolveAvatarUrl(user?.avatar_url);
                 return (
-                  <View key={assignment.id} style={styles.assignmentCard}>
+                  <View key={assignment.id} style={[styles.assignmentCard, cardStyle]}>
+                    {!isDark && (
+                      <>
+                        <BlurView
+                          blurType="light"
+                          blurAmount={16}
+                          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+                          style={StyleSheet.absoluteFillObject}
+                          pointerEvents="none"
+                        />
+                        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.colors.glassUltraLightAlt }]} pointerEvents="none" />
+                      </>
+                    )}
                     <View style={styles.avatar}>
                       {avatarUrl ? (
                         <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
                       ) : (
-                        <Text style={styles.avatarText}>{getInitials(displayName)}</Text>
+                        <Text style={styles.avatarText}>
+                          {getUserInitials(user ?? { first_name: displayName }, 'U')}
+                        </Text>
                       )}
                     </View>
                     <View style={styles.cardContent}>
-                      <Text style={styles.cardTitle}>{displayName}</Text>
-                      <Text style={styles.cardSubtitle}>
+                      <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{displayName}</Text>
+                      <Text style={[styles.cardSubtitle, { color: theme.colors.textSecondary }]}>
                         {statusLabel(assignment.status)}
                       </Text>
                     </View>
@@ -280,12 +402,24 @@ export const RoomInterestsScreen: React.FC = () => {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Matches disponibles</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Matches disponibles</Text>
             {matchCandidates.length === 0 ? (
-              <View style={styles.emptyStateInline}>
-                <Ionicons name="heart-outline" size={32} color="#9CA3AF" />
-                <Text style={styles.emptyTitle}>Sin matches disponibles</Text>
-                <Text style={styles.emptySubtitle}>
+              <View style={[styles.emptyStateInline, cardStyle]}>
+                {!isDark && (
+                  <>
+                    <BlurView
+                      blurType="light"
+                      blurAmount={16}
+                      reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+                      style={StyleSheet.absoluteFillObject}
+                      pointerEvents="none"
+                    />
+                    <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.colors.glassUltraLightAlt }]} pointerEvents="none" />
+                  </>
+                )}
+                <Ionicons name="heart-outline" size={32} color={theme.colors.textSecondary} />
+                <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Sin matches disponibles</Text>
+                <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
                   Cuando tengas matches apareceran aqui.
                 </Text>
               </View>
@@ -303,19 +437,37 @@ export const RoomInterestsScreen: React.FC = () => {
                     ? 'Reenviar'
                     : statusLabel(assignmentStatus)
                   : 'Asignar';
+                const avatarUrl =
+                  (match.profileId
+                    ? photoUrlByProfileId[match.profileId]
+                    : undefined) ?? match.avatarUrl;
                 return (
-                  <View key={match.id} style={styles.card}>
+                  <View key={match.id} style={[styles.card, cardStyle]}>
+                    {!isDark && (
+                      <>
+                        <BlurView
+                          blurType="light"
+                          blurAmount={16}
+                          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+                          style={StyleSheet.absoluteFillObject}
+                          pointerEvents="none"
+                        />
+                        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.colors.glassUltraLightAlt }]} pointerEvents="none" />
+                      </>
+                    )}
                     <View style={styles.avatar}>
-                      {match.avatarUrl ? (
-                        <Image source={{ uri: match.avatarUrl }} style={styles.avatarImage} />
+                      {avatarUrl ? (
+                        <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
                       ) : (
-                        <Text style={styles.avatarText}>{getInitials(match.name)}</Text>
+                        <Text style={styles.avatarText}>
+                          {getUserInitials({ first_name: match.name }, 'U')}
+                        </Text>
                       )}
                     </View>
                     <View style={styles.cardContent}>
-                      <Text style={styles.cardTitle}>{match.name}</Text>
+                      <Text style={[styles.cardTitle, { color: theme.colors.text }]}>{match.name}</Text>
                       {existingAssignment && (
-                        <Text style={styles.cardSubtitle}>
+                        <Text style={[styles.cardSubtitle, { color: theme.colors.textSecondary }]}>
                           {statusLabel(existingAssignment.status)}
                         </Text>
                       )}
@@ -337,5 +489,3 @@ export const RoomInterestsScreen: React.FC = () => {
     </View>
   );
 };
-
-

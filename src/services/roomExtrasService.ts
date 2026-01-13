@@ -60,6 +60,7 @@ class RoomExtrasService {
     room_id: string;
     category?: string | null;
     room_type?: string | null;
+    capacity?: number | null;
     common_area_type?: string | null;
     common_area_custom?: string | null;
     photos: string[];

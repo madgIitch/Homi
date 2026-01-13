@@ -1,4 +1,4 @@
-﻿// supabase/functions/flat-expenses/index.ts
+// supabase/functions/flat-expenses/index.ts
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
@@ -18,20 +18,34 @@ interface FlatExpenseRow {
   participants?: string[];
   creator?: {
     id: string;
-    display_name?: string | null;
     avatar_url?: string | null;
   } | null;
 }
 
 interface FlatMember {
   id: string;
-  display_name?: string | null;
   avatar_url?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   joined_at: string;
 }
 
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const getNameFields = (
+  profile?: {
+    users?: { first_name?: string | null; last_name?: string | null } | null;
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null
+) => {
+  const firstName = profile?.users?.first_name ?? profile?.first_name ?? null;
+  const lastName = profile?.users?.last_name ?? profile?.last_name ?? null;
+  const trimmedFirst = firstName?.trim() || null;
+  const trimmedLast = lastName?.trim() || null;
+  return { first_name: trimmedFirst, last_name: trimmedLast };
+};
 
 const getMonthRange = (month: string) => {
   const [year, monthValue] = month.split('-').map(Number);
@@ -92,15 +106,17 @@ async function loadFlatMembers(flatId: string, flatInfo: { owner_id: string; cre
   if (flatInfo?.owner_id) {
     const { data: ownerProfile, error: ownerError } = await supabaseAdmin
       .from('profiles')
-      .select('id, display_name, avatar_url')
+      .select('id, avatar_url, users!profiles_id_fkey(first_name, last_name)')
       .eq('id', flatInfo.owner_id)
       .single();
 
     if (!ownerError && ownerProfile) {
+      const nameFields = getNameFields(ownerProfile);
       members.set(ownerProfile.id as string, {
         id: ownerProfile.id as string,
-        display_name: (ownerProfile.display_name as string | null) ?? null,
         avatar_url: (ownerProfile.avatar_url as string | null) ?? null,
+        first_name: nameFields.first_name,
+        last_name: nameFields.last_name,
         joined_at: toDateKey(flatInfo.created_at),
       });
     }
@@ -112,7 +128,7 @@ async function loadFlatMembers(flatId: string, flatInfo: { owner_id: string; cre
       `
       assignee_id,
       updated_at,
-      assignee:profiles(id, display_name, avatar_url),
+      assignee:profiles(id, avatar_url, users!profiles_id_fkey(first_name, last_name)),
       room:rooms!inner(flat_id)
     `
     )
@@ -123,17 +139,19 @@ async function loadFlatMembers(flatId: string, flatInfo: { owner_id: string; cre
     assignments.forEach((row) => {
       const assignee = row.assignee as {
         id: string;
-        display_name?: string | null;
         avatar_url?: string | null;
+        users?: { first_name?: string | null; last_name?: string | null } | null;
       } | null;
       const joinedAt = row.updated_at ? toDateKey(row.updated_at as string) : null;
       if (assignee?.id && joinedAt) {
-        members.set(assignee.id, {
-          id: assignee.id,
-          display_name: assignee.display_name ?? null,
-          avatar_url: assignee.avatar_url ?? null,
-          joined_at: joinedAt,
-        });
+        const nameFields = getNameFields(assignee);
+          members.set(assignee.id, {
+            id: assignee.id,
+            avatar_url: assignee.avatar_url ?? null,
+            first_name: nameFields.first_name,
+            last_name: nameFields.last_name,
+            joined_at: joinedAt,
+          });
       }
     });
   }
@@ -171,7 +189,7 @@ serve(
 
       let query = supabaseAdmin
         .from('flat_expenses')
-        .select('*, creator:profiles(id, display_name, avatar_url)')
+          .select('*, creator:profiles(id, avatar_url, users!profiles_id_fkey(first_name, last_name))')
         .eq('flat_id', flatId);
 
       if (month) {
@@ -308,7 +326,7 @@ serve(
           note: note || null,
           created_by: userId,
         })
-        .select('*, creator:profiles(id, display_name, avatar_url)')
+          .select('*, creator:profiles(id, avatar_url, users!profiles_id_fkey(first_name, last_name))')
         .single();
 
       if (error || !data) {

@@ -1,12 +1,17 @@
 import { StyleSheet } from 'react-native';
-import { borderRadius, colors, semanticRadii, spacing } from '../../theme';
-import { commonStyles } from '../common';
+import type { Theme } from '../../theme';
+import { createCommonStyles } from '../common';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const commonStyles = createCommonStyles(theme);
+  const { colors, spacing, semanticRadii } = theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
     paddingHorizontal: spacing.s20,
+    paddingTop: spacing.s20,
+    paddingBottom: spacing.s40,
+    justifyContent: 'flex-start',
   },
   card: {
     ...commonStyles.card,
@@ -64,4 +69,5 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: spacing.s20,
   },
-});
+  });
+};

@@ -1,4 +1,4 @@
-﻿// supabase/functions/room-assignments/index.ts
+// supabase/functions/room-assignments/index.ts
 
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
@@ -171,7 +171,7 @@ async function listAssignmentsForOwner(ownerId: string): Promise<AssignmentRow[]
       `
       *,
       room:rooms(*, flat:flats(*)),
-      assignee:profiles(*)
+      assignee:profiles(*, users!profiles_id_fkey(first_name, last_name))
     `
     )
     .eq('room.owner_id', ownerId)
@@ -188,7 +188,7 @@ async function listAssignmentsForAssignee(assigneeId: string): Promise<Assignmen
       `
       *,
       room:rooms(*, flat:flats(*)),
-      assignee:profiles(*)
+      assignee:profiles(*, users!profiles_id_fkey(first_name, last_name))
     `
     )
     .eq('assignee_id', assigneeId)
@@ -286,7 +286,7 @@ serve(
               `
               *,
               room:rooms(*, flat:flats(*)),
-              assignee:profiles(*)
+              assignee:profiles(*, users!profiles_id_fkey(first_name, last_name))
             `
             )
             .eq('room_id', roomId)
@@ -366,15 +366,17 @@ serve(
 
       const ownerId = resolveOwnerId(match) ?? match.user_a_id;
       const assignments = await listAssignmentsForOwner(ownerId);
-      const matchAssignment =
-        assignments.find((item) => item.match_id === matchId) ?? null;
+      const matchAssignments = assignments.filter(
+        (item) => item.match_id === matchId
+      );
+      const matchAssignment = matchAssignments[0] ?? null;
 
       return new Response(
         JSON.stringify({
           data: {
             owner_id: ownerId,
             match_assignment: matchAssignment,
-            assignments,
+            assignments: matchAssignments,
           },
         }),
         {
@@ -461,7 +463,7 @@ serve(
             `
             *,
             room:rooms(*, flat:flats(*)),
-            assignee:profiles(*)
+            assignee:profiles(*, users!profiles_id_fkey(first_name, last_name))
           `
           )
           .single();
@@ -511,7 +513,7 @@ serve(
           `
           *,
           room:rooms(*, flat:flats(*)),
-          assignee:profiles(*)
+          assignee:profiles(*, users!profiles_id_fkey(first_name, last_name))
         `
         )
         .single();
@@ -603,7 +605,7 @@ serve(
           `
           *,
           room:rooms(*, flat:flats(*)),
-          assignee:profiles(*)
+          assignee:profiles(*, users!profiles_id_fkey(first_name, last_name))
         `
         )
         .single();

@@ -6,8 +6,11 @@ export interface Flat {
   id: string;
   owner_id: string;
   address: string;
+  city_id?: string;
   city: string;
+  place_id?: string;
   district?: string;
+  capacity_total?: number;
   rules?: string;
   services?: FlatService[];
   gender_policy?: GenderPolicy;
@@ -45,8 +48,11 @@ export interface RoomInterest {
 
 export interface FlatCreateRequest {
   address: string;
+  city_id?: string;
   city: string;
+  place_id?: string;
   district?: string;
+  capacity_total?: number;
   rules?: string;
   services?: FlatService[];
   gender_policy?: GenderPolicy;
@@ -68,10 +74,14 @@ export interface RoomFilters {
   price_max?: number;
   available_from?: string;
   gender_policy?: GenderPolicy;
+  zones?: string[];
+  roommates_min?: number;
+  roommates_max?: number;
 }
 
 export interface RoomExtraDetails {
   roomType?: 'individual' | 'doble';
+  capacity?: number;
   services?: string[];
   rules?: string;
   photos?: string[];
@@ -90,6 +100,7 @@ export interface RoomExtras {
   room_id: string;
   category?: 'habitacion' | 'area_comun';
   room_type?: 'individual' | 'doble';
+  capacity?: number | null;
   common_area_type?: string;
   common_area_custom?: string;
   photos: RoomExtraPhoto[];

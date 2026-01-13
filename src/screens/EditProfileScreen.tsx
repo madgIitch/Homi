@@ -1,74 +1,115 @@
 // src/screens/EditProfileScreen.tsx
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   Alert,
+  Keyboard,
   TouchableOpacity,
+  Switch,
+  Pressable,
   Image,
   ImageBackground,
   ActivityIndicator,
-  PanResponder,
+  Dimensions,
+  UIManager,
   StyleSheet,
+  findNodeHandle,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
 import { BlurView } from '@react-native-community/blur';
 import LinearGradient from 'react-native-linear-gradient';
-import { colors } from '../theme';
+import { spacing } from '../theme';
 import { Input } from '../components/Input';
 import { TextArea } from '../components/TextArea';
 import { ChipGroup } from '../components/ChipGroup';
 import { profileService } from '../services/profileService';
 import { profilePhotoService } from '../services/profilePhotoService';
+import { locationService } from '../services/locationService';
 import { AuthContext } from '../context/AuthContext';
 import { useSwipeFilters } from '../context/SwipeFiltersContext';
-import { INTERESES_OPTIONS, ZONAS_OPTIONS } from '../constants/swipeFilters';
+import {
+  ESTILO_VIDA_GROUPS,
+  INTERESES_OPTIONS,
+  DEFAULT_ROOMMATES_MAX,
+  DEFAULT_ROOMMATES_MIN,
+  ROOMMATES_MAX,
+  ROOMMATES_MIN,
+  lifestyleIdByLabel,
+  lifestyleLabelById,
+} from '../constants/swipeFilters';
 import type {
   ProfileCreateRequest,
   HousingSituation,
   ProfilePhoto,
 } from '../types/profile';
 import { EditProfileScreenStyles as styles } from '../styles/screens';
+import { getUserName } from '../utils/name';
 
-const ESTILO_VIDA_OPTIONS = [
-  { id: 'schedule_flexible', label: 'Flexible' },
-  { id: 'cleaning_muy_limpio', label: 'Muy limpio' },
-  { id: 'guests_algunos', label: 'Algunos invitados' },
-];
+type LocationOption = { id: string; label: string };
 
-const lifestyleLabelById = new Map(
-  ESTILO_VIDA_OPTIONS.map((option) => [option.id, option.label])
-);
-
-const lifestyleIdByLabel = new Map(
-  ESTILO_VIDA_OPTIONS.map((option) => [option.label, option.id])
-);
-
-const BUDGET_MIN = 0;
-const BUDGET_MAX = 1200;
-const BUDGET_STEP = 25;
-const DEFAULT_BUDGET_MIN = 300;
-const DEFAULT_BUDGET_MAX = 600;
-
+const ROOMMATES_STEP = 1;
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
-
-const snapToStep = (value: number) =>
-  Math.round(value / BUDGET_STEP) * BUDGET_STEP;
+const snapToRoommatesStep = (value: number) =>
+  Math.round(value / ROOMMATES_STEP) * ROOMMATES_STEP;
 
 export const EditProfileScreen: React.FC = () => {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<
+    KeyboardAwareScrollView & {
+      scrollTo: (options: { y: number; animated?: boolean }) => void;
+    }
+  >(null);
+  const focusedInputHandle = useRef<number | null>(null);
+  const keyboardHeightRef = useRef(0);
+  const keyboardTopRef = useRef(Dimensions.get('window').height);
+  const scrollYRef = useRef(0);
+  const [, setKeyboardHeight] = useState(0);
   const pillInputStyle = {
-    borderRadius: 999,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    borderRadius: theme.borderRadius.lg,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.glassSurface,
+    borderColor: theme.colors.glassBorderSoft,
   };
+  const cardStyle = {
+    backgroundColor: theme.colors.glassSurface,
+    borderColor: theme.colors.glassBorderSoft,
+  };
+  const chipBaseStyle = {
+    backgroundColor: theme.colors.surfaceLight,
+    borderColor: theme.colors.border,
+  };
+  const chipActiveStyle = {
+    backgroundColor: theme.colors.primarySoft,
+    borderColor: theme.colors.primary,
+  };
+  const chipPressedStyle = {
+    backgroundColor: theme.colors.primaryTint,
+  };
+  const headerFillStyle = useMemo(
+    () => ({ backgroundColor: theme.colors.glassUltraLightAlt }),
+    [theme.colors.glassUltraLightAlt]
+  );
+  const headerIconStyle = useMemo(
+    () => ({
+      backgroundColor: theme.colors.glassSurface,
+      borderColor: theme.colors.glassBorderSoft,
+    }),
+    [theme.colors.glassBorderSoft, theme.colors.glassSurface]
+  );
+  const headerIconPressedStyle = useMemo(
+    () => ({ backgroundColor: theme.colors.glassUltraLightAlt }),
+    [theme.colors.glassUltraLightAlt]
+  );
 
   // Contexto de autenticacion
   const authContext = useContext(AuthContext);
@@ -76,6 +117,7 @@ export const EditProfileScreen: React.FC = () => {
 
   const navigation = useNavigation<StackNavigationProp<any>>();
   const { setFilters, filters } = useSwipeFilters();
+  const includeOtherOwners = filters.housingSituation === 'any';
 
   // Estados del formulario - solo campos que existen en la tabla profiles
   const [nombre, setNombre] = useState('');
@@ -91,15 +133,52 @@ export const EditProfileScreen: React.FC = () => {
   const [situacionVivienda, setSituacionVivienda] = useState<
     'busco_piso' | 'tengo_piso'
   >('busco_piso');
+  const [isAlsoSeeking, setIsAlsoSeeking] = useState(false);
+  const [roommatesMin, setRoommatesMin] = useState(DEFAULT_ROOMMATES_MIN);
+  const [roommatesMax, setRoommatesMax] = useState(DEFAULT_ROOMMATES_MAX);
+  const [cityQuery, setCityQuery] = useState('');
+  const [cities, setCities] = useState<LocationOption[]>([]);
+  const [isLoadingCities, setIsLoadingCities] = useState(false);
+  const [selectedCities, setSelectedCities] = useState<LocationOption[]>([]);
+  const [activeCityId, setActiveCityId] = useState<string | null>(null);
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [places, setPlaces] = useState<LocationOption[]>([]);
+  const [topPlaces, setTopPlaces] = useState<LocationOption[]>([]);
+  const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+  const [selectedPlaces, setSelectedPlaces] = useState<LocationOption[]>([]);
   const [zonas, setZonas] = useState<string[]>([]);
-  const [presupuestoMin, setPresupuestoMin] = useState(DEFAULT_BUDGET_MIN);
-  const [presupuestoMax, setPresupuestoMax] = useState(DEFAULT_BUDGET_MAX);
+  const [zoneCityById, setZoneCityById] = useState<Record<string, string>>({});
   const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([]);
   const [photosLoading, setPhotosLoading] = useState(true);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState(false);
   const [photoDeletingId, setPhotoDeletingId] = useState<string | null>(null);
   const primaryPhoto =
     profilePhotos.find((photo) => photo.is_primary) ?? profilePhotos[0];
+
+  const cityOptions = useMemo(() => {
+    const options = [...cities];
+    selectedCities.forEach((city) => {
+      if (!options.some((item) => item.id === city.id)) {
+        options.unshift(city);
+      }
+    });
+    return options;
+  }, [cities, selectedCities]);
+  const placeOptions = useMemo(() => {
+    const base = placeQuery.trim().length >= 2 ? places : topPlaces;
+    const options = [...base];
+    selectedPlaces.forEach((selected) => {
+      if (!options.some((item) => item.id === selected.id)) {
+        options.unshift(selected);
+      }
+    });
+    return options;
+  }, [placeQuery, places, topPlaces, selectedPlaces]);
+  const showCityOptions =
+    cityQuery.trim().length >= 2 || selectedCities.length > 0;
+  const showZonePreferences =
+    situacionVivienda === 'busco_piso' || isAlsoSeeking;
 
   const loadProfile = useCallback(async () => {
     try {
@@ -111,7 +190,7 @@ export const EditProfileScreen: React.FC = () => {
       }
 
       // Solo cargar campos que existen en la tabla profiles
-      setNombre(data.display_name || '');
+      setNombre(getUserName(data, ''));
       setBiografia(data.bio || '');
       const occupationRaw = data.occupation || '';
       const normalizedOccupation = occupationRaw.toLowerCase();
@@ -162,17 +241,61 @@ export const EditProfileScreen: React.FC = () => {
       setSituacionVivienda(
         data.housing_situation === 'seeking' ? 'busco_piso' : 'tengo_piso'
       );
-      setZonas(data.preferred_zones || []);
-      const nextMin =
-        data.budget_min != null ? data.budget_min : DEFAULT_BUDGET_MIN;
-      const nextMax =
-        data.budget_max != null ? data.budget_max : DEFAULT_BUDGET_MAX;
-      setPresupuestoMin(
-        clamp(snapToStep(nextMin), BUDGET_MIN, BUDGET_MAX)
+      const savedZonas = data.preferred_zones || [];
+      setZonas(savedZonas);
+      setIsAlsoSeeking(
+        data.housing_situation === 'offering' && data.is_seeking === true
       );
-      setPresupuestoMax(
-        clamp(snapToStep(nextMax), BUDGET_MIN, BUDGET_MAX)
+      setRoommatesMin(
+        typeof data.desired_roommates_min === 'number'
+          ? data.desired_roommates_min
+          : DEFAULT_ROOMMATES_MIN
       );
+      setRoommatesMax(
+        typeof data.desired_roommates_max === 'number'
+          ? data.desired_roommates_max
+          : DEFAULT_ROOMMATES_MAX
+      );
+      if (savedZonas.length > 0) {
+        try {
+          const placesData = await Promise.all(
+            savedZonas.map((zoneId) => locationService.getPlaceById(zoneId))
+          );
+          const resolvedPlaces = placesData
+            .filter((item): item is NonNullable<typeof item> => Boolean(item))
+            .map((item) => ({ id: item.id, label: item.name }));
+          setSelectedPlaces(resolvedPlaces);
+          const zoneCityMap: Record<string, string> = {};
+          placesData.forEach((item) => {
+            if (item?.city_id) {
+              zoneCityMap[item.id] = item.city_id;
+            }
+          });
+          setZoneCityById(zoneCityMap);
+
+          const uniqueCityIds = Array.from(
+            new Set(
+              placesData
+                .map((item) => item?.city_id)
+                .filter((cityId): cityId is string => Boolean(cityId))
+            )
+          );
+          if (uniqueCityIds.length > 0) {
+            const citiesData = await Promise.all(
+              uniqueCityIds.map((id) => locationService.getCityById(id))
+            );
+            const resolvedCities = citiesData
+              .filter((item): item is NonNullable<typeof item> => Boolean(item))
+              .map((item) => ({ id: item.id, label: item.name }));
+            setSelectedCities(resolvedCities);
+            if (!activeCityId) {
+              setActiveCityId(uniqueCityIds[0]);
+            }
+          }
+        } catch (error) {
+          console.warn('[EditProfile] Error cargando zonas guardadas:', error);
+        }
+      }
     } catch (error) {
       if (handleAuthError?.(error)) {
         navigation.reset({
@@ -183,7 +306,7 @@ export const EditProfileScreen: React.FC = () => {
         console.error('Error cargando perfil:', error);
       }
     }
-  }, [handleAuthError, navigation]);
+  }, [activeCityId, handleAuthError, navigation]);
 
   const loadPhotos = useCallback(async () => {
     try {
@@ -201,6 +324,208 @@ export const EditProfileScreen: React.FC = () => {
     loadProfile();
     loadPhotos();
   }, [loadProfile, loadPhotos]);
+
+  useEffect(() => {
+    if (situacionVivienda !== 'tengo_piso') return;
+    setIsAlsoSeeking(includeOtherOwners);
+  }, [includeOtherOwners, situacionVivienda]);
+
+  useEffect(() => {
+    let isActive = true;
+    const query = cityQuery.trim();
+
+    if (query.length < 2) {
+      setCities([]);
+      setIsLoadingCities(false);
+      return;
+    }
+
+    setIsLoadingCities(true);
+    const handle = setTimeout(async () => {
+      try {
+        const data = await locationService.getCities({ query });
+        if (!isActive) return;
+        setCities(
+          data.map((item) => ({
+            id: item.id,
+            label: item.name,
+          }))
+        );
+      } catch (error) {
+        console.error('[EditProfile] Error cargando ciudades:', error);
+        if (isActive) setCities([]);
+      } finally {
+        if (isActive) setIsLoadingCities(false);
+      }
+    }, 300);
+
+    return () => {
+      isActive = false;
+      clearTimeout(handle);
+    };
+  }, [cityQuery]);
+
+  useEffect(() => {
+    let isActive = true;
+    const query = placeQuery.trim();
+
+    if (!activeCityId) {
+      setPlaces([]);
+      setTopPlaces([]);
+      setIsLoadingPlaces(false);
+      return;
+    }
+
+    setIsLoadingPlaces(true);
+    const handle = setTimeout(async () => {
+      try {
+        if (query.length >= 2) {
+          const data = await locationService.getPlaces(activeCityId, {
+            query,
+            limit: 50,
+          });
+          if (!isActive) return;
+          setPlaces(
+            data.map((item) => ({
+              id: item.id,
+              label: item.name,
+            }))
+          );
+          setTopPlaces([]);
+        } else {
+          const data = await locationService.getPlaces(activeCityId, {
+            top: true,
+            limit: 20,
+          });
+          if (!isActive) return;
+          setTopPlaces(
+            data.map((item) => ({
+              id: item.id,
+              label: item.name,
+            }))
+          );
+          setPlaces([]);
+        }
+      } catch (error) {
+        console.error('[EditProfile] Error cargando zonas:', error);
+        if (isActive) {
+          setPlaces([]);
+          setTopPlaces([]);
+        }
+      } finally {
+        if (isActive) setIsLoadingPlaces(false);
+      }
+    }, 300);
+
+    return () => {
+      isActive = false;
+      clearTimeout(handle);
+    };
+  }, [placeQuery, activeCityId]);
+
+  const scrollToFocusedInput = useCallback(
+    (extraOffset?: number) => {
+      const scrollNode = scrollRef.current;
+      const target = focusedInputHandle.current;
+      if (!scrollNode || !target) return;
+
+      UIManager.measureInWindow(
+        target,
+        (_x: number, y: number, _width: number, height: number) => {
+          const windowHeight = Dimensions.get('window').height;
+          const keyboardOffset =
+            keyboardHeightRef.current > 0
+              ? keyboardHeightRef.current * 0.18
+              : 0;
+          const resolvedOffset =
+            extraOffset ??
+            Math.round(
+              Math.min(80, Math.max(12, windowHeight * 0.035, keyboardOffset))
+            );
+          const resolvedKeyboardTop =
+            keyboardHeightRef.current > 0
+              ? keyboardTopRef.current
+              : windowHeight;
+          const targetBottom = y + height;
+          const targetTop = y;
+
+          if (
+            keyboardHeightRef.current > 0 &&
+            targetBottom > resolvedKeyboardTop - resolvedOffset
+          ) {
+            const delta = targetBottom - (resolvedKeyboardTop - resolvedOffset);
+            scrollNode.scrollTo({
+              y: Math.max(0, scrollYRef.current + delta),
+              animated: true,
+            });
+            return;
+          }
+
+          const safeTop = insets.top + 16;
+          if (targetTop < safeTop) {
+            const delta = safeTop - targetTop;
+            scrollNode.scrollTo({
+              y: Math.max(0, scrollYRef.current - delta),
+              animated: true,
+            });
+          }
+        }
+      );
+    },
+    [insets.top]
+  );
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardHeightRef.current = event.endCoordinates.height;
+      keyboardTopRef.current = event.endCoordinates.screenY;
+      setKeyboardHeight(event.endCoordinates.height);
+      requestAnimationFrame(() => scrollToFocusedInput());
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardHeightRef.current = 0;
+      keyboardTopRef.current = Dimensions.get('window').height;
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [scrollToFocusedInput]);
+
+  const handleInputFocus = useCallback(
+    (event: any) => {
+      const rawTarget = event?.target ?? event?.nativeEvent?.target;
+      let target: number | null = null;
+
+      if (typeof rawTarget === 'number') {
+        target = rawTarget;
+      } else if (rawTarget) {
+        const handle = findNodeHandle(rawTarget as any);
+        if (typeof handle === 'number') {
+          target = handle;
+        }
+      }
+
+      if (target != null) {
+        focusedInputHandle.current = target;
+      }
+
+      setTimeout(() => scrollToFocusedInput(), 50);
+    },
+    [scrollToFocusedInput]
+  );
+
+  const toggleEstiloVida = useCallback((optionId: string) => {
+    const groupPrefix = optionId.split('_')[0];
+    setEstiloVida((prev) => {
+      if (prev.includes(optionId)) {
+        return prev.filter((id) => id !== optionId);
+      }
+      const filtered = prev.filter((id) => !id.startsWith(`${groupPrefix}_`));
+      return [...filtered, optionId];
+    });
+  }, []);
 
   const handleAddPhoto = async () => {
     if (profilePhotos.length >= 10 || photoUploading) {
@@ -269,6 +594,33 @@ export const EditProfileScreen: React.FC = () => {
     ]);
   };
 
+  const handleDeleteProfile = useCallback(() => {
+    if (deletingProfile) return;
+    Alert.alert(
+      'Eliminar perfil',
+      'Esta accion elimina tu cuenta y todos tus datos. ?Quieres continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingProfile(true);
+              await profileService.deleteProfile();
+              await authContext?.logout();
+            } catch (error) {
+              console.error('Error eliminando perfil:', error);
+              Alert.alert('Error', 'No se pudo eliminar el perfil');
+            } finally {
+              setDeletingProfile(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [authContext, deletingProfile]);
+
   const handleSave = async () => {
     setLoading(true);
     try {
@@ -280,6 +632,9 @@ export const EditProfileScreen: React.FC = () => {
       if (nombreFinal === defaultNombre) {
         warnings.push('Nombre: se uso "Usuario" por defecto.');
       }
+      const nameParts = nombreFinal.split(' ').filter(Boolean);
+      const firstName = nameParts.shift() ?? defaultNombre;
+      const lastName = nameParts.join(' ') || undefined;
 
       const interesesFinal =
         intereses.length > 0 ? intereses : [defaultInteres];
@@ -287,31 +642,40 @@ export const EditProfileScreen: React.FC = () => {
         warnings.push('Intereses: se selecciono un interes por defecto.');
       }
 
-      let presupuestoMinValue = presupuestoMin ?? DEFAULT_BUDGET_MIN;
-      let presupuestoMaxValue = presupuestoMax ?? DEFAULT_BUDGET_MAX;
-      if (presupuestoMinValue === DEFAULT_BUDGET_MIN && presupuestoMin == null) {
-        warnings.push(
-          `Presupuesto minimo: se uso ${DEFAULT_BUDGET_MIN} por defecto.`
-        );
-      }
-      if (presupuestoMaxValue === DEFAULT_BUDGET_MAX && presupuestoMax == null) {
-        warnings.push(
-          `Presupuesto maximo: se uso ${DEFAULT_BUDGET_MAX} por defecto.`
-        );
-      }
-      if (presupuestoMinValue > presupuestoMaxValue) {
-        warnings.push('Presupuesto: el minimo era mayor al maximo, se ajusto.');
-        const temp = presupuestoMinValue;
-        presupuestoMinValue = presupuestoMaxValue;
-        presupuestoMaxValue = temp;
+      const shouldSaveZones = showZonePreferences;
+      if (shouldSaveZones) {
+        if (selectedCities.length === 0) {
+          Alert.alert('Error', 'Selecciona al menos una ciudad de interes');
+          return;
+        }
+        if (zonas.length === 0) {
+          Alert.alert('Error', 'Selecciona al menos una zona de interes');
+          return;
+        }
       }
 
       const housingSituation: HousingSituation =
         situacionVivienda === 'busco_piso' ? 'seeking' : 'offering';
+      const isSeeking = situacionVivienda === 'busco_piso' || isAlsoSeeking;
+      const preferredZones = shouldSaveZones ? zonas : [];
+      const nextCities = shouldSaveZones
+        ? selectedCities.map((city) => city.id)
+        : [];
 
       const scheduleId = estiloVida.find((id) => id.startsWith('schedule_'));
       const cleaningId = estiloVida.find((id) => id.startsWith('cleaning_'));
       const guestsId = estiloVida.find((id) => id.startsWith('guests_'));
+      const smokingId = estiloVida.find((id) => id.startsWith('smoking_'));
+      const petsId = estiloVida.find((id) => id.startsWith('pets_'));
+
+      let finalRoommatesMin = clamp(roommatesMin, ROOMMATES_MIN, ROOMMATES_MAX);
+      let finalRoommatesMax = clamp(roommatesMax, ROOMMATES_MIN, ROOMMATES_MAX);
+      if (finalRoommatesMin > finalRoommatesMax) {
+        const temp = finalRoommatesMin;
+        finalRoommatesMin = finalRoommatesMax;
+        finalRoommatesMax = temp;
+      }
+      const shouldSaveRoommates = isSeeking;
 
       const occupationValue =
         occupationType === 'universidad'
@@ -325,7 +689,8 @@ export const EditProfileScreen: React.FC = () => {
           : 'Mixto';
 
       const profileData: Partial<ProfileCreateRequest> = {
-        display_name: nombreFinal,
+        first_name: firstName,
+        last_name: lastName,
         bio: biografia || undefined,
         occupation: occupationValue || undefined,
         university:
@@ -341,11 +706,14 @@ export const EditProfileScreen: React.FC = () => {
           schedule: scheduleId ? lifestyleLabelById.get(scheduleId) : undefined,
           cleaning: cleaningId ? lifestyleLabelById.get(cleaningId) : undefined,
           guests: guestsId ? lifestyleLabelById.get(guestsId) : undefined,
+          smoking: smokingId ? lifestyleLabelById.get(smokingId) : undefined,
+          pets: petsId ? lifestyleLabelById.get(petsId) : undefined,
         },
         housing_situation: housingSituation,
-        preferred_zones: zonas,
-        budget_min: presupuestoMinValue,
-        budget_max: presupuestoMaxValue,
+        is_seeking: isSeeking,
+        preferred_zones: preferredZones,
+        desired_roommates_min: shouldSaveRoommates ? finalRoommatesMin : undefined,
+        desired_roommates_max: shouldSaveRoommates ? finalRoommatesMax : undefined,
       };
 
       if (warnings.length > 0) {
@@ -353,12 +721,41 @@ export const EditProfileScreen: React.FC = () => {
       }
 
       await profileService.updateProfile(profileData);
+      if (shouldSaveZones && preferredZones.length > 0) {
+        try {
+          const buckets: Record<string, string[]> = {};
+          preferredZones.forEach((zoneId) => {
+            const cityId =
+              zoneCityById[zoneId] ??
+              (nextCities.length === 1 ? nextCities[0] : null);
+            if (!cityId) return;
+            if (!buckets[cityId]) {
+              buckets[cityId] = [];
+            }
+            buckets[cityId].push(zoneId);
+          });
+          await Promise.all(
+            Object.entries(buckets).map(([cityId, placeIds]) =>
+              locationService.trackPlaceSearches(cityId, placeIds)
+            )
+          );
+        } catch (error) {
+          console.warn('[EditProfile] Error guardando contadores:', error);
+        }
+      }
       await setFilters({
         housingSituation,
         gender: filters.gender,
-        budgetMin: presupuestoMinValue,
-        budgetMax: presupuestoMaxValue,
-        zones: zonas,
+        budgetMin: filters.budgetMin,
+        budgetMax: filters.budgetMax,
+        roommatesMin: shouldSaveRoommates
+          ? finalRoommatesMin
+          : DEFAULT_ROOMMATES_MIN,
+        roommatesMax: shouldSaveRoommates
+          ? finalRoommatesMax
+          : DEFAULT_ROOMMATES_MAX,
+        cities: shouldSaveZones ? nextCities : [],
+        zones: preferredZones,
         lifestyle: estiloVida,
         interests: interesesFinal,
       });
@@ -384,7 +781,7 @@ export const EditProfileScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
@@ -393,62 +790,100 @@ export const EditProfileScreen: React.FC = () => {
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + spacing.md, paddingBottom: spacing.md },
+        ]}
+      >
         <BlurView
           blurType="light"
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
-        <View style={styles.headerFill} />
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={22} color="#111827" />
-        </TouchableOpacity>
+        <View style={[styles.headerFill, headerFillStyle]} />
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={({ pressed }) => pressed && headerIconPressedStyle}
+        >
+          <Ionicons name="arrow-back" size={22} color={theme.colors.text} />
+        </Pressable>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Editar perfil
         </Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.headerIconButton}
+          <Pressable
+            style={({ pressed }) => [
+              styles.headerIconButton,
+              headerIconStyle,
+              pressed && headerIconPressedStyle,
+            ]}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="close" size={18} color="#111827" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerIconButton}
+            <Ionicons name="close" size={18} color={theme.colors.text} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.headerIconButton,
+              headerIconStyle,
+              pressed && headerIconPressedStyle,
+            ]}
             onPress={handleSave}
             disabled={loading}
           >
-            <Ionicons name="checkmark" size={20} color="#7C3AED" />
-          </TouchableOpacity>
+            <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+          </Pressable>
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarShell}>
-            {primaryPhoto?.signedUrl ? (
-              <Image source={{ uri: primaryPhoto.signedUrl }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={28} color="#9CA3AF" />
+        <KeyboardAwareScrollView
+          ref={scrollRef}
+          style={styles.content}
+          contentContainerStyle={{
+            paddingBottom: Math.max(insets.bottom, 24) + 24,
+          }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          enableOnAndroid={true}
+          enableAutomaticScroll={true}
+          extraScrollHeight={120}
+          extraHeight={150}
+          onScroll={(event) => {
+            scrollYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
+        >
+        <View>
+            <View style={styles.profileHeader}>
+              <View style={styles.avatarShell}>
+                {primaryPhoto?.signedUrl ? (
+                  <Image
+                    source={{ uri: primaryPhoto.signedUrl }}
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Ionicons name="person" size={28} color={theme.colors.textTertiary} />
+                  </View>
+                )}
+                <TouchableOpacity style={styles.avatarEdit} onPress={handleAddPhoto}>
+                  <Ionicons name="create-outline" size={16} color={theme.colors.text} />
+                </TouchableOpacity>
               </View>
-            )}
-            <TouchableOpacity style={styles.avatarEdit} onPress={handleAddPhoto}>
-              <Ionicons name="create-outline" size={16} color="#111827" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.profileHint}>Actualiza tu foto principal</Text>
-        </View>
+              <Text style={styles.profileHint}>Actualiza tu foto principal</Text>
+            </View>
 
         {/* Fotos de perfil */}
         <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitleMuted}>Fotos</Text>
-          <View style={styles.sectionCard}>
+          <Text style={[styles.sectionTitleMuted, { color: theme.colors.textSecondary }]}>
+            Fotos
+          </Text>
+          <View style={[styles.sectionCard, cardStyle]}>
           {photosLoading ? (
             <ActivityIndicator size="small" color="#7C3AED" />
           ) : (
@@ -498,7 +933,11 @@ export const EditProfileScreen: React.FC = () => {
             onPress={handleAddPhoto}
             disabled={photoUploading}
           >
-            <Ionicons name="images-outline" size={16} color="#111827" />
+            <Ionicons
+              name="images-outline"
+              size={16}
+              color={theme.colors.primary}
+            />
             <Text style={styles.editPhotosText}>Editar fotos</Text>
           </TouchableOpacity>
           </View>
@@ -506,8 +945,10 @@ export const EditProfileScreen: React.FC = () => {
 
         {/* Informacion Personal - solo campos que existen en profiles */}
         <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitleMuted}>Perfil</Text>
-          <View style={styles.sectionCard}>
+          <Text style={[styles.sectionTitleMuted, { color: theme.colors.textSecondary }]}>
+            Perfil
+          </Text>
+          <View style={[styles.sectionCard, cardStyle]}>
           <Input
             label="Nombre"
             value={nombre}
@@ -531,11 +972,13 @@ export const EditProfileScreen: React.FC = () => {
             ].map((option) => {
               const isActive = occupationType === option.id;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={option.id}
-                  style={[
+                  style={({ pressed }) => [
                     styles.switchButton,
-                    isActive && styles.switchButtonActive,
+                    chipBaseStyle,
+                    isActive && [styles.switchButtonActive, chipActiveStyle],
+                    pressed && chipPressedStyle,
                   ]}
                   onPress={() =>
                     setOccupationType(
@@ -546,12 +989,12 @@ export const EditProfileScreen: React.FC = () => {
                   <Text
                     style={[
                       styles.switchButtonText,
-                      isActive && styles.switchButtonTextActive,
+                      { color: isActive ? theme.colors.text : theme.colors.textMuted },
                     ]}
                   >
                     {option.label}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
@@ -583,18 +1026,305 @@ export const EditProfileScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Intereses */}
+        {/* Vivienda */}
         <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitleMuted}>Preferencias</Text>
-          <View style={styles.sectionCard}>
-          <Text style={styles.inlineLabel}>Intereses (obligatorio)</Text>
+          <Text style={[styles.sectionTitleMuted, { color: theme.colors.textSecondary }]}>
+            Vivienda
+          </Text>
+          <View style={[styles.sectionCard, cardStyle]}>
+          <View style={styles.situacionContainer}>
+            <Text style={styles.label}>Situacion actual</Text>
+            <View style={styles.situacionButtons}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.situacionButton,
+                  chipBaseStyle,
+                  situacionVivienda === 'busco_piso' &&
+                    [styles.situacionButtonActive, chipActiveStyle],
+                  pressed && chipPressedStyle,
+                ]}
+                onPress={() => setSituacionVivienda('busco_piso')}
+              >
+                <Text
+                  style={[
+                    styles.situacionButtonText,
+                    {
+                      color:
+                        situacionVivienda === 'busco_piso'
+                          ? theme.colors.text
+                          : theme.colors.textSecondary,
+                    },
+                  ]}
+                >
+                  Busco piso
+                </Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.situacionButton,
+                  chipBaseStyle,
+                  situacionVivienda === 'tengo_piso' &&
+                    [styles.situacionButtonActive, chipActiveStyle],
+                  pressed && chipPressedStyle,
+                ]}
+                onPress={() => setSituacionVivienda('tengo_piso')}
+              >
+                <Text
+                  style={[
+                    styles.situacionButtonText,
+                    {
+                      color:
+                        situacionVivienda === 'tengo_piso'
+                          ? theme.colors.text
+                          : theme.colors.textSecondary,
+                    },
+                  ]}
+                >
+                  Tengo piso
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+          {situacionVivienda === 'tengo_piso' ? (
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleCopy}>
+                <Text style={styles.toggleLabel}>Tambien busco piso</Text>
+                <Text style={styles.toggleHint}>
+                  Activa esto si quieres aparecer como buscador de piso.
+                </Text>
+              </View>
+              <Switch
+                value={isAlsoSeeking}
+                onValueChange={(value) => {
+                  setIsAlsoSeeking(value);
+                  if (situacionVivienda === 'tengo_piso') {
+                    setFilters({
+                      ...filters,
+                      housingSituation: value ? 'any' : 'seeking',
+                    });
+                  }
+                }}
+                trackColor={{
+                  false: theme.colors.glassBorderSoft,
+                  true: theme.colors.primaryMuted,
+                }}
+                thumbColor={
+                  isAlsoSeeking ? theme.colors.primary : theme.colors.textTertiary
+                }
+                ios_backgroundColor={theme.colors.glassBorderSoft}
+              />
+            </View>
+          ) : null}
+          {showZonePreferences ? (
+            <>
+              <Input
+                label="Buscar ciudad"
+                value={cityQuery}
+                onChangeText={setCityQuery}
+                onFocus={handleInputFocus}
+                placeholder="Escribe al menos 2 letras"
+                style={pillInputStyle}
+              />
+              {showCityOptions ? (
+                <>
+                  {isLoadingCities ? (
+                    <Text style={styles.searchHint}>Cargando ciudades...</Text>
+                  ) : null}
+                  <ChipGroup
+                    label="Ciudad de interes"
+                    options={cityOptions}
+                    selectedIds={selectedCities.map((city) => city.id)}
+                    onSelect={(id) => {
+                      const isSelected = selectedCities.some(
+                        (item) => item.id === id
+                      );
+                      const picked = cityOptions.find((item) => item.id === id);
+                      const nextCities = isSelected
+                        ? selectedCities.filter((city) => city.id !== id)
+                        : picked
+                        ? [...selectedCities, picked]
+                        : selectedCities;
+                      const nextZones = isSelected
+                        ? zonas.filter((zoneId) => zoneCityById[zoneId] !== id)
+                        : zonas;
+                      setSelectedCities(nextCities);
+                      setZonas(nextZones);
+                      if (isSelected) {
+                        setSelectedPlaces((prev) =>
+                          prev.filter((item) => zoneCityById[item.id] !== id)
+                        );
+                      }
+                      if (!isSelected) {
+                        setActiveCityId(id);
+                      } else if (activeCityId === id) {
+                        setActiveCityId(nextCities[0]?.id ?? null);
+                      }
+                      setCityQuery('');
+                      setPlaceQuery('');
+                      setPlaces([]);
+                      setTopPlaces([]);
+                    }}
+                    multiline
+                  />
+                </>
+              ) : (
+                <Text style={styles.searchHint}>
+                  Escribe para buscar ciudades.
+                </Text>
+              )}
+              {selectedCities.length > 0 ? (
+                <>
+                  <Text style={styles.inlineLabel}>Ciudad para buscar zonas</Text>
+                  <ChipGroup
+                    options={selectedCities}
+                    selectedIds={activeCityId ? [activeCityId] : []}
+                    onSelect={(id) => {
+                      setActiveCityId((prev) => (prev === id ? prev : id));
+                      setPlaceQuery('');
+                      setPlaces([]);
+                      setTopPlaces([]);
+                    }}
+                    multiline
+                  />
+                  <Input
+                    label="Buscar zona"
+                    value={placeQuery}
+                    onChangeText={setPlaceQuery}
+                    onFocus={handleInputFocus}
+                    placeholder="Escribe al menos 2 letras"
+                    style={pillInputStyle}
+                  />
+                  {isLoadingPlaces ? (
+                    <Text style={styles.searchHint}>Cargando zonas...</Text>
+                  ) : null}
+                  <ChipGroup
+                    label={
+                      placeQuery.trim().length >= 2 ? 'Resultados' : 'Sugerencias'
+                    }
+                    options={placeOptions}
+                    selectedIds={zonas}
+                    onSelect={(id) => {
+                      if (!activeCityId) return;
+                      const isSelected = zonas.includes(id);
+                      const next = isSelected
+                        ? zonas.filter((zona) => zona !== id)
+                        : [...zonas, id];
+                      setZonas(next);
+                      if (isSelected) {
+                        setSelectedPlaces((prev) =>
+                          prev.filter((item) => item.id !== id)
+                        );
+                        return;
+                      }
+                      const selected =
+                        placeOptions.find((item) => item.id === id) || null;
+                      if (selected) {
+                        setSelectedPlaces((prev) => {
+                          if (prev.some((item) => item.id === selected.id)) {
+                            return prev;
+                          }
+                          return [...prev, selected];
+                        });
+                        setZoneCityById((prev) => ({
+                          ...prev,
+                          [id]: activeCityId,
+                        }));
+                      }
+                    }}
+                    multiline
+                  />
+                </>
+              ) : null}
+            </>
+          ) : null}
+          {showZonePreferences ? (
+            <View style={styles.budgetContainer}>
+              <Text style={styles.label}>Companeros deseados</Text>
+              <View style={styles.budgetValues}>
+                <Text style={styles.budgetValue}>Min: {roommatesMin}</Text>
+                <Text style={styles.budgetValue}>Max: {roommatesMax}</Text>
+              </View>
+              <RoommatesRange
+                styles={styles}
+                minValue={roommatesMin}
+                maxValue={roommatesMax}
+                onChangeMin={setRoommatesMin}
+                onChangeMax={setRoommatesMax}
+              />
+            </View>
+          ) : null}
+          </View>
+        </View>
+
+        {/* Preferencias */}
+        <View style={styles.sectionBlock}>
+          <Text style={[styles.sectionTitleMuted, { color: theme.colors.textSecondary }]}>
+            Preferencias
+          </Text>
+          <View style={[styles.sectionCard, cardStyle]}>
+          <Text style={[styles.inlineLabel, { color: theme.colors.textSecondary }]}>
+            Estilo de vida
+          </Text>
+          {ESTILO_VIDA_GROUPS.map((group) => (
+            <View key={group.id}>
+              <Text style={[styles.inlineLabel, { color: theme.colors.textSecondary }]}>
+                {group.label}
+              </Text>
+              <View style={styles.checkGrid}>
+                {group.options.map((option) => {
+                  const isActive = estiloVida.includes(option.id);
+                  return (
+                    <Pressable
+                      key={option.id}
+                      style={({ pressed }) => [
+                        styles.checkItem,
+                        chipBaseStyle,
+                        isActive && [styles.checkItemActive, chipActiveStyle],
+                        pressed && chipPressedStyle,
+                      ]}
+                      onPress={() => toggleEstiloVida(option.id)}
+                    >
+                      <View
+                        style={[
+                          styles.checkBox,
+                          {
+                            borderColor: isActive
+                              ? theme.colors.primary
+                              : theme.colors.border,
+                            backgroundColor: isActive
+                              ? theme.colors.primary
+                              : theme.colors.surfaceLight,
+                          },
+                        ]}
+                      >
+                        {isActive ? (
+                          <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                        ) : null}
+                      </View>
+                      <Text style={[styles.checkLabel, { color: theme.colors.text }]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+          <Text style={[styles.inlineLabel, { color: theme.colors.textSecondary }]}>
+            Intereses (obligatorio)
+          </Text>
           <View style={styles.checkGrid}>
             {INTERESES_OPTIONS.map((option) => {
               const isActive = intereses.includes(option.id);
               return (
-                <TouchableOpacity
+                <Pressable
                   key={option.id}
-                  style={[styles.checkItem, isActive && styles.checkItemActive]}
+                  style={({ pressed }) => [
+                    styles.checkItem,
+                    chipBaseStyle,
+                    isActive && [styles.checkItemActive, chipActiveStyle],
+                    pressed && chipPressedStyle,
+                  ]}
                   onPress={() =>
                     setIntereses((prev) =>
                       prev.includes(option.id)
@@ -606,160 +1336,62 @@ export const EditProfileScreen: React.FC = () => {
                   <View
                     style={[
                       styles.checkBox,
-                      isActive && styles.checkBoxActive,
+                      {
+                        borderColor: isActive
+                          ? theme.colors.primary
+                          : theme.colors.border,
+                        backgroundColor: isActive
+                          ? theme.colors.primary
+                          : theme.colors.surfaceLight,
+                      },
                     ]}
                   >
                     {isActive ? (
                       <Ionicons name="checkmark" size={14} color="#FFFFFF" />
                     ) : null}
                   </View>
-                  <Text
-                    style={[
-                      styles.checkLabel,
-                      isActive && styles.checkLabelActive,
-                    ]}
-                  >
+                  <Text style={[styles.checkLabel, { color: theme.colors.text }]}>
                     {option.label}
                   </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <Text style={styles.inlineLabel}>Estilo de vida</Text>
-          <View style={styles.checkGrid}>
-            {ESTILO_VIDA_OPTIONS.map((option) => {
-              const isActive = estiloVida.includes(option.id);
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[styles.checkItem, isActive && styles.checkItemActive]}
-                  onPress={() =>
-                    setEstiloVida((prev) =>
-                      prev.includes(option.id)
-                        ? prev.filter((interes) => interes !== option.id)
-                        : [...prev, option.id]
-                    )
-                  }
-                >
-                  <View
-                    style={[
-                      styles.checkBox,
-                      isActive && styles.checkBoxActive,
-                    ]}
-                  >
-                    {isActive ? (
-                      <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                    ) : null}
-                  </View>
-                  <Text
-                    style={[
-                      styles.checkLabel,
-                      isActive && styles.checkLabelActive,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
           </View>
         </View>
 
-        {/* Situacion de Vivienda */}
         <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitleMuted}>Vivienda</Text>
-          <View style={styles.sectionCard}>
-          <View style={styles.situacionContainer}>
-            <Text style={styles.label}>Situacion actual</Text>
-            <View style={styles.situacionButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.situacionButton,
-                  situacionVivienda === 'busco_piso' &&
-                    styles.situacionButtonActive,
-                ]}
-                onPress={() => setSituacionVivienda('busco_piso')}
-              >
-                <Text
-                  style={[
-                    styles.situacionButtonText,
-                    situacionVivienda === 'busco_piso' &&
-                      styles.situacionButtonTextActive,
-                  ]}
-                >
-                  Busco piso
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.situacionButton,
-                  situacionVivienda === 'tengo_piso' &&
-                    styles.situacionButtonActive,
-                ]}
-                onPress={() => setSituacionVivienda('tengo_piso')}
-              >
-                <Text
-                  style={[
-                    styles.situacionButtonText,
-                    situacionVivienda === 'tengo_piso' &&
-                      styles.situacionButtonTextActive,
-                  ]}
-                >
-                  Tengo piso
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.budgetContainer}>
-            <Text style={styles.label}>Presupuesto mensual</Text>
-            <View style={styles.budgetValues}>
-              <Text style={styles.budgetValue}>
-                Min: {presupuestoMin} EUR
+          <View style={[styles.sectionCard, cardStyle]}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.deleteProfileButton,
+                pressed && styles.deleteProfileButtonPressed,
+              ]}
+              onPress={handleDeleteProfile}
+              disabled={deletingProfile}
+            >
+              <Text style={styles.deleteProfileButtonText}>
+                {deletingProfile ? 'Eliminando perfil...' : 'Eliminar perfil'}
               </Text>
-              <Text style={styles.budgetValue}>
-                Max: {presupuestoMax} EUR
-              </Text>
-            </View>
-            <BudgetRange
-              minValue={presupuestoMin}
-              maxValue={presupuestoMax}
-              onChangeMin={setPresupuestoMin}
-              onChangeMax={setPresupuestoMax}
-            />
-          </View>
-          <ChipGroup
-            label="Zonas de interes"
-            options={ZONAS_OPTIONS}
-            selectedIds={zonas}
-            onSelect={(id) => {
-              setZonas((prev) =>
-                prev.includes(id)
-                  ? prev.filter((zona) => zona !== id)
-                  : [...prev, id]
-              );
-            }}
-            multiline
-          />
+            </Pressable>
           </View>
         </View>
-      </ScrollView>
+        </View>
+      </KeyboardAwareScrollView>
     </View>
   );
 };
 
-
-const BudgetRange: React.FC<{
+const RoommatesRange: React.FC<{
+  styles: typeof styles;
   minValue: number;
   maxValue: number;
   onChangeMin: (value: number) => void;
   onChangeMax: (value: number) => void;
-}> = ({ minValue, maxValue, onChangeMin, onChangeMax }) => {
+}> = ({ styles: screenStyles, minValue, maxValue, onChangeMin, onChangeMax }) => {
   const [trackWidth, setTrackWidth] = useState(0);
-  const minStartRef = React.useRef(0);
-  const maxStartRef = React.useRef(0);
-  const minValueRef = React.useRef(minValue);
-  const maxValueRef = React.useRef(maxValue);
+  const minValueRef = useRef(minValue);
+  const maxValueRef = useRef(maxValue);
 
   useEffect(() => {
     minValueRef.current = minValue;
@@ -768,84 +1400,88 @@ const BudgetRange: React.FC<{
 
   const valueToX = (value: number) => {
     if (!trackWidth) return 0;
-    return ((value - BUDGET_MIN) / (BUDGET_MAX - BUDGET_MIN)) * trackWidth;
+    return ((value - ROOMMATES_MIN) / (ROOMMATES_MAX - ROOMMATES_MIN)) * trackWidth;
   };
 
   const xToValue = (x: number) => {
-    const raw = BUDGET_MIN + (x / trackWidth) * (BUDGET_MAX - BUDGET_MIN);
-    return clamp(snapToStep(raw), BUDGET_MIN, BUDGET_MAX);
+    if (!trackWidth) return ROOMMATES_MIN;
+    const raw =
+      ROOMMATES_MIN + (x / trackWidth) * (ROOMMATES_MAX - ROOMMATES_MIN);
+    return clamp(snapToRoommatesStep(raw), ROOMMATES_MIN, ROOMMATES_MAX);
   };
 
-  const minPanResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        minStartRef.current = valueToX(minValueRef.current);
-      },
-      onPanResponderMove: (_, gesture) => {
-        if (!trackWidth) return;
-        const nextX = clamp(
-          minStartRef.current + gesture.dx,
-          0,
-          valueToX(maxValueRef.current)
-        );
-        onChangeMin(xToValue(nextX));
-      },
-    })
-  ).current;
-
-  const maxPanResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        maxStartRef.current = valueToX(maxValueRef.current);
-      },
-      onPanResponderMove: (_, gesture) => {
-        if (!trackWidth) return;
-        const nextX = clamp(
-          maxStartRef.current + gesture.dx,
-          valueToX(minValueRef.current),
-          trackWidth
-        );
-        onChangeMax(xToValue(nextX));
-      },
-    })
-  ).current;
+  const activeThumbRef = useRef<'min' | 'max' | null>(null);
 
   const minX = valueToX(minValue);
   const maxX = valueToX(maxValue);
-  const ticks = Math.floor((BUDGET_MAX - BUDGET_MIN) / BUDGET_STEP);
 
   return (
     <View
-      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+      style={screenStyles.sliderContainer}
+      onLayout={(event) => {
+        const width = event.nativeEvent.layout.width;
+        setTrackWidth(width);
+      }}
+      pointerEvents="box-only"
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={(event) => {
+        if (!trackWidth) return;
+        const touchX = event.nativeEvent.locationX;
+        const minPos = valueToX(minValueRef.current);
+        const maxPos = valueToX(maxValueRef.current);
+        activeThumbRef.current =
+          Math.abs(touchX - minPos) <= Math.abs(touchX - maxPos) ? 'min' : 'max';
+      }}
+      onResponderMove={(event) => {
+        if (!trackWidth || !activeThumbRef.current) return;
+        const nextX = clamp(event.nativeEvent.locationX, 0, trackWidth);
+        if (activeThumbRef.current === 'min') {
+          const bounded = clamp(nextX, 0, valueToX(maxValueRef.current));
+          onChangeMin(xToValue(bounded));
+        } else {
+          const bounded = clamp(nextX, valueToX(minValueRef.current), trackWidth);
+          onChangeMax(xToValue(bounded));
+        }
+      }}
+      onResponderRelease={() => {
+        activeThumbRef.current = null;
+      }}
+      onResponderTerminate={() => {
+        activeThumbRef.current = null;
+      }}
     >
-      <View style={styles.sliderTrack} />
+      <View style={screenStyles.sliderTrack} />
       <View
         style={[
-          styles.sliderTrackActive,
+          screenStyles.sliderTrackActive,
           { left: minX, width: Math.max(0, maxX - minX) },
         ]}
       />
       <View
-        style={[styles.sliderThumb, { left: minX - 10 }]}
-        {...minPanResponder.panHandlers}
+        style={[screenStyles.sliderThumb, { left: minX - 10 }]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       />
       <View
-        style={[styles.sliderThumb, { left: maxX - 10 }]}
-        {...maxPanResponder.panHandlers}
+        style={[screenStyles.sliderThumb, { left: maxX - 10 }]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       />
-      <View style={styles.sliderTicks}>
-        {Array.from({ length: ticks + 1 }).map((_, index) => (
-          <View key={`tick-${index}`} style={styles.sliderTick} />
-        ))}
+      <View style={screenStyles.sliderTicks}>
+        {Array.from({ length: ROOMMATES_MAX - ROOMMATES_MIN + 1 }).map(
+          (_, index) => (
+            <View key={`tick-roommates-${index}`} style={screenStyles.sliderTick} />
+          )
+        )}
       </View>
-      <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>0</Text>
-        <Text style={styles.sliderLabel}>600</Text>
-        <Text style={styles.sliderLabel}>1200+</Text>
+      <View style={screenStyles.sliderLabels}>
+        <Text style={screenStyles.sliderLabel}>{ROOMMATES_MIN}</Text>
+        <Text style={screenStyles.sliderLabel}>
+          {Math.round((ROOMMATES_MIN + ROOMMATES_MAX) / 2)}
+        </Text>
+        <Text style={screenStyles.sliderLabel}>{ROOMMATES_MAX}+</Text>
       </View>
     </View>
   );
 };
+
 

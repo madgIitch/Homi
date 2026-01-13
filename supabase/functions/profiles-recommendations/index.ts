@@ -24,6 +24,8 @@ type RecommendationFilters = {
   housingSituation?: 'any' | 'seeking' | 'offering';
   budgetMin?: number;
   budgetMax?: number;
+  roommatesMin?: number;
+  roommatesMax?: number;
   zones?: string[];
   lifestyle?: string[];
   interests?: string[];
@@ -41,7 +43,10 @@ type RoomWithFlat = {
     gender_policy?: FlatGenderPolicy | null;
     district?: string | null;
     city?: string | null;
+    place_id?: string | null;
+    city_id?: string | null;
     rules?: string | null;
+    capacity_total?: number | null;
   } | null;
 };
 
@@ -110,7 +115,12 @@ function matchesFilters(
   if (
     filters.housingSituation &&
     filters.housingSituation !== 'any' &&
-    profile.housing_situation !== filters.housingSituation
+    profile.housing_situation !== filters.housingSituation &&
+    !(
+      filters.housingSituation === 'seeking' &&
+      profile.housing_situation === 'offering' &&
+      profile.is_seeking === true
+    )
   ) {
     return false;
   }
@@ -118,7 +128,9 @@ function matchesFilters(
   if (filters.zones && filters.zones.length > 0) {
     const profileZones = profile.preferred_zones ?? [];
     const matchesZone = profileZones.some((zone) => filters.zones?.includes(zone));
-    if (!matchesZone) return false;
+    if (!matchesZone) {
+      // Soft filter: do not exclude, just lower relevance later.
+    }
   }
 
   if (filters.interests && filters.interests.length > 0) {
@@ -159,6 +171,22 @@ function matchesFilters(
     if (profileMin == null && profileMax == null) return false;
     const min = typeof filters.budgetMin === 'number' ? filters.budgetMin : -Infinity;
     const max = typeof filters.budgetMax === 'number' ? filters.budgetMax : Infinity;
+    const effectiveMin = profileMin ?? min;
+    const effectiveMax = profileMax ?? max;
+    if (effectiveMax < min || effectiveMin > max) return false;
+  }
+
+  const hasRoommatesFilter =
+    typeof filters.roommatesMin === 'number' ||
+    typeof filters.roommatesMax === 'number';
+  if (hasRoommatesFilter) {
+    const profileMin = profile.desired_roommates_min ?? null;
+    const profileMax = profile.desired_roommates_max ?? null;
+    if (profileMin == null && profileMax == null) return false;
+    const min =
+      typeof filters.roommatesMin === 'number' ? filters.roommatesMin : -Infinity;
+    const max =
+      typeof filters.roommatesMax === 'number' ? filters.roommatesMax : Infinity;
     const effectiveMin = profileMin ?? min;
     const effectiveMax = profileMax ?? max;
     if (effectiveMax < min || effectiveMin > max) return false;
@@ -278,9 +306,9 @@ function matchesRoomForProfile(profile: Profile, room: RoomWithFlat): boolean {
 
   const zones = profile.preferred_zones ?? [];
   if (zones.length > 0) {
-    const district = room.flat?.district ?? null;
-    if (district && !zones.includes(district)) {
-      return false;
+    const placeId = room.flat?.place_id ?? null;
+    if (placeId && !zones.includes(placeId)) {
+      // Soft filter: keep profile, but it will be ranked lower elsewhere.
     }
   }
 
@@ -339,7 +367,8 @@ async function getSignedAvatarUrl(avatarUrl: string): Promise<string | null> {
 
 function calculateProfileCompatibilityScore(
   seekerProfile: Profile,
-  targetProfile: Profile
+  targetProfile: Profile,
+  filters?: RecommendationFilters
 ): number {
   let score = 0;
 
@@ -358,12 +387,19 @@ function calculateProfileCompatibilityScore(
     score += seekerProfile.smoker === targetProfile.smoker ? 0.2 : 0.05;
   }
 
+  if (filters?.zones && filters.zones.length > 0) {
+    const targetZones = targetProfile.preferred_zones ?? [];
+    const matchesZone = targetZones.some((zone) => filters.zones?.includes(zone));
+    if (matchesZone) score += 0.2;
+  }
+
   return Math.min(1, Math.max(0, score));
 }
 
 function generateProfileMatchReasons(
   seekerProfile: Profile,
-  targetProfile: Profile
+  targetProfile: Profile,
+  filters?: RecommendationFilters
 ): string[] {
   const reasons: string[] = [];
 
@@ -402,6 +438,14 @@ function generateProfileMatchReasons(
     }
   }
 
+  if (filters?.zones && filters.zones.length > 0) {
+    const targetZones = targetProfile.preferred_zones ?? [];
+    const matchesZone = targetZones.some((zone) => filters.zones?.includes(zone));
+    if (matchesZone) {
+      reasons.push('Zona en comun');
+    }
+  }
+
   return reasons;
 }
 
@@ -419,7 +463,7 @@ const handler = withAuth(
 
       const { data: seekerProfile, error: seekerError } = await supabaseClient
         .from('profiles')
-        .select('*')
+        .select('*, users!profiles_id_fkey(first_name, last_name)')
         .eq('id', userId)
         .single();
 
@@ -435,7 +479,7 @@ const handler = withAuth(
 
       const { data: profiles, error: profilesError } = await supabaseClient
         .from('profiles')
-        .select('*, users!profiles_id_fkey(birth_date)')
+        .select('*, users!profiles_id_fkey(birth_date, first_name, last_name)')
         .neq('id', userId);
 
       if (profilesError) {
@@ -449,23 +493,87 @@ const handler = withAuth(
         );
       }
 
+      if (seekerProfile.is_searchable === false) {
+        return new Response(
+          JSON.stringify({ recommendations: [] }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       const recommendations: RoomRecommendation[] = [];
 
       const normalizedProfiles = (profiles || []).map((row) => {
         const { users, ...profileData } = row as Profile & {
-          users?: { birth_date?: string | null };
+          users?: {
+            birth_date?: string | null;
+            first_name?: string | null;
+            last_name?: string | null;
+          };
         };
         return {
           ...profileData,
-          birth_date: users?.birth_date ?? null,
+          birth_date: users?.birth_date ?? profileData.birth_date ?? null,
+          first_name: users?.first_name ?? profileData.first_name ?? null,
+          last_name: users?.last_name ?? profileData.last_name ?? null,
         } as Profile;
       });
 
-      let filteredProfiles = normalizedProfiles.filter((profile) =>
-        matchesFilters(profile, filters, { skipBudgetForOffering: true })
-      );
+      let filteredProfiles = normalizedProfiles
+        .filter((profile) => profile.is_searchable !== false)
+        .filter((profile) =>
+          matchesFilters(profile, filters, { skipBudgetForOffering: true })
+        );
+      const { data: acceptedMatches, error: matchesError } = await supabaseClient
+        .from('matches')
+        .select('user_a_id, user_b_id, status')
+        .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+      if (matchesError) {
+        console.error(
+          '[profiles-recommendations] Error loading matches:',
+          matchesError
+        );
+      } else if (acceptedMatches && acceptedMatches.length > 0) {
+        const acceptedIds = new Set<string>();
+        acceptedMatches.forEach((match) => {
+          const isOutgoingPending =
+            match.status === 'pending' && match.user_a_id === userId;
+          const isExcludedStatus =
+            match.status === 'accepted' || match.status === 'rejected';
+          if (!isExcludedStatus && !isOutgoingPending) return;
+          if (match.user_a_id) acceptedIds.add(match.user_a_id);
+          if (match.user_b_id) acceptedIds.add(match.user_b_id);
+        });
+        acceptedIds.delete(userId);
+        filteredProfiles = filteredProfiles.filter(
+          (profile) => !acceptedIds.has(profile.id)
+        );
+      }
+      const { data: rejections, error: rejectionsError } = await supabaseClient
+        .from('swipe_rejections')
+        .select('rejected_profile_id')
+        .eq('user_id', userId);
+      if (rejectionsError) {
+        console.error(
+          '[profiles-recommendations] Error loading swipe rejections:',
+          rejectionsError
+        );
+      } else if (rejections && rejections.length > 0) {
+        const rejectedIds = new Set(
+          rejections.map((item) => item.rejected_profile_id)
+        );
+        filteredProfiles = filteredProfiles.filter(
+          (profile) => !rejectedIds.has(profile.id)
+        );
+      }
 
-      if (seekerProfile.housing_situation === 'offering') {
+      const shouldUseOfferingFlow =
+        seekerProfile.housing_situation === 'offering' &&
+        !(seekerProfile.is_seeking === true && filters?.housingSituation === 'seeking');
+
+      if (shouldUseOfferingFlow) {
         filteredProfiles = normalizedProfiles;
         const { data: rooms, error: roomsError } = await supabaseClient
           .from('rooms')
@@ -475,7 +583,7 @@ const handler = withAuth(
             owner_id,
             price_per_month,
             is_available,
-            flat:flats(gender_policy, district, city, rules)
+            flat:flats(gender_policy, district, city, rules, place_id, city_id)
           `
           )
           .eq('owner_id', userId)
@@ -513,24 +621,38 @@ const handler = withAuth(
         const hasBudgetFilter =
           typeof filters?.budgetMin === 'number' ||
           typeof filters?.budgetMax === 'number';
+        const hasRoommatesFilter =
+          typeof filters?.roommatesMin === 'number' ||
+          typeof filters?.roommatesMax === 'number';
         const rulePreferences = filters?.rules ?? {};
         const hasRuleFilters = Object.values(rulePreferences).some(
           (value) => value && value !== 'flexible'
         );
 
         if (
-          filters?.housingSituation === 'offering' &&
-          (hasBudgetFilter || hasRuleFilters)
+          (filters?.housingSituation === 'offering' ||
+            filters?.housingSituation === 'any') &&
+          (hasBudgetFilter || hasRuleFilters || hasRoommatesFilter)
         ) {
           const min =
             typeof filters.budgetMin === 'number' ? filters.budgetMin : 0;
           const max =
             typeof filters.budgetMax === 'number' ? filters.budgetMax : 1000000;
+          const roommatesMin =
+            typeof filters.roommatesMin === 'number'
+              ? filters.roommatesMin
+              : 0;
+          const roommatesMax =
+            typeof filters.roommatesMax === 'number'
+              ? filters.roommatesMax
+              : 1000000;
           const ownerIds = filteredProfiles.map((profile) => profile.id);
           if (ownerIds.length > 0) {
             let roomsQuery = supabaseClient
               .from('rooms')
-              .select('id, owner_id, price_per_month, flat:flats(rules)')
+              .select(
+                'id, owner_id, price_per_month, flat:flats(rules, capacity_total)'
+              )
               .in('owner_id', ownerIds)
               .eq('is_available', true);
 
@@ -538,6 +660,11 @@ const handler = withAuth(
               roomsQuery = roomsQuery
                 .gte('price_per_month', min)
                 .lte('price_per_month', max);
+            }
+            if (hasRoommatesFilter) {
+              roomsQuery = roomsQuery
+                .gte('flat.capacity_total', roommatesMin)
+                .lte('flat.capacity_total', roommatesMax);
             }
 
             const { data: roomsInRange, error: roomsError } = await roomsQuery;
@@ -579,12 +706,14 @@ const handler = withAuth(
 
         const compatibilityScore = calculateProfileCompatibilityScore(
           seekerProfile,
-          profile
+          profile,
+          filters
         );
 
         const matchReasons = generateProfileMatchReasons(
           seekerProfile,
-          profile
+          profile,
+          filters
         );
 
         recommendations.push({

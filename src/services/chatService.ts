@@ -3,10 +3,12 @@ import { API_CONFIG } from '../config/api';
 import { authService } from './authService';
 import type { Chat, Match, Message, MessageStatus } from '../types/chat';
 import type { Profile } from '../types/profile';
+import { getUserName } from '../utils/name';
 
 type ApiProfile = {
   id: string;
-  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   avatar_url?: string | null;
   bio?: string | null;
   occupation?: string | null;
@@ -23,7 +25,11 @@ type ApiProfile = {
   budget_min?: number | null;
   budget_max?: number | null;
   birth_date?: string | null;
-  users?: { birth_date?: string | null } | null;
+  users?: {
+    birth_date?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null;
   updated_at?: string | null;
 };
 
@@ -76,7 +82,6 @@ const mapApiProfileToProfile = (profile?: ApiProfile | null): Profile | null => 
   return {
     id: profile.id,
     user_id: profile.id,
-    display_name: profile.display_name ?? null,
     bio: profile.bio ?? null,
     occupation: profile.occupation ?? null,
     university: profile.university ?? null,
@@ -88,6 +93,8 @@ const mapApiProfileToProfile = (profile?: ApiProfile | null): Profile | null => 
     budget_min: profile.budget_min ?? null,
     budget_max: profile.budget_max ?? null,
     birth_date: profile.users?.birth_date ?? profile.birth_date ?? null,
+    first_name: profile.users?.first_name ?? profile.first_name ?? null,
+    last_name: profile.users?.last_name ?? profile.last_name ?? null,
     avatar_url: resolveAvatarUrl(profile.avatar_url ?? undefined),
     created_at: profile.updated_at ?? new Date().toISOString(),
     updated_at: profile.updated_at ?? new Date().toISOString(),
@@ -157,9 +164,12 @@ class ChatService {
       return {
         id: match.id,
         profileId: otherProfile?.id ?? '',
-        name: otherProfile?.display_name ?? 'Usuario',
+        name: getUserName(otherProfile, 'Usuario'),
         avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
         status: match.status as Match['status'],
+        userAId: match.user_a_id,
+        userBId: match.user_b_id,
+        isOutgoing: Boolean(isUserA),
       };
     });
   }
@@ -196,7 +206,7 @@ class ChatService {
         return {
           id: chat.id,
           matchId: chat.match_id,
-          name: otherProfile?.display_name ?? 'Usuario',
+          name: getUserName(otherProfile, 'Usuario'),
           avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
           lastMessage: lastMessage?.text ?? '',
           lastMessageAt: lastMessage?.createdAt ?? formatTime(chat.updated_at),
@@ -240,7 +250,7 @@ class ChatService {
     return {
       id: chat.id,
       matchId: chat.match_id,
-      name: otherProfile?.display_name ?? 'Usuario',
+      name: getUserName(otherProfile, 'Usuario'),
       avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
       lastMessage: '',
       lastMessageAt: formatTime(chat.updated_at),
@@ -280,7 +290,7 @@ class ChatService {
     return {
       id: chat.id,
       matchId: chat.match_id,
-      name: otherProfile?.display_name ?? 'Usuario',
+      name: getUserName(otherProfile, 'Usuario'),
       avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
       lastMessage: '',
       lastMessageAt: formatTime(chat.updated_at),
@@ -321,7 +331,7 @@ class ChatService {
     return {
       id: chat.id,
       matchId: chat.match_id,
-      name: otherProfile?.display_name ?? 'Usuario',
+      name: getUserName(otherProfile, 'Usuario'),
       avatarUrl: resolveAvatarUrl(otherProfile?.avatar_url ?? undefined),
       lastMessage: '',
       lastMessageAt: formatTime(chat.updated_at),

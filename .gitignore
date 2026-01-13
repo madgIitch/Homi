@@ -66,6 +66,9 @@ yarn-error.log
 # testing
 /coverage
 
+# GeoJSON data exports
+/data/geojson/
+
 # Yarn
 .yarn/*
 !.yarn/patches
@@ -73,3 +76,7 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+data/geojson/spain-cities-areas.geojson
+data/geojson/spain-places.geojson
+data/geojson/spain-places.osm.pbf
+supabase/migrations

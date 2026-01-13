@@ -1,6 +1,15 @@
 // src/components/TextArea.tsx  
 import React from 'react';  
-import { TextInput, View, Text, StyleSheet, TextInputProps } from 'react-native';  
+import {
+  TextInput,
+  View,
+  Text,
+  StyleSheet,
+  TextInputProps,
+  StyleProp,
+  TextStyle,
+  ViewStyle,
+} from 'react-native';  
 import { useTheme } from '../theme/ThemeContext';  
   
 interface TextAreaProps extends TextInputProps {  
@@ -8,6 +17,9 @@ interface TextAreaProps extends TextInputProps {
   error?: string;  
   required?: boolean;  
   maxLength?: number;  
+  containerStyle?: StyleProp<ViewStyle>;  
+  inputStyle?: StyleProp<TextStyle>;  
+  labelStyle?: StyleProp<TextStyle>;  
 }  
   
 export const TextArea: React.FC<TextAreaProps> = ({  
@@ -15,19 +27,23 @@ export const TextArea: React.FC<TextAreaProps> = ({
   error,  
   required = false,  
   maxLength = 500,  
+  containerStyle,  
+  inputStyle,  
+  labelStyle,  
   ...props  
 }) => {  
   const theme = useTheme();  
   const [charCount, setCharCount] = React.useState(0);  
   
   return (  
-    <View style={styles.container}>  
+    <View style={[styles.container, containerStyle]}>  
       {label && (  
         <Text  
           style={[  
             theme.typography.label,  
             styles.label,  
             { color: theme.colors.text },  
+            labelStyle,  
           ]}  
         >  
           {label}  
@@ -45,9 +61,10 @@ export const TextArea: React.FC<TextAreaProps> = ({
             paddingHorizontal: theme.spacing.md,  
             paddingVertical: theme.spacing.md,  
             fontSize: theme.typography.body.fontSize,  
-            color: theme.colors.text,  
+            color: theme.colors.textStrong,  
             backgroundColor: theme.colors.glassSurface,  
           },  
+          inputStyle,  
         ]}  
         multiline  
         numberOfLines={4}  

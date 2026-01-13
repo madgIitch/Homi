@@ -32,7 +32,8 @@ async function getUserMatchIds(userId: string): Promise<string[]> {
   const { data, error } = await supabaseClient
     .from('matches')
     .select('id')
-    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+    .in('status', ['accepted', 'room_offer', 'room_assigned', 'room_declined']);
 
   if (error || !data) {
     return [];
@@ -40,6 +41,33 @@ async function getUserMatchIds(userId: string): Promise<string[]> {
 
   return data.map((row) => row.id);
 }
+
+async function getMatchById(matchId: string): Promise<MatchWithProfiles | null> {
+  const { data, error } = await supabaseClient
+    .from('matches')
+    .select(
+      `
+      id,
+      user_a_id,
+      user_b_id,
+      status
+    `
+    )
+    .eq('id', matchId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch match: ${error.message}`);
+  }
+
+  return (data as MatchWithProfiles) ?? null;
+}
+
+const isActiveMatchForUser = (match: MatchWithProfiles, userId: string) =>
+  ['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(
+    match.status
+  ) &&
+  (userId === match.user_a_id || userId === match.user_b_id);
 
 async function getUserChats(userId: string): Promise<Chat[]> {
   const matchIds = await getUserMatchIds(userId);
@@ -54,8 +82,8 @@ async function getUserChats(userId: string): Promise<Chat[]> {
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
-        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name))
       )
     `
     )
@@ -80,8 +108,8 @@ async function getChatByMatchId(
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
-        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name))
       )
     `
     )
@@ -100,6 +128,10 @@ async function getChatByMatchId(
     throw new Error('Unauthorized: You can only access chats you participate in');
   }
 
+  if (!['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(match.status)) {
+    return null;
+  }
+
   return data as Chat;
 }
 
@@ -111,8 +143,8 @@ async function getChatById(chatId: string, userId: string): Promise<Chat | null>
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
-        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name))
       )
     `
     )
@@ -131,6 +163,10 @@ async function getChatById(chatId: string, userId: string): Promise<Chat | null>
     throw new Error('Unauthorized: You can only access chats you participate in');
   }
 
+  if (!['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(match.status)) {
+    return null;
+  }
+
   return data as Chat;
 }
 
@@ -143,8 +179,8 @@ async function createChat(matchId: string): Promise<Chat> {
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
-        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name))
       )
     `
     )
@@ -168,8 +204,8 @@ async function getChatMessages(
       *,
       match:matches(
         *,
-        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date)),
-        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date))
+        user_a:profiles!matches_user_a_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name)),
+        user_b:profiles!matches_user_b_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name))
       )
     `
     )
@@ -188,12 +224,16 @@ async function getChatMessages(
     throw new Error('Unauthorized: You can only access chats you participate in');
   }
 
+  if (!['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(match.status)) {
+    throw new Error('Chat not available');
+  }
+
   const { data, error } = await supabaseClient
     .from('messages')
     .select(
       `
       *,
-      sender:profiles!messages_sender_id_fkey(*, users!profiles_id_fkey(birth_date))
+      sender:profiles!messages_sender_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name))
     `
     )
     .eq('chat_id', chatId)
@@ -221,7 +261,7 @@ async function sendMessage(
     .select(
       `
       *,
-      sender:profiles!messages_sender_id_fkey(*, users!profiles_id_fkey(birth_date))
+      sender:profiles!messages_sender_id_fkey(*, users!profiles_id_fkey(birth_date, first_name, last_name))
     `
     )
     .single();
@@ -327,17 +367,25 @@ const handler = withAuth(
         const body = await req.json();
         const type = url.searchParams.get('type');
 
-        if (type === 'chat') {
-          if (!body.match_id) {
-            return new Response(JSON.stringify({ error: 'match_id is required' }), {
-              status: 400,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-          }
+    if (type === 'chat') {
+      if (!body.match_id) {
+        return new Response(JSON.stringify({ error: 'match_id is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-          const chat = await createChat(body.match_id);
-          const response: ApiResponse<Chat> = { data: chat };
-          return new Response(JSON.stringify(response), {
+      const match = await getMatchById(body.match_id);
+      if (!match || !isActiveMatchForUser(match, userId)) {
+        return new Response(JSON.stringify({ error: 'Match not active' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const chat = await createChat(body.match_id);
+      const response: ApiResponse<Chat> = { data: chat };
+      return new Response(JSON.stringify(response), {
             status: 201,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });

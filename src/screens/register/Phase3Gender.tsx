@@ -1,10 +1,10 @@
 // src/screens/register/Phase3Gender.tsx  
-import React, { useState } from 'react';  
+import React, { useState, useMemo } from 'react';  
 import { View, Text, Alert, TouchableOpacity } from 'react-native';  
 import { Button } from '../../components/Button';  
 import { useTheme } from '../../theme/ThemeContext';  
 import type { Gender } from '../../types/gender';
-import { Phase3GenderStyles as styles } from '../../styles/screens';
+import { Phase3GenderStyles } from '../../styles/screens';
   
 interface Phase3GenderProps {  
   onNext: (gender: Gender) => void;  
@@ -17,7 +17,8 @@ export const Phase3Gender: React.FC<Phase3GenderProps> = ({
   onBack,  
   loading,  
 }) => {  
-  const theme = useTheme();  
+  const theme = useTheme();
+  const styles = useMemo(() => Phase3GenderStyles(theme), [theme]);  
   const [gender, setGender] = useState<Gender | null>(null);
   
   const handleNext = () => {  

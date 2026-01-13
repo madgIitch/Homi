@@ -24,6 +24,10 @@ export const TabBarIcon: React.FC<TabBarIconProps> = ({
         return focused ? 'person' : 'person-outline';  
       case 'chatbubbles':  
         return focused ? 'chatbubbles' : 'chatbubbles-outline';  
+      case 'receipt-outline':
+        return focused ? 'cash' : 'cash-outline';
+      case 'receipt':
+        return focused ? 'cash' : 'cash-outline';
       default:  
         return 'help-outline';  
     }  
@@ -41,6 +45,6 @@ export const TabBarIcon: React.FC<TabBarIconProps> = ({
   
 const styles = StyleSheet.create({  
   icon: {  
-    marginBottom: -3,  
+    marginBottom: 0,  
   },  
-});
+});  

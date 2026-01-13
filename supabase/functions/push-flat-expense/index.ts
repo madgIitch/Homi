@@ -26,8 +26,13 @@ interface PushTokenRow {
 
 interface ProfileRow {
   id: string;
-  display_name?: string | null;
   avatar_url?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  users?: {
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null;
 }
 
 interface FlatRow {
@@ -163,6 +168,12 @@ const resolveAvatarUrl = (avatarUrl?: string | null) => {
   return `${SUPABASE_URL}/storage/v1/object/public/avatars/${avatarUrl}`;
 };
 
+const buildProfileName = (profile?: ProfileRow | null) => {
+  const firstName = profile?.users?.first_name ?? profile?.first_name ?? '';
+  const lastName = profile?.users?.last_name ?? profile?.last_name ?? '';
+  return [firstName, lastName].map((value) => value.trim()).filter(Boolean).join(' ');
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -237,7 +248,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
-      .select('id, display_name, avatar_url')
+      .select('id, avatar_url, users!profiles_id_fkey(first_name, last_name)')
       .in('id', [record.created_by, ...ids]);
 
     const profileMap = new Map<string, ProfileRow>();
@@ -283,7 +294,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const creator = profileMap.get(record.created_by);
-    const creatorName = creator?.display_name ?? 'Un companero';
+    const creatorName = buildProfileName(creator) || 'Un companero';
     const creatorAvatarUrl = resolveAvatarUrl(creator?.avatar_url ?? null);
 
     const serviceAccount = JSON.parse(FCM_SERVICE_ACCOUNT_JSON) as {

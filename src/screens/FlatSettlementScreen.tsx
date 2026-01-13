@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ImageBackground,
@@ -8,17 +8,20 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { BlurView } from '@react-native-community/blur';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../theme/ThemeContext';
-import { colors } from '../theme';
+import { useTheme, useThemeController } from '../theme/ThemeContext';
+import { supabaseClient } from '../services/authService';
 import { flatSettlementService } from '../services/flatSettlementService';
 import type { FlatSettlementSummary } from '../types/flatSettlement';
-import { FlatSettlementScreenStyles as styles } from '../styles/screens';
+import { FlatSettlementScreenStyles } from '../styles/screens';
+import { getUserName } from '../utils/name';
 
 type RouteParams = {
   flatId?: string;
@@ -53,10 +56,15 @@ const formatMonthLabel = (value?: string | null) => {
 
 export const FlatSettlementScreen: React.FC = () => {
   const theme = useTheme();
+  const { isDark } = useThemeController();
+  const styles = useMemo(() => FlatSettlementScreenStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const route = useRoute();
   const { flatId, month } = (route.params ?? {}) as RouteParams;
+  const isMountedRef = useRef(true);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [summary, setSummary] = useState<FlatSettlementSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -131,43 +139,139 @@ export const FlatSettlementScreen: React.FC = () => {
     },
     [summary]
   );
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadSummary = async () => {
+  const loadSummary = useCallback(
+    async ({ silent }: { silent?: boolean } = {}) => {
       if (!flatId) {
         setErrorMessage('No se encontro el piso.');
         setLoading(false);
         return;
       }
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
       setErrorMessage(null);
       try {
         const data = await flatSettlementService.getSettlement(flatId, month);
-        if (isMounted) {
+        if (isMountedRef.current) {
           setSummary(data);
         }
       } catch (error) {
         console.error('Error cargando cuentas:', error);
-        if (isMounted) {
+        if (isMountedRef.current) {
           setErrorMessage('No se pudieron cargar las cuentas.');
         }
       } finally {
-        if (isMounted) {
+        if (isMountedRef.current && !silent) {
           setLoading(false);
         }
       }
+    },
+    [flatId, month]
+  );
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      loadSummary({ silent: true }).catch(() => undefined);
+    }, 400);
+  }, [loadSummary]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    loadSummary().catch(() => undefined);
+  }, [loadSummary]);
+
+  useEffect(() => {
+    if (!flatId) return;
+    let isMounted = true;
+
+    const subscribeToPayments = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const filter = month
+        ? `flat_id=eq.${flatId},month=eq.${month}`
+        : `flat_id=eq.${flatId}`;
+
+      const channel = supabaseClient
+        .channel(`flat-settlements:${flatId}:${month ?? 'all'}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'flat_settlement_payments',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'flat_settlement_payments',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'flat_settlement_payments',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .subscribe();
+
+      channelRef.current = channel;
     };
 
-    void loadSummary();
+    subscribeToPayments().catch(() => undefined);
+
     return () => {
       isMounted = false;
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
     };
-  }, [flatId, month]);
+  }, [flatId, month, scheduleRefresh]);
   const memberNameById = useMemo(() => {
     const map = new Map<string, string>();
     summary?.members.forEach((member) => {
-      map.set(member.id, member.display_name || 'Companero');
+      map.set(member.id, getUserName(member, 'Companero'));
     });
     return map;
   }, [summary]);
@@ -182,15 +286,15 @@ export const FlatSettlementScreen: React.FC = () => {
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <BlurView
-          blurType="light"
+          blurType={isDark ? 'dark' : 'light'}
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.headerFill} />
@@ -198,7 +302,7 @@ export const FlatSettlementScreen: React.FC = () => {
           style={styles.headerBackButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={20} color="#111827" />
+          <Ionicons name="arrow-back" size={20} color={theme.colors.textStrong} />
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
           <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
@@ -225,7 +329,7 @@ export const FlatSettlementScreen: React.FC = () => {
           </View>
         ) : errorMessage ? (
           <View style={styles.body}>
-            <Ionicons name="alert-circle-outline" size={40} color="#9CA3AF" />
+            <Ionicons name="alert-circle-outline" size={40} color={theme.colors.textTertiary} />
             <Text style={styles.title}>{errorMessage}</Text>
           </View>
         ) : summary ? (
@@ -246,7 +350,7 @@ export const FlatSettlementScreen: React.FC = () => {
                 <View key={member.id} style={styles.memberRow}>
                   <View style={styles.memberInfo}>
                     <Text style={styles.memberName}>
-                      {member.display_name || 'Companero'}
+                      {getUserName(member, 'Companero')}
                     </Text>
                     <Text style={styles.memberMeta}>
                       Pagado: {member.paid.toFixed(2)} EUR
@@ -289,7 +393,7 @@ export const FlatSettlementScreen: React.FC = () => {
                       key={transferKey}
                       style={styles.transferRow}
                     >
-                      <Ionicons name="swap-horizontal" size={16} color="#6B7280" />
+                      <Ionicons name="swap-horizontal" size={16} color={theme.colors.textSecondary} />
                       <Text style={styles.transferText}>
                         {memberNameById.get(transfer.from_id) ?? 'Companero'} paga a{' '}
                         {memberNameById.get(transfer.to_id) ?? 'Companero'}{' '}
@@ -313,7 +417,7 @@ export const FlatSettlementScreen: React.FC = () => {
                         <Ionicons
                           name={isPaid ? 'checkmark-circle' : 'checkmark'}
                           size={16}
-                          color={isPaid ? '#16A34A' : '#6B7280'}
+                          color={isPaid ? theme.colors.successDark : theme.colors.textSecondary}
                         />
                         <Text
                           style={[
@@ -342,7 +446,7 @@ export const FlatSettlementScreen: React.FC = () => {
                     key={`${payment.from_id}-${payment.to_id}-${payment.amount}-${index}`}
                     style={styles.paymentRow}
                   >
-                    <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
+                    <Ionicons name="checkmark-circle" size={16} color={theme.colors.successDark} />
                     <Text style={styles.paymentText}>
                       {memberNameById.get(payment.from_id) ?? 'Companero'} pago a{' '}
                       {memberNameById.get(payment.to_id) ?? 'Companero'}

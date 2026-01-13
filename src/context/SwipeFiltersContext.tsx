@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_BUDGET_MAX, DEFAULT_BUDGET_MIN } from '../constants/swipeFilters';
+import {
+  DEFAULT_BUDGET_MAX,
+  DEFAULT_BUDGET_MIN,
+  DEFAULT_ROOMMATES_MAX,
+  DEFAULT_ROOMMATES_MIN,
+} from '../constants/swipeFilters';
 import type { SwipeFilters } from '../types/swipeFilters';
 
 type SwipeFiltersContextType = {
@@ -17,6 +22,9 @@ const DEFAULT_SWIPE_FILTERS: SwipeFilters = {
   gender: 'any',
   budgetMin: DEFAULT_BUDGET_MIN,
   budgetMax: DEFAULT_BUDGET_MAX,
+  roommatesMin: DEFAULT_ROOMMATES_MIN,
+  roommatesMax: DEFAULT_ROOMMATES_MAX,
+  cities: [],
   zones: [],
   lifestyle: [],
   interests: [],
@@ -41,7 +49,12 @@ export const SwipeFiltersProvider: React.FC<{ children: React.ReactNode }> = ({
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored) as SwipeFilters;
-          setFiltersState({ ...DEFAULT_SWIPE_FILTERS, ...parsed });
+          const legacyCity = (parsed as SwipeFilters & { city?: string | null }).city;
+          const next =
+            legacyCity && (!parsed.cities || parsed.cities.length === 0)
+              ? { ...parsed, cities: [legacyCity] }
+              : parsed;
+          setFiltersState({ ...DEFAULT_SWIPE_FILTERS, ...next });
         }
       } catch (error) {
         console.warn('Error loading swipe filters:', error);

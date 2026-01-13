@@ -45,9 +45,9 @@ export const styles = StyleSheet.create({
     borderRadius: borderRadius.s18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.glassSurface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.glassBorderSoft,
   },
   content: {
     flex: 1,
@@ -200,13 +200,13 @@ export const styles = StyleSheet.create({
     paddingVertical: spacing.s12,
     borderRadius: semanticRadii.pill,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
   },
   editPhotosText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.primary,
   },
   switchLabel: {
     fontSize: 14,
@@ -315,6 +315,31 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.s12,
   },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  toggleCopy: {
+    flex: 1,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  toggleHint: {
+    marginTop: spacing.xs,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  searchHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
   situacionButton: {
     flex: 1,
     padding: spacing.s12,
@@ -339,22 +364,27 @@ export const styles = StyleSheet.create({
   sliderTrack: {
     height: spacing.s6,
     borderRadius: borderRadius.xs,
-    backgroundColor: colors.border,
+    backgroundColor: colors.text,
+  },
+  sliderContainer: {
+    paddingVertical: spacing.s12,
+    position: 'relative',
+    minHeight: semanticSizes.control,
   },
   sliderTrackActive: {
     position: 'absolute',
     height: spacing.s6,
     borderRadius: borderRadius.xs,
-    backgroundColor: colors.text,
+    backgroundColor: colors.primary,
   },
   sliderThumb: {
     position: 'absolute',
     width: semanticSizes.thumb,
     height: semanticSizes.thumb,
     borderRadius: borderRadius.s10,
-    backgroundColor: colors.text,
+    backgroundColor: colors.primary,
     borderWidth: 2,
-    borderColor: colors.background,
+    borderColor: colors.text,
     top: -7,
   },
   sliderTicks: {
@@ -375,5 +405,22 @@ export const styles = StyleSheet.create({
   sliderLabel: {
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  deleteProfileButton: {
+    paddingVertical: spacing.s12,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.errorBorder,
+    backgroundColor: colors.errorSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteProfileButtonPressed: {
+    opacity: 0.85,
+  },
+  deleteProfileButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.errorDark,
   },
 });

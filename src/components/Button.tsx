@@ -32,8 +32,30 @@ export const Button: React.FC<ButtonProps> = ({
   const theme = useTheme();
   const isDisabled = disabled || loading;
   const sizeStyle = styles[`size_${size}` as const];
-  const variantStyle = styles[`variant_${variant}` as const];
-  const textStyle = styles[`text_${variant}` as const];
+  const variantStyle = {
+    primary: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    secondary: {
+      backgroundColor: theme.colors.glassSurface,
+      borderColor: theme.colors.glassBorderSoft,
+    },
+    tertiary: {
+      backgroundColor: 'transparent',
+      borderColor: 'transparent',
+    },
+  }[variant];
+  const textStyle = {
+    primary: { color: theme.colors.background },
+    secondary: { color: theme.colors.text },
+    tertiary: { color: theme.colors.primary },
+  }[variant];
+  const disabledStyle = {
+    backgroundColor: theme.colors.surfaceLight,
+    borderColor: theme.colors.border,
+  };
+  const textDisabledStyle = { color: theme.colors.textTertiary };
 
   return (
     <TouchableOpacity
@@ -43,7 +65,7 @@ export const Button: React.FC<ButtonProps> = ({
         variantStyle,
         { borderRadius: theme.borderRadius.full },
         style,
-        isDisabled && styles.disabled,
+        isDisabled && disabledStyle,
       ]}
       onPress={onPress}
       disabled={isDisabled}
@@ -55,7 +77,7 @@ export const Button: React.FC<ButtonProps> = ({
           color={variant === 'primary' ? theme.colors.background : theme.colors.text}
         />
       ) : (
-        <Text style={[styles.text, textStyle, isDisabled && styles.textDisabled]}>
+        <Text style={[styles.text, textStyle, isDisabled && textDisabledStyle]}>
           {title}
         </Text>
       )}
@@ -81,37 +103,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 24,
   },
-  variant_primary: {
-    backgroundColor: '#111827',
-    borderColor: '#111827',
-  },
-  variant_secondary: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5E7EB',
-  },
-  variant_tertiary: {
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
-  },
   text: {
     fontSize: 16,
     fontWeight: '600',
-  },
-  text_primary: {
-    color: '#FFFFFF',
-  },
-  text_secondary: {
-    color: '#111827',
-  },
-  text_tertiary: {
-    color: '#111827',
-  },
-  disabled: {
-    backgroundColor: '#E5E7EB',
-    borderColor: '#E5E7EB',
-  },
-  textDisabled: {
-    color: '#6B7280',
   },
 });
 

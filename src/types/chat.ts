@@ -13,6 +13,9 @@ export interface Match {
   name: string;
   avatarUrl: string;
   status?: MatchStatus;
+  userAId?: string;
+  userBId?: string;
+  isOutgoing?: boolean;
 }
 
 import type { Profile } from './profile';

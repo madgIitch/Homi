@@ -11,6 +11,7 @@ interface RoomExtrasRow {
   room_id: string;
   category?: string | null;
   room_type?: string | null;
+  capacity?: number | null;
   common_area_type?: string | null;
   common_area_custom?: string | null;
   photos: string[];
@@ -147,6 +148,7 @@ serve(
         room_id: roomId,
         category: body.category ?? null,
         room_type: body.room_type ?? null,
+        capacity: typeof body.capacity === 'number' ? body.capacity : null,
         common_area_type: body.common_area_type ?? null,
         common_area_custom: body.common_area_custom ?? null,
         photos: Array.isArray(body.photos) ? body.photos : [],

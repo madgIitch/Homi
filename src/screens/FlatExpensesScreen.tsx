@@ -1,33 +1,42 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   ImageBackground,
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  Dimensions,
+  Keyboard,
+  UIManager,
+  findNodeHandle,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { BlurView } from '@react-native-community/blur';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
 import { colors } from '../theme';
 import { API_CONFIG } from '../config/api';
+import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { roomService } from '../services/roomService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import { flatExpenseService } from '../services/flatExpenseService';
 import type { Flat } from '../types/room';
 import type { FlatExpense, FlatExpenseMember } from '../types/flatExpense';
-import { FlatExpensesScreenStyles as styles } from '../styles/screens';
+import { FlatExpensesScreenStyles } from '../styles/screens';
+import { getUserInitials, getUserName } from '../utils/name';
 
 const MONTH_LABELS = [
   'Enero',
@@ -77,16 +86,6 @@ const formatDateLabel = (value?: string | null) => {
 
 const parseAmount = (value: string) => Number(value.replace(',', '.'));
 
-const getInitials = (name?: string | null) => {
-  if (!name) return 'U';
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((chunk) => chunk[0]?.toUpperCase())
-    .join('');
-};
-
 const resolveAvatarUrl = (avatarUrl?: string | null) => {
   if (!avatarUrl) return null;
   if (avatarUrl.startsWith('http')) return avatarUrl;
@@ -95,8 +94,18 @@ const resolveAvatarUrl = (avatarUrl?: string | null) => {
 
 export const FlatExpensesScreen: React.FC = () => {
   const theme = useTheme();
+  const styles = useMemo(() => FlatExpensesScreenStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const modalScrollRef = useRef<ScrollView>(null);
+  const focusedInputHandle = useRef<number | null>(null);
+  const keyboardHeightRef = useRef(0);
+  const keyboardTopRef = useRef(Dimensions.get('window').height);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const participantsChannelRef = useRef<RealtimeChannel | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const modalScrollYRef = useRef(0);
   const [flats, setFlats] = useState<Flat[]>([]);
   const [selectedFlatId, setSelectedFlatId] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<FlatExpense[]>([]);
@@ -119,6 +128,99 @@ export const FlatExpensesScreen: React.FC = () => {
     Record<string, string>
   >({});
 
+  const scrollToFocusedInput = useCallback(
+    (extraOffset?: number) => {
+      const scrollNode = modalScrollRef.current;
+      const target = focusedInputHandle.current;
+      if (!scrollNode || !target) return;
+
+      UIManager.measureInWindow(
+        target,
+        (_x, y, _width, height) => {
+          const windowHeight = Dimensions.get('window').height;
+          const keyboardOffset =
+            keyboardHeightRef.current > 0
+              ? keyboardHeightRef.current * 0.18
+              : 0;
+          const resolvedOffset =
+            extraOffset ??
+            Math.round(
+              Math.min(80, Math.max(12, windowHeight * 0.035, keyboardOffset))
+            );
+          const resolvedKeyboardTop =
+            keyboardHeightRef.current > 0
+              ? keyboardTopRef.current
+              : windowHeight;
+          const targetBottom = y + height;
+          const targetTop = y;
+
+          if (
+            keyboardHeightRef.current > 0 &&
+            targetBottom > resolvedKeyboardTop - resolvedOffset
+          ) {
+            const delta = targetBottom - (resolvedKeyboardTop - resolvedOffset);
+            scrollNode.scrollTo({
+              y: Math.max(0, modalScrollYRef.current + delta),
+              animated: true,
+            });
+            return;
+          }
+
+          const safeTop = insets.top + 16;
+          if (targetTop < safeTop) {
+            const delta = safeTop - targetTop;
+            scrollNode.scrollTo({
+              y: Math.max(0, modalScrollYRef.current - delta),
+              animated: true,
+            });
+          }
+        }
+      );
+    },
+    [insets.top]
+  );
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardHeightRef.current = event.endCoordinates.height;
+      keyboardTopRef.current = event.endCoordinates.screenY;
+      setKeyboardHeight(event.endCoordinates.height);
+      requestAnimationFrame(() => scrollToFocusedInput());
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardHeightRef.current = 0;
+      keyboardTopRef.current = Dimensions.get('window').height;
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [scrollToFocusedInput]);
+
+  const handleInputFocus = useCallback(
+    (event: any) => {
+      const rawTarget = event?.target ?? event?.nativeEvent?.target;
+      let target: number | null = null;
+
+      if (typeof rawTarget === 'number') {
+        target = rawTarget;
+      } else if (rawTarget) {
+        const handle = findNodeHandle(rawTarget as any);
+        if (typeof handle === 'number') {
+          target = handle;
+        }
+      }
+
+      if (target != null) {
+        focusedInputHandle.current = target;
+      }
+
+      setTimeout(() => scrollToFocusedInput(), 50);
+    },
+    [scrollToFocusedInput]
+  );
+
   const monthKey = useMemo(() => toMonthKey(monthCursor), [monthCursor]);
   const selectedFlat = flats.find((flat) => flat.id === selectedFlatId) ?? null;
 
@@ -132,8 +234,8 @@ export const FlatExpensesScreen: React.FC = () => {
   );
   const orderedMembers = useMemo(() => {
     return [...members].sort((a, b) => {
-      const aName = (a.display_name || '').toLowerCase();
-      const bName = (b.display_name || '').toLowerCase();
+      const aName = getUserName(a, '').toLowerCase();
+      const bName = getUserName(b, '').toLowerCase();
       return aName.localeCompare(bName);
     });
   }, [members]);
@@ -207,6 +309,15 @@ export const FlatExpensesScreen: React.FC = () => {
     }
   }, [monthKey, selectedFlatId]);
 
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      void loadExpenses();
+    }, 400);
+  }, [loadExpenses]);
+
   useEffect(() => {
     void loadFlats();
   }, [loadFlats]);
@@ -214,6 +325,178 @@ export const FlatExpensesScreen: React.FC = () => {
   useEffect(() => {
     void loadExpenses();
   }, [loadExpenses]);
+
+  useEffect(() => {
+    if (!selectedFlatId) {
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      if (participantsChannelRef.current) {
+        supabaseClient.removeChannel(participantsChannelRef.current);
+        participantsChannelRef.current = null;
+      }
+      return;
+    }
+
+    let isMounted = true;
+    const subscribeToExpenses = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const channel = supabaseClient
+        .channel(`flat-expenses:${selectedFlatId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'flat_expenses',
+            filter: `flat_id=eq.${selectedFlatId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'flat_expenses',
+            filter: `flat_id=eq.${selectedFlatId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'flat_expenses',
+            filter: `flat_id=eq.${selectedFlatId}`,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .subscribe();
+
+      channelRef.current = channel;
+    };
+
+    void subscribeToExpenses();
+
+    return () => {
+      isMounted = false;
+      if (channelRef.current) {
+        supabaseClient.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      if (participantsChannelRef.current) {
+        supabaseClient.removeChannel(participantsChannelRef.current);
+        participantsChannelRef.current = null;
+      }
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
+    };
+  }, [scheduleRefresh, selectedFlatId]);
+
+  useEffect(() => {
+    if (!selectedFlatId || expenses.length === 0) {
+      if (participantsChannelRef.current) {
+        supabaseClient.removeChannel(participantsChannelRef.current);
+        participantsChannelRef.current = null;
+      }
+      return;
+    }
+
+    let isMounted = true;
+    const subscribeToParticipants = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (participantsChannelRef.current) {
+        supabaseClient.removeChannel(participantsChannelRef.current);
+        participantsChannelRef.current = null;
+      }
+
+      const expenseIds = expenses.map((expense) => expense.id).filter(Boolean);
+      if (expenseIds.length === 0) return;
+      const filter = `expense_id=in.(${expenseIds.join(',')})`;
+
+      const channel = supabaseClient
+        .channel(`flat-expense-participants:${selectedFlatId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'flat_expense_participants',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'flat_expense_participants',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'flat_expense_participants',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .subscribe();
+
+      participantsChannelRef.current = channel;
+    };
+
+    void subscribeToParticipants();
+
+    return () => {
+      isMounted = false;
+      if (participantsChannelRef.current) {
+        supabaseClient.removeChannel(participantsChannelRef.current);
+        participantsChannelRef.current = null;
+      }
+    };
+  }, [expenses, scheduleRefresh, selectedFlatId]);
 
   useEffect(() => {
     if (members.length === 0) return;
@@ -287,6 +570,8 @@ export const FlatExpensesScreen: React.FC = () => {
       return;
     }
     resetForm();
+    focusedInputHandle.current = null;
+    modalScrollYRef.current = 0;
     setModalVisible(true);
   };
 
@@ -337,7 +622,7 @@ export const FlatExpensesScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
@@ -346,7 +631,7 @@ export const FlatExpensesScreen: React.FC = () => {
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
@@ -354,7 +639,7 @@ export const FlatExpensesScreen: React.FC = () => {
         <BlurView
           blurType="light"
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.headerFill} />
@@ -366,13 +651,17 @@ export const FlatExpensesScreen: React.FC = () => {
             <Text style={styles.headerSubtitle}>{selectedFlat.address}</Text>
           ) : null}
         </View>
-        <TouchableOpacity
-          style={[styles.headerAction, !selectedFlatId && styles.headerActionDisabled]}
+        <Pressable
+          style={({ pressed }) => [
+            styles.headerAction,
+            !selectedFlatId && styles.headerActionDisabled,
+            pressed && selectedFlatId && { backgroundColor: theme.colors.glassUltraLightAlt },
+          ]}
           onPress={openModal}
           disabled={!selectedFlatId}
         >
-          <Ionicons name="add" size={18} color="#111827" />
-        </TouchableOpacity>
+          <Ionicons name="add" size={18} color={theme.colors.text} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -388,7 +677,7 @@ export const FlatExpensesScreen: React.FC = () => {
           </View>
         ) : flats.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="home-outline" size={42} color="#9CA3AF" />
+            <Ionicons name="home-outline" size={42} color={theme.colors.textTertiary} />
             <Text style={styles.emptyTitle}>Aun no perteneces a un piso</Text>
             <Text style={styles.emptySubtitle}>
               Esta funcion es solo para miembros de pisos. Cuando tengas un piso
@@ -397,7 +686,15 @@ export const FlatExpensesScreen: React.FC = () => {
           </View>
         ) : (
           <>
-            <View style={styles.sectionCard}>
+            <View
+              style={[
+                styles.sectionCard,
+                {
+                  backgroundColor: theme.colors.glassSurface,
+                  borderColor: theme.colors.glassBorderSoft,
+                },
+              ]}
+            >
               <Text style={styles.sectionTitle}>Pisos</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.flatChips}>
@@ -424,28 +721,50 @@ export const FlatExpensesScreen: React.FC = () => {
               </ScrollView>
             </View>
 
-            <View style={styles.sectionCard}>
+            <View
+              style={[
+                styles.sectionCard,
+                {
+                  backgroundColor: theme.colors.glassSurface,
+                  borderColor: theme.colors.glassBorderSoft,
+                },
+              ]}
+            >
               <Text style={styles.sectionTitle}>Mes</Text>
               <View style={styles.monthRow}>
-                <TouchableOpacity
-                  style={styles.monthButton}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.monthButton,
+                    pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
+                  ]}
                   onPress={() => shiftMonth(-1)}
                 >
-                  <Ionicons name="chevron-back" size={18} color="#111827" />
-                </TouchableOpacity>
+                  <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
+                </Pressable>
                 <Text style={styles.monthLabel}>
                   {formatMonthLabel(monthCursor)}
                 </Text>
-                <TouchableOpacity
-                  style={styles.monthButton}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.monthButton,
+                    pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
+                  ]}
                   onPress={() => shiftMonth(1)}
                 >
-                  <Ionicons name="chevron-forward" size={18} color="#111827" />
-                </TouchableOpacity>
+                  <Ionicons name="chevron-forward" size={18} color={theme.colors.text} />
+                </Pressable>
               </View>
             </View>
 
-            <View style={styles.summaryCard}>
+            <View
+              style={[
+                styles.summaryCard,
+                {
+                  backgroundColor: theme.colors.glassSurface,
+                  borderColor: theme.colors.glassBorderSoft,
+                },
+              ]}
+            >
               <Text style={styles.summaryTitle}>Total del mes</Text>
               <Text style={styles.summaryAmount}>
                 {totalAmount.toFixed(2)} EUR
@@ -454,8 +773,15 @@ export const FlatExpensesScreen: React.FC = () => {
                 {expenses.length} gastos registrados
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.settlementButton}
+            <Pressable
+              style={({ pressed }) => [
+                styles.settlementButton,
+                {
+                  backgroundColor: theme.colors.surfaceLight,
+                  borderColor: theme.colors.border,
+                },
+                pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
+              ]}
               onPress={() =>
                 selectedFlatId
                   ? navigation.navigate('FlatSettlement', {
@@ -465,11 +791,11 @@ export const FlatExpensesScreen: React.FC = () => {
                   : undefined
               }
             >
-              <Ionicons name="calculator-outline" size={18} color="#1F2937" />
+              <Ionicons name="calculator-outline" size={18} color={theme.colors.text} />
               <Text style={styles.settlementButtonText}>
                 Ver cuentas entre companeros
               </Text>
-            </TouchableOpacity>
+            </Pressable>
 
             {loadingExpenses ? (
               <View style={styles.loadingState}>
@@ -478,19 +804,34 @@ export const FlatExpensesScreen: React.FC = () => {
               </View>
             ) : expenses.length === 0 ? (
               <View style={styles.emptyStateInline}>
-                <Ionicons name="receipt-outline" size={36} color="#9CA3AF" />
+                <Ionicons name="receipt-outline" size={36} color={theme.colors.textTertiary} />
                 <Text style={styles.emptyTitle}>Sin gastos este mes</Text>
                 <Text style={styles.emptySubtitle}>
                   Agrega el primer gasto para empezar el resumen.
                 </Text>
-                <TouchableOpacity style={styles.addButton} onPress={openModal}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
+                  ]}
+                  onPress={openModal}
+                >
                   <Text style={styles.addButtonText}>Agregar gasto</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             ) : (
               <View style={styles.expenseList}>
                 {expenses.map((expense) => (
-                  <View key={expense.id} style={styles.expenseCard}>
+                  <View
+                    key={expense.id}
+                    style={[
+                      styles.expenseCard,
+                      {
+                        backgroundColor: theme.colors.glassSurface,
+                        borderColor: theme.colors.glassBorderSoft,
+                      },
+                    ]}
+                  >
                     <View style={styles.expenseHeader}>
                       <Text style={styles.expenseTitle}>{expense.concept}</Text>
                       <View style={styles.expenseAside}>
@@ -533,7 +874,7 @@ export const FlatExpensesScreen: React.FC = () => {
                                       />
                                     ) : (
                                       <Text style={styles.avatarText}>
-                                        {getInitials(member.display_name)}
+                                        {getUserInitials(member, 'U')}
                                       </Text>
                                     )}
                                   </View>
@@ -551,8 +892,8 @@ export const FlatExpensesScreen: React.FC = () => {
                     </View>
                     <Text style={styles.expenseMeta}>
                       {formatDateLabel(expense.expense_date)}
-                      {expense.creator?.display_name
-                        ? ` - ${expense.creator.display_name}`
+                      {expense.creator
+                        ? ` - ${getUserName(expense.creator, 'Companero')}`
                         : ''}
                     </Text>
                     {expense.note ? (
@@ -569,20 +910,41 @@ export const FlatExpensesScreen: React.FC = () => {
       <Modal transparent animationType="slide" visible={modalVisible}>
         <View style={styles.modalOverlay}>
           <LinearGradient
-            colors={[colors.overlayLight, colors.overlay]}
+            colors={[theme.colors.overlayLight, theme.colors.overlay]}
             style={StyleSheet.absoluteFillObject}
           />
-          <View style={styles.modalContent}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setModalVisible(false)}
+          />
+          <View
+            style={[
+              styles.modalContent,
+              {
+                backgroundColor: theme.colors.glassUltraLightAlt,
+                borderColor: theme.colors.glassBorderSoft,
+              },
+            ]}
+          >
             <BlurView
               blurType="light"
               blurAmount={14}
-              reducedTransparencyFallbackColor={colors.glassUltraLightAlt}
+              reducedTransparencyFallbackColor={theme.colors.glassUltraLightAlt}
               style={StyleSheet.absoluteFillObject}
             />
             <View style={styles.modalGlassFill} />
             <ScrollView
-              contentContainerStyle={styles.modalScroll}
+              ref={modalScrollRef}
+              contentContainerStyle={[
+                styles.modalScroll,
+                { paddingBottom: insets.bottom + keyboardHeight + 24 },
+              ]}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              onScroll={(event) => {
+                modalScrollYRef.current = event.nativeEvent.contentOffset.y;
+              }}
+              scrollEventThrottle={16}
             >
               <Text style={styles.modalTitle}>Nuevo gasto</Text>
               <Text style={styles.modalSubtitle}>
@@ -592,10 +954,11 @@ export const FlatExpensesScreen: React.FC = () => {
               <View style={styles.modalField}>
                 <Text style={styles.modalLabel}>Tipo de gasto</Text>
                 <View style={styles.scopeRow}>
-                  <TouchableOpacity
-                    style={[
+                  <Pressable
+                    style={({ pressed }) => [
                       styles.scopeChip,
                       expenseScope === 'community' && styles.scopeChipActive,
+                      pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
                     ]}
                     onPress={() => setExpenseScope('community')}
                   >
@@ -607,11 +970,12 @@ export const FlatExpensesScreen: React.FC = () => {
                     >
                       Comunitario
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
                       styles.scopeChip,
                       expenseScope === 'specific' && styles.scopeChipActive,
+                      pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
                     ]}
                     onPress={() => setExpenseScope('specific')}
                   >
@@ -623,7 +987,7 @@ export const FlatExpensesScreen: React.FC = () => {
                     >
                       Personas concretas
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
                 {expenseScope === 'specific' && (
                   <>
@@ -636,11 +1000,12 @@ export const FlatExpensesScreen: React.FC = () => {
                         {orderedMembers.map((member) => {
                           const isSelected = selectedParticipants.includes(member.id);
                           return (
-                            <TouchableOpacity
+                            <Pressable
                               key={member.id}
-                              style={[
+                              style={({ pressed }) => [
                                 styles.participantChip,
                                 isSelected && styles.participantChipActive,
+                                pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
                               ]}
                               onPress={() => toggleParticipant(member.id)}
                             >
@@ -650,9 +1015,9 @@ export const FlatExpensesScreen: React.FC = () => {
                                   isSelected && styles.participantTextActive,
                                 ]}
                               >
-                                {member.display_name || 'Companero'}
+                                {getUserName(member, 'Companero')}
                               </Text>
-                            </TouchableOpacity>
+                            </Pressable>
                           );
                         })}
                       </View>
@@ -672,11 +1037,12 @@ export const FlatExpensesScreen: React.FC = () => {
                   {EXPENSE_CATEGORIES.map((category) => {
                     const isActive = selectedCategory === category;
                     return (
-                      <TouchableOpacity
+                      <Pressable
                         key={category}
-                        style={[
+                        style={({ pressed }) => [
                           styles.categoryChip,
                           isActive && styles.categoryChipActive,
+                          pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
                         ]}
                         onPress={() => setSelectedCategory(category)}
                       >
@@ -688,7 +1054,7 @@ export const FlatExpensesScreen: React.FC = () => {
                         >
                           {category}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     );
                   })}
                 </View>
@@ -699,8 +1065,16 @@ export const FlatExpensesScreen: React.FC = () => {
                   value={concept}
                   onChangeText={setConcept}
                   placeholder="Ej: Luz, internet"
-                  placeholderTextColor={colors.textTertiary}
-                  style={styles.modalInput}
+                  placeholderTextColor={theme.colors.textTertiary}
+                  style={[
+                    styles.modalInput,
+                    {
+                      borderColor: theme.colors.glassBorderSoft,
+                      backgroundColor: theme.colors.glassSurface,
+                      color: theme.colors.text,
+                    },
+                  ]}
+                  onFocus={handleInputFocus}
                   editable
                 />
               </View>
@@ -710,9 +1084,17 @@ export const FlatExpensesScreen: React.FC = () => {
                   value={amount}
                   onChangeText={setAmount}
                   placeholder="Ej: 42.50"
-                  placeholderTextColor={colors.textTertiary}
+                  placeholderTextColor={theme.colors.textTertiary}
                   keyboardType="decimal-pad"
-                  style={styles.modalInput}
+                  style={[
+                    styles.modalInput,
+                    {
+                      borderColor: theme.colors.glassBorderSoft,
+                      backgroundColor: theme.colors.glassSurface,
+                      color: theme.colors.text,
+                    },
+                  ]}
+                  onFocus={handleInputFocus}
                 />
               </View>
               <View style={styles.modalField}>
@@ -721,8 +1103,16 @@ export const FlatExpensesScreen: React.FC = () => {
                   value={expenseDate}
                   onChangeText={setExpenseDate}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textTertiary}
-                  style={styles.modalInput}
+                  placeholderTextColor={theme.colors.textTertiary}
+                  style={[
+                    styles.modalInput,
+                    {
+                      borderColor: theme.colors.glassBorderSoft,
+                      backgroundColor: theme.colors.glassSurface,
+                      color: theme.colors.text,
+                    },
+                  ]}
+                  onFocus={handleInputFocus}
                 />
               </View>
               <View style={styles.modalField}>
@@ -731,25 +1121,39 @@ export const FlatExpensesScreen: React.FC = () => {
                   value={note}
                   onChangeText={setNote}
                   placeholder="Detalles extra"
-                  placeholderTextColor={colors.textTertiary}
-                  style={[styles.modalInput, styles.modalTextArea]}
+                  placeholderTextColor={theme.colors.textTertiary}
+                  style={[
+                    styles.modalInput,
+                    styles.modalTextArea,
+                    {
+                      borderColor: theme.colors.glassBorderSoft,
+                      backgroundColor: theme.colors.glassSurface,
+                      color: theme.colors.text,
+                    },
+                  ]}
+                  onFocus={handleInputFocus}
                   multiline
                 />
               </View>
             </ScrollView>
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancel]}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalButton,
+                  styles.modalCancel,
+                  pressed && !saving && { backgroundColor: theme.colors.glassUltraLightAlt },
+                ]}
                 onPress={() => setModalVisible(false)}
                 disabled={saving}
               >
                 <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
                   styles.modalButton,
                   styles.modalConfirm,
                   saving && styles.modalButtonDisabled,
+                  pressed && !saving && { opacity: 0.9 },
                 ]}
                 onPress={saveExpense}
                 disabled={saving}
@@ -757,7 +1161,7 @@ export const FlatExpensesScreen: React.FC = () => {
                 <Text style={styles.modalConfirmText}>
                   {saving ? 'Guardando...' : 'Guardar'}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>

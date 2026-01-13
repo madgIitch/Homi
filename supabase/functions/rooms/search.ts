@@ -30,13 +30,17 @@ function buildSearchQuery(filters: RoomFilters) {
     .select(`  
       *,  
       flat:flats(*),  
-      owner:profiles!rooms_owner_id_fkey(*)  
+      owner:profiles!rooms_owner_id_fkey(*, users!profiles_id_fkey(first_name, last_name))  
     `)  
     .eq('is_available', true)  
   
   // Aplicar filtros  
   if (filters.city) {  
-    query = query.eq('flat.city', filters.city)  
+    if (/^\d+$/.test(filters.city)) {  
+      query = query.eq('flat.city_id', filters.city)  
+    } else {  
+      query = query.eq('flat.city', filters.city)  
+    }  
   }  
   
   if (filters.price_min) {  
@@ -50,6 +54,14 @@ function buildSearchQuery(filters: RoomFilters) {
   if (filters.available_from) {  
     query = query.lte('available_from', filters.available_from)  
   }  
+
+  if (filters.roommates_min) {
+    query = query.gte('flat.capacity_total', filters.roommates_min)
+  }
+
+  if (filters.roommates_max) {
+    query = query.lte('flat.capacity_total', filters.roommates_max)
+  }
   
   return query  
 }  
@@ -58,6 +70,9 @@ function buildSearchQuery(filters: RoomFilters) {
  * Ordena resultados por relevancia      
  */  
 function sortByRelevance(rooms: Room[], filters: RoomFilters): Room[] {  
+  const zoneSet = new Set(filters.zones ?? [])  
+  const zoneBoost = zoneSet.size > 0 ? 0.8 : 0  
+
   return rooms.sort((a, b) => {  
     let scoreA = 0  
     let scoreB = 0  
@@ -79,6 +94,17 @@ function sortByRelevance(rooms: Room[], filters: RoomFilters): Room[] {
     if (a.size_m2 && b.size_m2) {  
       scoreA += (a.size_m2 / 100) * 0.2  
       scoreB += (b.size_m2 / 100) * 0.2  
+    }  
+  
+    if (zoneBoost > 0) {  
+      const placeA = a.flat?.place_id ?? null  
+      const placeB = b.flat?.place_id ?? null  
+      if (placeA && zoneSet.has(placeA)) {  
+        scoreA += zoneBoost  
+      }  
+      if (placeB && zoneSet.has(placeB)) {  
+        scoreB += zoneBoost  
+      }  
     }  
   
     return scoreB - scoreA  
@@ -120,6 +146,23 @@ const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Res
         }  
       )  
     }  
+
+    if (
+      filters.roommates_min &&
+      filters.roommates_max &&
+      filters.roommates_min > filters.roommates_max
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: 'Validation failed',
+          details: 'roommates_min cannot be greater than roommates_max',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
   
     // Construir y ejecutar query  
     let query = buildSearchQuery(filters)  
@@ -132,7 +175,11 @@ const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Res
   
     // Aplicar mismos filtros que en buildSearchQuery  
     if (filters.city) {  
-      countQuery = countQuery.eq('flat.city', filters.city)  
+      if (/^\d+$/.test(filters.city)) {  
+        countQuery = countQuery.eq('flat.city_id', filters.city)  
+      } else {  
+        countQuery = countQuery.eq('flat.city', filters.city)  
+      }  
     }  
   
     if (filters.price_min) {  
@@ -143,9 +190,17 @@ const handler = withAuth(async (req: Request, _payload: JWTPayload): Promise<Res
       countQuery = countQuery.lte('price_per_month', filters.price_max)  
     }  
   
-    if (filters.available_from) {  
-      countQuery = countQuery.lte('available_from', filters.available_from)  
-    }  
+  if (filters.available_from) {  
+    countQuery = countQuery.lte('available_from', filters.available_from)  
+  }  
+
+  if (filters.roommates_min) {
+    countQuery = countQuery.gte('flat.capacity_total', filters.roommates_min)
+  }
+
+  if (filters.roommates_max) {
+    countQuery = countQuery.lte('flat.capacity_total', filters.roommates_max)
+  }
   
     const { count, error: countError } = await countQuery  
   

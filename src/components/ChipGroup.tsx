@@ -1,6 +1,14 @@
 // src/components/ChipGroup.tsx
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  StyleProp,
+  TextStyle,
+  ViewStyle,
+} from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
 interface ChipOption {
@@ -15,6 +23,10 @@ interface ChipGroupProps {
   label?: string;
   required?: boolean;
   multiline?: boolean;
+  chipContainerStyle?: StyleProp<ViewStyle>;
+  chipStyle?: StyleProp<ViewStyle>;
+  labelStyle?: StyleProp<TextStyle>;
+  textStyle?: StyleProp<TextStyle>;
 }
 
 export const ChipGroup: React.FC<ChipGroupProps> = ({
@@ -24,6 +36,10 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
   label,
   required = false,
   multiline = true,
+  chipContainerStyle,
+  chipStyle,
+  labelStyle,
+  textStyle,
 }) => {
   const theme = useTheme();
 
@@ -34,13 +50,20 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
           style={[
             theme.typography.label,
             { color: theme.colors.text, marginBottom: theme.spacing.md },
+            labelStyle,
           ]}
         >
           {label}
           {required && <Text style={{ color: theme.colors.error }}> *</Text>}
         </Text>
       )}
-      <View style={[styles.chipContainer, !multiline && styles.singleLine]}>
+      <View
+        style={[
+          styles.chipContainer,
+          !multiline && styles.singleLine,
+          chipContainerStyle,
+        ]}
+      >
         {options.map((option) => {
           const isSelected = selectedIds.includes(option.id);
           return (
@@ -59,6 +82,7 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
                   paddingHorizontal: theme.spacing.md,
                   paddingVertical: theme.spacing.sm,
                 },
+                chipStyle,
               ]}
               onPress={() => onSelect(option.id)}
               activeOpacity={0.85}
@@ -67,6 +91,7 @@ export const ChipGroup: React.FC<ChipGroupProps> = ({
                 style={[
                   theme.typography.captionMedium,
                   { color: isSelected ? theme.colors.primary : theme.colors.text },
+                  textStyle,
                 ]}
               >
                 {option.label}

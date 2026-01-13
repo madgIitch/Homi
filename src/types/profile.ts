@@ -4,6 +4,8 @@ export interface LifestylePreferences {
   schedule?: string | null;  
   cleaning?: string | null;  
   guests?: string | null;  
+  smoking?: string | null;
+  pets?: string | null;
 }  
   
 export type HousingSituation = 'seeking' | 'offering';  
@@ -13,10 +15,10 @@ export interface Profile {
   user_id: string;  
     
   // Add these missing fields  
+  first_name?: string | null;
   last_name?: string;  
   age?: number;  
     
-  display_name: string | null;  
   bio: string | null;  
   occupation: string | null;  
   university: string | null;  
@@ -27,13 +29,17 @@ export interface Profile {
   interests: string[];  
   lifestyle_preferences: LifestylePreferences | null;  
   housing_situation: HousingSituation | null;  
+  is_seeking?: boolean | null;
   preferred_zones: string[];  
   
   budget_min: number | null;  
   budget_max: number | null;  
-  
+  desired_roommates_min?: number | null;
+  desired_roommates_max?: number | null;
+
   avatar_url: string | null;  
-  
+  is_searchable?: boolean | null;
+
   created_at: string;  
   updated_at: string;  
 }  
@@ -49,11 +55,10 @@ export interface ProfilePhoto {
 }
   
 export interface ProfileCreateRequest {  
-  // Add this missing field  
+  first_name?: string;
   last_name?: string;  
   age?: number;  
     
-  display_name?: string;  
   bio?: string;  
   occupation?: string;  
   university?: string;  
@@ -62,10 +67,14 @@ export interface ProfileCreateRequest {
   interests?: string[];  
   lifestyle_preferences?: LifestylePreferences;  
   housing_situation?: HousingSituation;  
+  is_seeking?: boolean;
   preferred_zones?: string[];  
   
   budget_min?: number;  
   budget_max?: number;  
-  
+  desired_roommates_min?: number;
+  desired_roommates_max?: number;
+
   avatar_url?: string;  
-}
+  is_searchable?: boolean;
+}  

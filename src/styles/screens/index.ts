@@ -7,6 +7,7 @@ export { styles as FlatSettlementScreenStyles } from './FlatSettlementScreen.sty
 export { styles as ForgotPasswordScreenStyles } from './ForgotPasswordScreen.styles';
 export { styles as LoginScreenStyles } from './LoginScreen.styles';
 export { styles as MatchesScreenStyles } from './MatchesScreen.styles';
+export { styles as OnboardingScreenStyles } from './OnboardingScreen.styles';
 export { styles as Phase1EmailStyles } from './Phase1Email.styles';
 export { styles as Phase2NameStyles } from './Phase2Name.styles';
 export { styles as Phase3BirthDateStyles } from './Phase3BirthDate.styles';
@@ -22,3 +23,4 @@ export { styles as RoomManagementScreenStyles } from './RoomManagementScreen.sty
 export { styles as RulesManagementScreenStyles } from './RulesManagementScreen.styles';
 export { styles as ServicesManagementScreenStyles } from './ServicesManagementScreen.styles';
 export { styles as SwipeScreenStyles } from './SwipeScreen.styles';
+

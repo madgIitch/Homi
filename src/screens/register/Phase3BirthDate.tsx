@@ -1,11 +1,11 @@
 // src/screens/register/Phase3BirthDate.tsx  
-import React, { useState } from 'react';  
+import React, { useState, useMemo } from 'react';  
 import { View, Text, TouchableOpacity, Alert, Platform } from 'react-native';  
 import DateTimePicker from '@react-native-community/datetimepicker';  
 import { Button } from '../../components/Button';  
 import { useTheme } from '../../theme/ThemeContext';  
 import { Phase3Data } from '../../types/auth';  
-import { Phase3BirthDateStyles as styles } from '../../styles/screens';
+import { Phase3BirthDateStyles } from '../../styles/screens';
   
 interface Phase3BirthDateProps {  
   onComplete: (data: Phase3Data) => void;  
@@ -18,7 +18,8 @@ export const Phase3BirthDate: React.FC<Phase3BirthDateProps> = ({
   onBack,  
   loading,  
 }) => {  
-  const theme = useTheme();  
+  const theme = useTheme();
+  const styles = useMemo(() => Phase3BirthDateStyles(theme), [theme]);  
   const [birthDate, setBirthDate] = useState<Date | null>(null);  
   const [showPicker, setShowPicker] = useState(false);  
   

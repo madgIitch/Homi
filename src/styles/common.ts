@@ -1,35 +1,38 @@
-import { borderRadius, colors, shadows, spacing } from '../theme';
+import type { Theme } from '../theme';
+import { theme } from '../theme';
 
-export const commonStyles = {
+export const createCommonStyles = (theme: Theme) => ({
   card: {
-    borderRadius: borderRadius.xl,
-    padding: spacing.s20,
-    backgroundColor: colors.background,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing.s20,
+    backgroundColor: theme.colors.background,
     borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+    borderColor: theme.colors.border,
+    ...theme.shadows.card,
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    padding: spacing.md,
-    borderRadius: borderRadius.sm,
-    ...shadows.input,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.sm,
+    ...theme.shadows.input,
   },
   chip: {
-    paddingHorizontal: spacing.s12,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
+    paddingHorizontal: theme.spacing.s12,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.full,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.background,
   },
   badge: {
-    paddingHorizontal: spacing.s12,
-    paddingVertical: spacing.s6,
-    borderRadius: borderRadius.full,
+    paddingHorizontal: theme.spacing.s12,
+    paddingVertical: theme.spacing.s6,
+    borderRadius: theme.borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
-};
+});
+
+export const commonStyles = createCommonStyles(theme);

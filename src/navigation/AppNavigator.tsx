@@ -1,6 +1,7 @@
 ﻿// src/navigation/AppNavigator.tsx    
-import React, { useContext, useEffect, useRef } from 'react';    
+import React, { useContext, useEffect, useRef, useState } from 'react';    
 import { View, Text, StyleSheet, Linking } from 'react-native';    
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer } from '@react-navigation/native';    
 import { createStackNavigator } from '@react-navigation/stack';    
 import { AuthContext } from '../context/AuthContext';    
@@ -8,6 +9,7 @@ import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';    
 import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { MainNavigator } from './MainNavigator';    
 import { ProfileDetailScreen } from '../screens/ProfileDetailScreen';    
 import { EditProfileScreen } from '../screens/EditProfileScreen';    
@@ -19,15 +21,22 @@ import { RoomInterestsScreen } from '../screens/RoomInterestsScreen';
 import { RulesManagementScreen } from '../screens/RulesManagementScreen';
 import { ServicesManagementScreen } from '../screens/ServicesManagementScreen';
 import { CreateFlatScreen } from '../screens/CreateFlatScreen';
+import { EditFlatScreen } from '../screens/EditFlatScreen';
 import { RoomDetailScreen } from '../screens/RoomDetailScreen';
 import { FlatExpensesScreen } from '../screens/FlatExpensesScreen';
 import { FlatSettlementScreen } from '../screens/FlatSettlementScreen';
 import { useTheme } from '../theme/ThemeContext';    
 import { authService } from '../services/authService';
 import { notificationService } from '../services/notificationService';
+import { profileService } from '../services/profileService';
+import { roomAssignmentService } from '../services/roomAssignmentService';
+import { roomService } from '../services/roomService';
 import { navigationRef } from './navigationRef';
     
 const Stack = createStackNavigator();    
+const POST_INVITE_PREVIEW_KEY = 'postInvitePreview';
+const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
+const FORCE_ONBOARDING_KEY = 'forceOnboarding';
     
 // Simple loading screen component    
 const LoadingScreen: React.FC = () => {    
@@ -44,6 +53,8 @@ const LoadingScreen: React.FC = () => {
 export const AppNavigator: React.FC = () => {    
   const authContext = useContext(AuthContext);    
   const pendingRecoveryRef = useRef(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
+  const invitePreviewHandledRef = useRef(false);
       
   // Ensure context exists    
   if (!authContext) {    
@@ -51,6 +62,105 @@ export const AppNavigator: React.FC = () => {
   }    
       
   const { isAuthenticated, loading } = authContext;    
+
+  useEffect(() => {
+    let isActive = true;
+    if (!isAuthenticated) {
+      setNeedsOnboarding(null);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    const checkProfile = async () => {
+      try {
+        const forced = await AsyncStorage.getItem(FORCE_ONBOARDING_KEY);
+        if (forced === '1') {
+          if (isActive) {
+            setNeedsOnboarding(true);
+          }
+          return;
+        }
+        const onboardingStatus = await AsyncStorage.getItem(
+          ONBOARDING_COMPLETED_KEY
+        );
+        console.log(
+          '[AppNavigator] onboardingCompleted:',
+          onboardingStatus ?? 'null'
+        );
+        if (onboardingStatus === '1') {
+          if (isActive) {
+            setNeedsOnboarding(false);
+          }
+          return;
+        }
+        if (onboardingStatus === '0') {
+          if (isActive) {
+            setNeedsOnboarding(true);
+          }
+          return;
+        }
+
+        const profile = await profileService.getProfile();
+        if (isActive) {
+          if (profile) {
+            await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, '1');
+            setNeedsOnboarding(false);
+          } else {
+            setNeedsOnboarding(true);
+          }
+        }
+      } catch (error) {
+        console.warn('[AppNavigator] Error checking onboarding state:', error);
+        if (isActive) {
+          setNeedsOnboarding(false);
+        }
+      }
+    };
+
+    checkProfile();
+
+    return () => {
+      isActive = false;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || needsOnboarding || !navigationRef.isReady()) {
+      return;
+    }
+    if (invitePreviewHandledRef.current) {
+      return;
+    }
+
+    const showInvitePreview = async () => {
+      invitePreviewHandledRef.current = true;
+      try {
+        const shouldShow = await AsyncStorage.getItem(POST_INVITE_PREVIEW_KEY);
+        if (!shouldShow) return;
+        const assignmentsResponse =
+          await roomAssignmentService.getAssignmentsForAssignee();
+        const accepted =
+          assignmentsResponse.assignments.find(
+            (assignment) => assignment.status === 'accepted'
+          ) ?? assignmentsResponse.match_assignment;
+        const assignment =
+          accepted && accepted.status === 'accepted' ? accepted : null;
+        if (!assignment?.room_id) return;
+        let room = assignment.room ?? null;
+        if (!room) {
+          room = await roomService.getRoomById(assignment.room_id);
+        }
+        if (!room) return;
+        await AsyncStorage.removeItem(POST_INVITE_PREVIEW_KEY);
+        navigationRef.navigate('RoomDetail', { room, flat: room.flat ?? null });
+      } catch (error) {
+        console.warn('[AppNavigator] Error showing invite preview:', error);
+      }
+    };
+
+    void showInvitePreview();
+  }, [isAuthenticated, needsOnboarding, navigationRef]);
     
   useEffect(() => {
     const handleUrl = async (url: string) => {
@@ -106,42 +216,33 @@ export const AppNavigator: React.FC = () => {
   }, [navigationRef]);
 
   useEffect(() => {
-    if (loading || !navigationRef.isReady()) {
+    if (!navigationRef.isReady() || loading) {
+      return;
+    }
+    if (isAuthenticated || needsOnboarding === null) {
       return;
     }
     const currentRoute = navigationRef.getCurrentRoute()?.name;
-
-    if (isAuthenticated) {
-      if (currentRoute !== 'Main') {
-        navigationRef.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        });
-      }
-      return;
-    }
-
     if (currentRoute === 'ResetPassword') {
       return;
     }
-
     if (currentRoute !== 'Login') {
       navigationRef.reset({
         index: 0,
         routes: [{ name: 'Login' }],
       });
     }
-  }, [isAuthenticated, loading, navigationRef]);
+  }, [isAuthenticated, loading, navigationRef, needsOnboarding]);
 
   useEffect(() => {
-    if (!isAuthenticated || !navigationRef.isReady()) {
+    if (!isAuthenticated || !navigationRef.isReady() || needsOnboarding) {
       return;
     }
 
     void notificationService.consumePendingNavigation();
-  }, [isAuthenticated, navigationRef]);
+  }, [isAuthenticated, navigationRef, needsOnboarding]);
 
-  if (loading) {    
+  if (loading || (isAuthenticated && needsOnboarding === null)) {    
     return <LoadingScreen />;    
   }    
     
@@ -161,14 +262,27 @@ export const AppNavigator: React.FC = () => {
           pendingRecoveryRef.current = false;
           navigationRef.navigate('ResetPassword');
         }
-        if (isAuthenticated) {
+        if (isAuthenticated && !needsOnboarding) {
           void notificationService.consumePendingNavigation();
         }
       }}
     >    
       <Stack.Navigator
+        key={
+          isAuthenticated
+            ? needsOnboarding
+              ? 'onboarding'
+              : 'main'
+            : 'auth'
+        }
         screenOptions={{ headerShown: false }}
-        initialRouteName={isAuthenticated ? 'Main' : 'Login'}
+        initialRouteName={
+          isAuthenticated
+            ? needsOnboarding
+              ? 'Onboarding'
+              : 'Main'
+            : 'Login'
+        }
       >    
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />    
@@ -176,6 +290,13 @@ export const AppNavigator: React.FC = () => {
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         {isAuthenticated ? (    
           <>    
+            <Stack.Screen name="Onboarding">
+              {() => (
+                <OnboardingScreen
+                  onComplete={() => setNeedsOnboarding(false)}
+                />
+              )}
+            </Stack.Screen>
             <Stack.Screen name="Main" component={MainNavigator} />    
             <Stack.Screen name="ProfileDetail" component={ProfileDetailScreen} />    
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />    
@@ -187,6 +308,7 @@ export const AppNavigator: React.FC = () => {
             <Stack.Screen name="RulesManagement" component={RulesManagementScreen} />
             <Stack.Screen name="ServicesManagement" component={ServicesManagementScreen} />
             <Stack.Screen name="CreateFlat" component={CreateFlatScreen} />
+            <Stack.Screen name="EditFlat" component={EditFlatScreen} />
             <Stack.Screen name="RoomDetail" component={RoomDetailScreen} />
             <Stack.Screen name="FlatExpenses" component={FlatExpensesScreen} />
             <Stack.Screen name="FlatSettlement" component={FlatSettlementScreen} />
@@ -208,4 +330,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',    
   },    
 });
-

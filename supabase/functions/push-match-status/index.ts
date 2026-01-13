@@ -25,8 +25,13 @@ interface PushTokenRow {
 
 interface ProfileRow {
   id: string;
-  display_name?: string | null;
   avatar_url?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  users?: {
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null;
 }
 
 const FCM_SERVICE_ACCOUNT_JSON = Deno.env.get('FCM_SERVICE_ACCOUNT_JSON') ?? '';
@@ -153,6 +158,12 @@ const resolveAvatarUrl = (avatarUrl?: string | null) => {
   return `${SUPABASE_URL}/storage/v1/object/public/avatars/${avatarUrl}`;
 };
 
+const buildProfileName = (profile?: ProfileRow | null) => {
+  const firstName = profile?.users?.first_name ?? profile?.first_name ?? '';
+  const lastName = profile?.users?.last_name ?? profile?.last_name ?? '';
+  return [firstName, lastName].map((value) => value.trim()).filter(Boolean).join(' ');
+};
+
 const statusContent = (status: string, otherName: string) => {
   switch (status) {
     case 'accepted':
@@ -230,7 +241,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (payload.type === 'UPDATE' && status === 'pending') {
+    if (status === 'pending') {
       return new Response(JSON.stringify({ status: 'ignored' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -240,7 +251,7 @@ Deno.serve(async (req: Request) => {
     const userIds = [record.user_a_id, record.user_b_id];
     const { data: profiles } = await supabaseAdmin
       .from('profiles')
-      .select('id, display_name, avatar_url')
+      .select('id, avatar_url, users!profiles_id_fkey(first_name, last_name)')
       .in('id', userIds);
 
     const profileMap = new Map<string, ProfileRow>();
@@ -303,7 +314,7 @@ Deno.serve(async (req: Request) => {
           ? record.user_b_id
           : record.user_a_id;
       const otherProfile = profileMap.get(otherId);
-      const otherName = otherProfile?.display_name ?? 'HomiMatch';
+      const otherName = buildProfileName(otherProfile) || 'HomiMatch';
       const otherAvatarUrl = resolveAvatarUrl(otherProfile?.avatar_url ?? null);
       const { title, body } = statusContent(status, otherName);
 

@@ -1,21 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, Alert, TouchableOpacity } from 'react-native';
 import { Button } from '../../components/Button';
 import { useTheme } from '../../theme/ThemeContext';
-import { Phase4InvitationStyles as styles } from '../../styles/screens';
+import { Phase4InvitationStyles } from '../../styles/screens';
 
 interface Phase4InvitationProps {
   onNext: (data: { hasInvite: boolean; inviteCode?: string }) => void;
   onBack: () => void;
+  onInputFocus?: (event: any) => void;
   loading: boolean;
 }
 
 export const Phase4Invitation: React.FC<Phase4InvitationProps> = ({
   onNext,
   onBack,
+  onInputFocus,
   loading,
 }) => {
   const theme = useTheme();
+  const styles = useMemo(() => Phase4InvitationStyles(theme), [theme]);
   const [hasInvite, setHasInvite] = useState<boolean | null>(null);
   const [inviteCode, setInviteCode] = useState('');
 
@@ -100,12 +103,13 @@ export const Phase4Invitation: React.FC<Phase4InvitationProps> = ({
                 color: theme.colors.text,
               },
             ]}
-            placeholder="Codigo de invitacion"
-            placeholderTextColor={theme.colors.textTertiary}
-            value={inviteCode}
-            onChangeText={setInviteCode}
-            autoCapitalize="characters"
-          />
+          placeholder="Codigo de invitacion"
+          placeholderTextColor={theme.colors.textTertiary}
+          value={inviteCode}
+          onChangeText={setInviteCode}
+          onFocus={onInputFocus}
+          autoCapitalize="characters"
+        />
         ) : null}
 
         <View style={styles.buttonContainer}>

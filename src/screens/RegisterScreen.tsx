@@ -1,20 +1,20 @@
 // src/screens/RegisterScreen.tsx  
-import React, { useState, useContext } from 'react';  
+import React, { useEffect, useState, useContext } from 'react';  
 import {
   View,
   Alert,
   Text,
   Image,
   ImageBackground,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
   StyleSheet,
 } from 'react-native';  
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';  
 import { StackNavigationProp } from '@react-navigation/stack';  
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
+import { KeyboardAwareContainer } from '../components/KeyboardAwareContainer';
 import { useTheme } from '../theme/ThemeContext';  
 import { authService } from '../services/authService';
 import LinearGradient from 'react-native-linear-gradient';
@@ -31,6 +31,7 @@ import {
   PhaseGenderData,
   PhaseInviteData,
   TempRegistration,
+  User,
 } from '../types/auth';  
 import { colors } from '../theme';
   
@@ -42,23 +43,96 @@ type RootStackParamList = {
   
 type RegisterScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Register'>;  
   
+type GoogleSession = {
+  user: User;
+  token: string;
+  refreshToken?: string | null;
+};
+
+const TEMP_REGISTRATION_KEY = 'tempRegistration';
+const GOOGLE_SESSION_KEY = 'googleSession';
+const POST_INVITE_PREVIEW_KEY = 'postInvitePreview';
+const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
+const JOINED_WITH_INVITE_KEY = 'joinedWithInvite';
+const FORCE_ONBOARDING_KEY = 'forceOnboarding';
+
 export const RegisterScreen: React.FC = () => {  
   const navigation = useNavigation<RegisterScreenNavigationProp>();  
+  const insets = useSafeAreaInsets();
   const authContext = useContext(AuthContext);  
   
-  if (!authContext) {  
-    throw new Error('RegisterScreen must be used within AuthProvider');  
-  }  
-  
-  const { loginWithSession } = authContext;  
   const theme = useTheme();  
     
   const [currentPhase, setCurrentPhase] = useState(1);  
   const [tempRegistration, setTempRegistration] = useState<TempRegistration | null>(null);  
   const [phase2Data, setPhase2Data] = useState<Phase2Data | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);  
+  const [loading, setLoading] = useState(false);
+  const [googleSession, setGoogleSession] = useState<GoogleSession | null>(null);
+
+  useEffect(() => {
+    const loadSavedState = async () => {
+      try {
+        const storedTemp = await AsyncStorage.getItem(TEMP_REGISTRATION_KEY);
+        if (storedTemp) {
+          setTempRegistration(JSON.parse(storedTemp));
+        }
+        const storedGoogle = await AsyncStorage.getItem(GOOGLE_SESSION_KEY);
+        if (storedGoogle) {
+          setGoogleSession(JSON.parse(storedGoogle));
+        }
+      } catch (error) {
+        console.error('Error loading registration cache:', error);
+      }
+    };
+
+    loadSavedState();
+  }, []);
+
+  useEffect(() => {
+    const persistTempRegistration = async () => {
+      try {
+        if (tempRegistration) {
+          await AsyncStorage.setItem(
+            TEMP_REGISTRATION_KEY,
+            JSON.stringify(tempRegistration)
+          );
+        } else {
+          await AsyncStorage.removeItem(TEMP_REGISTRATION_KEY);
+        }
+      } catch (error) {
+        console.error('Error saving temp registration:', error);
+      }
+    };
+
+    persistTempRegistration();
+  }, [tempRegistration]);
+
+  useEffect(() => {
+    const persistGoogleSession = async () => {
+      try {
+        if (googleSession) {
+          await AsyncStorage.setItem(
+            GOOGLE_SESSION_KEY,
+            JSON.stringify(googleSession)
+          );
+        } else {
+          await AsyncStorage.removeItem(GOOGLE_SESSION_KEY);
+        }
+      } catch (error) {
+        console.error('Error saving Google session:', error);
+      }
+    };
+
+    persistGoogleSession();
+  }, [googleSession]);
+
+  if (!authContext) {  
+    throw new Error('RegisterScreen must be used within AuthProvider');  
+  }  
   
+  const { loginWithSession } = authContext;  
+
   const handlePhase1 = async (data: Phase1Data) => {  
     console.log('ÐY"? RegisterScreen: handlePhase1 called');  
     console.log('ÐY"? RegisterScreen: authService available:', !!authService);  
@@ -67,13 +141,14 @@ export const RegisterScreen: React.FC = () => {
     setLoading(true);  
     try {  
       if (data.isGoogleUser) {  
-        console.log('ÐY"? RegisterScreen: Google flow detected');  
-        const result = await authService.loginWithGoogle();  
-        setTempRegistration({  
-          tempToken: 'google_' + result.user.id,  
-          email: result.user.email,  
-          isGoogleUser: true,  
-        });  
+        console.log('?Y"? RegisterScreen: Google flow detected');  
+        const result = await authService.loginWithGoogle(false);
+        setGoogleSession(result);
+        const tempReg = await authService.registerPhase1({
+          email: result.user.email,
+          isGoogleUser: true,
+        });
+        setTempRegistration(tempReg);
         setCurrentPhase(2);  
       } else {  
         console.log('ÐY"? RegisterScreen: Email flow detected, calling registerPhase1');  
@@ -115,6 +190,7 @@ export const RegisterScreen: React.FC = () => {
       return;
     }
   
+    console.log('[RegisterScreen] Phase3 temp token:', tempRegistration.tempToken);
     setLoading(true);  
     try {  
       await authService.registerPhase2(tempRegistration.tempToken, {
@@ -141,13 +217,40 @@ export const RegisterScreen: React.FC = () => {
       return;  
     }  
   
+    console.log('[RegisterScreen] Phase5 temp token:', tempRegistration.tempToken);
     setLoading(true);  
     try {  
       const result = await authService.registerPhase3(tempRegistration.tempToken, {
         ...data,
         inviteCode: inviteCode || undefined,
       });  
-      await loginWithSession(result.user, result.token, result.refreshToken);  
+      await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, '0');
+      await AsyncStorage.setItem(FORCE_ONBOARDING_KEY, '1');
+      console.log('[RegisterScreen] onboardingCompleted set to 0');
+      if (tempRegistration.isGoogleUser) {
+        if (!googleSession) {
+          Alert.alert('Error', 'No se encontro la sesion de Google');
+          return;
+        }
+        await loginWithSession(
+          googleSession.user,
+          googleSession.token,
+          googleSession.refreshToken
+        );
+        setTempRegistration(null);
+        setGoogleSession(null);
+      } else {
+        await loginWithSession(result.user, result.token, result.refreshToken);
+        setTempRegistration(null);
+        setGoogleSession(null);
+      }
+      if (inviteCode) {
+        await AsyncStorage.setItem(POST_INVITE_PREVIEW_KEY, '1');
+        await AsyncStorage.setItem(JOINED_WITH_INVITE_KEY, '1');
+      } else {
+        await AsyncStorage.removeItem(POST_INVITE_PREVIEW_KEY);
+        await AsyncStorage.removeItem(JOINED_WITH_INVITE_KEY);
+      }
       // NavegaciÇün automÇ­tica manejada por AuthContext  
     } catch (error) {  
       console.error('ƒ?O Error en fase 5:', error);  
@@ -166,12 +269,13 @@ export const RegisterScreen: React.FC = () => {
   const handleGoogleSignIn = async () => {  
     setLoading(true);  
     try {  
-      const result = await authService.loginWithGoogle();  
-      setTempRegistration({  
-        tempToken: 'google_' + result.user.id,  
-        email: result.user.email,  
-        isGoogleUser: true,  
-      });  
+      const result = await authService.loginWithGoogle(false);
+      setGoogleSession(result);
+      const tempReg = await authService.registerPhase1({
+        email: result.user.email,
+        isGoogleUser: true,
+      });
+      setTempRegistration(tempReg);
       // Para usuarios de Google, saltar directamente al paso 2  
       setCurrentPhase(2);  
     } catch (error) {  
@@ -183,10 +287,7 @@ export const RegisterScreen: React.FC = () => {
   };  
   
   return (  
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={styles.container}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
@@ -199,9 +300,11 @@ export const RegisterScreen: React.FC = () => {
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAwareContainer
+        style={{ backgroundColor: 'transparent' }}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }]}
+        withSafeAreaBottom
+        extraScrollHeight={120}
       >
         <View style={styles.header}>  
         <Image
@@ -221,14 +324,14 @@ export const RegisterScreen: React.FC = () => {
           <Phase1Email  
             onNext={handlePhase1}  
             onGoogleSignIn={handleGoogleSignIn}  
-            onGoToLogin={() => navigation.navigate('Login')}  
+            onGoToLogin={() => navigation.navigate('Login')}
             loading={loading}  
           />  
         )}
         {currentPhase === 2 && (  
           <Phase2Name  
             onNext={handlePhase2}  
-            onBack={handleBack}  
+            onBack={handleBack}
             loading={loading}  
           />  
         )}  
@@ -262,8 +365,7 @@ export const RegisterScreen: React.FC = () => {
           variant="secondary"  
         />  
       </View>  
-      </ScrollView>
-    </KeyboardAvoidingView>  
+      </KeyboardAwareContainer>
+    </View>  
   );  
-};  
-  
+};

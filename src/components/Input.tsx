@@ -17,6 +17,7 @@ export const Input: React.FC<InputProps> = ({
   error,  
   helperText,  
   required = false,  
+  style,
   ...props  
 }) => {  
   const theme = useTheme();  
@@ -49,9 +50,10 @@ export const Input: React.FC<InputProps> = ({
             paddingHorizontal: theme.spacing.md,  
             paddingVertical: 12,  
             fontSize: theme.typography.body.fontSize,  
-            color: theme.colors.text,  
+            color: theme.colors.textStrong,  
             backgroundColor: theme.colors.glassSurface,  
           },  
+          style,
         ]}  
         placeholderTextColor={theme.colors.textTertiary}  
         {...props}  

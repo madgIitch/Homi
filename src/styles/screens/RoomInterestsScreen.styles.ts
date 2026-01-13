@@ -20,18 +20,40 @@ export const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     backgroundColor: colors.background,
+    overflow: 'hidden',
+  },
+  headerFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
   },
   headerSpacer: {
-    width: spacing.lg,
+    width: 36,
   },
   roomBanner: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.s12,
     backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   roomLabel: {
     fontSize: 12,
@@ -78,6 +100,9 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
+    borderRadius: semanticRadii.card,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   emptyTitle: {
     marginTop: spacing.sm,
@@ -100,6 +125,7 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.background,
+    overflow: 'hidden',
   },
   card: {
     flexDirection: 'row',
@@ -109,6 +135,7 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.background,
+    overflow: 'hidden',
   },
   avatar: {
     width: semanticSizes.avatarSm,

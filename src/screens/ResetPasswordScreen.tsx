@@ -1,24 +1,23 @@
 // src/screens/ResetPasswordScreen.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   Alert,
   ImageBackground,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button } from '../components/Button';
+import { KeyboardAwareContainer } from '../components/KeyboardAwareContainer';
 import { useTheme } from '../theme/ThemeContext';
 import { authService } from '../services/authService';
-import { ResetPasswordScreenStyles as styles } from '../styles/screens';
+import { ResetPasswordScreenStyles } from '../styles/screens';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors } from '../theme';
 
@@ -37,6 +36,7 @@ type ResetPasswordNavigationProp = StackNavigationProp<
 export const ResetPasswordScreen: React.FC = () => {
   const navigation = useNavigation<ResetPasswordNavigationProp>();
   const theme = useTheme();
+  const styles = useMemo(() => ResetPasswordScreenStyles(theme), [theme]);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -95,11 +95,10 @@ export const ResetPasswordScreen: React.FC = () => {
     }
   };
 
+  const insets = useSafeAreaInsets();
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={styles.container}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
@@ -112,9 +111,11 @@ export const ResetPasswordScreen: React.FC = () => {
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAwareContainer
+        style={{ backgroundColor: 'transparent' }}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }]}
+        withSafeAreaBottom
+        extraScrollHeight={120}
       >
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.colors.text }]}>
@@ -194,7 +195,7 @@ export const ResetPasswordScreen: React.FC = () => {
             />
           )}
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAwareContainer>
+    </View>
   );
 };

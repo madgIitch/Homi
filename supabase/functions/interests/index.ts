@@ -54,7 +54,7 @@ async function getReceivedInterests(userId: string): Promise<RoomInterest[]> {
     .from('room_interests')  
     .select(`  
       *,  
-      user:profiles(*),  
+      user:profiles(*, users!profiles_id_fkey(first_name, last_name)),  
       room:rooms(*, flat:flats(*))  
     `)  
     .eq('room.owner_id', userId)  

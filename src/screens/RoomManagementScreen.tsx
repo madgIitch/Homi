@@ -1,22 +1,34 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   Alert,
   Image,
   ImageBackground,
+  Modal,
   StyleSheet,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import LinearGradient from 'react-native-linear-gradient';
-import { colors } from '../theme';
+import { spacing } from '../theme';
 import { BlurView } from '@react-native-community/blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { FormSection } from '../components/FormSection';
 import { AuthContext } from '../context/AuthContext';
 import { profileService } from '../services/profileService';
@@ -24,10 +36,11 @@ import { roomService } from '../services/roomService';
 import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomInvitationService } from '../services/roomInvitationService';
+import { supabaseClient } from '../services/authService';
 import type { Flat, Room, RoomExtras } from '../types/room';
 import type { RoomAssignment } from '../types/roomAssignment';
 import type { Gender } from '../types/gender';
-import { RoomManagementScreenStyles as styles } from '../styles/screens';
+import { RoomManagementScreenStyles } from '../styles/screens';
 
 type RoomStatus = 'available' | 'paused';
 
@@ -174,6 +187,8 @@ const getRoomStatus = (
 
 export const RoomManagementScreen: React.FC = () => {
   const theme = useTheme();
+  const styles = useMemo(() => RoomManagementScreenStyles(theme), [theme]);
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const authContext = useContext(AuthContext);
   const userGender = authContext?.user?.gender ?? null;
@@ -185,6 +200,47 @@ export const RoomManagementScreen: React.FC = () => {
   const [roomExtras, setRoomExtras] = useState<RoomExtrasMap>({});
   const [roomAssignments, setRoomAssignments] = useState<RoomAssignmentsMap>({});
   const [updatingGenderPolicy, setUpdatingGenderPolicy] = useState(false);
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [inviteExpires, setInviteExpires] = useState('');
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const roomsRef = useRef<Room[]>([]);
+  const extrasRef = useRef<RoomExtrasMap>({});
+  const flatsRef = useRef<Flat[]>([]);
+  const inviteCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const assignmentChannelRef = useRef<RealtimeChannel | null>(null);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      if (inviteCopyTimeoutRef.current) {
+        clearTimeout(inviteCopyTimeoutRef.current);
+      }
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    roomsRef.current = rooms;
+  }, [rooms]);
+
+  useEffect(() => {
+    extrasRef.current = roomExtras;
+  }, [roomExtras]);
+
+  useEffect(() => {
+    flatsRef.current = flats;
+  }, [flats]);
 
   useEffect(() => {
     let isMounted = true;
@@ -216,9 +272,11 @@ export const RoomManagementScreen: React.FC = () => {
     return new Set<Flat['gender_policy']>(['flinta', 'mixed']);
   }, [resolvedGender]);
 
-  const loadRooms = useCallback(async () => {
+  const loadRooms = useCallback(async ({ silent }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent && isMountedRef.current) {
+        setLoading(true);
+      }
       const data = await roomService.getMyRooms();
       setRooms(data);
 
@@ -242,7 +300,9 @@ export const RoomManagementScreen: React.FC = () => {
       console.error('Error cargando habitaciones:', error);
       Alert.alert('Error', 'No se pudieron cargar las habitaciones');
     } finally {
-      setLoading(false);
+      if (!silent && isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -256,12 +316,155 @@ export const RoomManagementScreen: React.FC = () => {
     }
   }, [selectedFlatId]);
 
+  const computeFlatCapacity = useCallback(
+    (flatId: string, roomsData: Room[], extrasData: RoomExtrasMap) => {
+      const roomsForFlat = roomsData.filter((room) => room.flat_id === flatId);
+      return roomsForFlat.reduce((sum, room) => {
+        const extras = extrasData[room.id];
+        if (extras?.category && extras.category !== 'habitacion') {
+          return sum;
+        }
+        const roomType = extras?.room_type ?? null;
+        if (roomType === 'doble') {
+          const capacity =
+            typeof extras?.capacity === 'number' && extras.capacity > 0
+              ? extras.capacity
+              : 2;
+          return sum + capacity;
+        }
+        if (roomType === 'individual') {
+          return sum + 1;
+        }
+        return sum;
+      }, 0);
+    },
+    []
+  );
+
+  const syncFlatCapacities = useCallback(async () => {
+    const roomsData = roomsRef.current;
+    const extrasData = extrasRef.current;
+    const flatsData = flatsRef.current;
+    if (flatsData.length === 0 || roomsData.length === 0) return;
+
+    await Promise.all(
+      flatsData.map(async (flat) => {
+        const nextCapacity = computeFlatCapacity(flat.id, roomsData, extrasData);
+        if (!nextCapacity || flat.capacity_total === nextCapacity) return;
+        try {
+          const updated = await roomService.updateFlat(flat.id, {
+            capacity_total: nextCapacity,
+          });
+          setFlats((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item))
+          );
+        } catch (error) {
+          console.error('Error sincronizando capacidad:', error);
+        }
+      })
+    );
+  }, [computeFlatCapacity]);
+
   useFocusEffect(
     useCallback(() => {
       loadFlats();
       loadRooms();
-    }, [loadRooms, loadFlats])
+      return () => {
+        void syncFlatCapacities();
+      };
+    }, [loadRooms, loadFlats, syncFlatCapacities])
   );
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      void loadRooms({ silent: true });
+    }, 400);
+  }, [loadRooms]);
+
+  useEffect(() => {
+    if (rooms.length === 0) {
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+      return;
+    }
+
+    let isMounted = true;
+    const subscribeToAssignments = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+
+      const roomIds = rooms.map((room) => room.id);
+      if (roomIds.length === 0) return;
+      const filter = `room_id=in.(${roomIds.join(',')})`;
+
+      const channel = supabaseClient
+        .channel('room-assignments:owner')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'room_assignments',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'room_assignments',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'room_assignments',
+            filter,
+          },
+          () => {
+            if (!isMounted) return;
+            scheduleRefresh();
+          }
+        )
+        .subscribe();
+
+      assignmentChannelRef.current = channel;
+    };
+
+    void subscribeToAssignments();
+
+    return () => {
+      isMounted = false;
+      if (assignmentChannelRef.current) {
+        supabaseClient.removeChannel(assignmentChannelRef.current);
+        assignmentChannelRef.current = null;
+      }
+    };
+  }, [rooms, scheduleRefresh]);
 
   useEffect(() => {
     if (flats.length === 0) {
@@ -317,14 +520,26 @@ export const RoomManagementScreen: React.FC = () => {
       const expiresText = invite.expires_at
         ? `Caduca: ${invite.expires_at}`
         : 'Sin caducidad';
-      Alert.alert(
-        'Invitacion creada',
-        `Codigo: ${invite.code}\n${expiresText}`
-      );
+      setInviteCode(invite.code);
+      setInviteExpires(expiresText);
+      setInviteCopied(false);
+      setInviteModalVisible(true);
     } catch (error) {
       console.error('Error creando invitacion:', error);
       Alert.alert('Error', 'No se pudo crear la invitacion');
     }
+  };
+
+  const handleCopyInvite = () => {
+    if (!inviteCode) return;
+    Clipboard.setString(inviteCode);
+    setInviteCopied(true);
+    if (inviteCopyTimeoutRef.current) {
+      clearTimeout(inviteCopyTimeoutRef.current);
+    }
+    inviteCopyTimeoutRef.current = setTimeout(() => {
+      setInviteCopied(false);
+    }, 1600);
   };
 
   const handleDeleteRoom = (room: Room) => {
@@ -408,29 +623,45 @@ export const RoomManagementScreen: React.FC = () => {
         style={styles.background}
       >
         <LinearGradient
-          colors={[colors.glassOverlay, colors.glassWarmStrong]}
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
           style={StyleSheet.absoluteFillObject}
         />
       </ImageBackground>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + spacing.md, paddingBottom: spacing.md },
+        ]}
+      >
         <BlurView
           blurType="light"
           blurAmount={16}
-          reducedTransparencyFallbackColor={colors.glassOverlay}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.headerFill} />
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={({ pressed }) => [
+            styles.headerIconButton,
+            pressed && styles.pressed,
+          ]}
+        >
           <Ionicons name="arrow-back" size={22} color={theme.colors.text} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           Gestion de habitaciones
         </Text>
         {flats.length > 0 ? (
-          <TouchableOpacity onPress={handleCreateRoom} style={styles.headerAction}>
-            <Ionicons name="add" size={20} color={theme.colors.primary} />
-            <Text style={styles.headerActionText}>Nueva</Text>
-          </TouchableOpacity>
+          <Pressable
+            onPress={handleCreateRoom}
+            style={({ pressed }) => [
+              styles.headerIconButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons name="add" size={20} color={theme.colors.text} />
+          </Pressable>
         ) : (
           <View style={styles.headerSpacer} />
         )}
@@ -453,12 +684,15 @@ export const RoomManagementScreen: React.FC = () => {
               <Text style={styles.emptySubtitle}>
                 Crea tu primer piso para empezar a publicar habitaciones.
               </Text>
-              <TouchableOpacity
-                style={styles.createFlatButton}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.createFlatButton,
+                  pressed && styles.pressed,
+                ]}
                 onPress={() => navigation.navigate('CreateFlat')}
               >
                 <Text style={styles.createFlatButtonText}>Crear piso</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : (
             <>
@@ -469,11 +703,12 @@ export const RoomManagementScreen: React.FC = () => {
                   {flats.map((flat) => {
                     const isActive = flat.id === selectedFlatId;
                     return (
-                      <TouchableOpacity
+                      <Pressable
                         key={flat.id}
-                        style={[
+                        style={({ pressed }) => [
                           styles.flatChip,
                           isActive && styles.flatChipActive,
+                          pressed && styles.pressed,
                         ]}
                         onPress={() => setSelectedFlatId(flat.id)}
                       >
@@ -485,21 +720,36 @@ export const RoomManagementScreen: React.FC = () => {
                         >
                           {flat.address}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     );
                   })}
-                  <TouchableOpacity
-                    style={[styles.flatChip, styles.flatChipAdd]}
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.flatChip,
+                      styles.flatChipAdd,
+                      pressed && styles.pressed,
+                    ]}
                     onPress={() => navigation.navigate('CreateFlat')}
                   >
                     <Ionicons name="add" size={14} color="#7C3AED" />
                     <Text style={styles.flatChipAddText}>Nuevo piso</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               </ScrollView>
             </View>
+            {selectedFlat ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.inlineAction,
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => navigation.navigate('EditFlat', { flat: selectedFlat })}
+              >
+                <Text style={styles.inlineActionText}>Editar piso</Text>
+              </Pressable>
+            ) : null}
 
-              <FormSection title="Reglas" iconName="clipboard-outline">
+              <FormSection title="Reglas" iconName="clipboard-outline" variant="flat">
                 {selectedFlatRules.length > 0 ? (
                   <View style={styles.rulesList}>
                     {selectedFlatRules.map((rule) => (
@@ -513,8 +763,11 @@ export const RoomManagementScreen: React.FC = () => {
                     Aun no has definido reglas del piso.
                   </Text>
                 )}
-                <TouchableOpacity
-                  style={styles.inlineAction}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.inlineAction,
+                    pressed && styles.pressed,
+                  ]}
                   onPress={() =>
                     selectedFlatId
                       ? navigation.navigate('RulesManagement', {
@@ -526,10 +779,10 @@ export const RoomManagementScreen: React.FC = () => {
                   <Text style={styles.inlineActionText}>
                     {selectedFlat?.rules ? 'Editar reglas' : 'Agregar reglas'}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               </FormSection>
 
-              <FormSection title="Servicios" iconName="flash-outline">
+              <FormSection title="Servicios" iconName="flash-outline" variant="flat">
                 {selectedFlat?.services && selectedFlat.services.length > 0 ? (
                   <View style={styles.servicesList}>
                     {selectedFlat.services.map((service, index) => (
@@ -548,8 +801,11 @@ export const RoomManagementScreen: React.FC = () => {
                     Aun no has definido servicios incluidos.
                   </Text>
                 )}
-                <TouchableOpacity
-                  style={styles.inlineAction}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.inlineAction,
+                    pressed && styles.pressed,
+                  ]}
                   onPress={() =>
                     selectedFlatId
                       ? navigation.navigate('ServicesManagement', {
@@ -563,10 +819,10 @@ export const RoomManagementScreen: React.FC = () => {
                       ? 'Editar servicios'
                       : 'Agregar servicios'}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               </FormSection>
 
-              <FormSection title="Tipo de convivencia" iconName="people-outline">
+              <FormSection title="Tipo de convivencia" iconName="people-outline" variant="flat">
                 <View style={styles.segmentRow}>
                   {[
                     { id: 'mixed' as const, label: 'Mixto' },
@@ -578,12 +834,13 @@ export const RoomManagementScreen: React.FC = () => {
                     const isDisabled =
                       updatingGenderPolicy || !allowedPolicies.has(option.id);
                     return (
-                      <TouchableOpacity
+                      <Pressable
                         key={option.id}
-                        style={[
+                        style={({ pressed }) => [
                           styles.segmentButton,
                           isActive && styles.segmentButtonActive,
                           isDisabled && styles.segmentButtonDisabled,
+                          pressed && !isDisabled && styles.pressed,
                         ]}
                         onPress={() => handleUpdateGenderPolicy(option.id)}
                         disabled={isDisabled}
@@ -597,7 +854,7 @@ export const RoomManagementScreen: React.FC = () => {
                         >
                           {option.label}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     );
                   })}
                 </View>
@@ -607,13 +864,16 @@ export const RoomManagementScreen: React.FC = () => {
                 </Text>
               </FormSection>
 
-              <FormSection title="Habitaciones" iconName="bed-outline">
-                <TouchableOpacity
-                  style={styles.inlineAction}
+              <FormSection title="Habitaciones" iconName="bed-outline" variant="flat">
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.inlineAction,
+                    pressed && styles.pressed,
+                  ]}
                   onPress={handleCreateRoom}
                 >
                   <Text style={styles.inlineActionText}>Agregar habitacion</Text>
-                </TouchableOpacity>
+                </Pressable>
 
                 {filteredRooms.length === 0 ? (
                   <View style={styles.emptyStateInline}>
@@ -685,28 +945,45 @@ export const RoomManagementScreen: React.FC = () => {
                             status.key === 'paused' && styles.statusPaused,
                           ]}
                         >
-                          <Text style={styles.statusText}>{status.label}</Text>
+                          <Text
+                            style={[
+                              styles.statusText,
+                              status.key === 'available' && styles.statusAvailableText,
+                              status.key === 'paused' && styles.statusPausedText,
+                            ]}
+                          >
+                            {status.label}
+                          </Text>
                         </View>
                       );
                     })()}
                   </View>
 
                   <View style={styles.actionsRow}>
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.actionButtonPrimary]}
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.actionButton,
+                        styles.actionButtonPrimary,
+                        pressed && styles.pressed,
+                      ]}
                       onPress={() => handleEditRoom(room)}
                     >
-                      <Ionicons name="create-outline" size={16} color="#111827" />
+                      <Ionicons
+                        name="create-outline"
+                        size={16}
+                        color={theme.colors.primary}
+                      />
                       <Text style={[styles.actionText, styles.actionTextPrimary]}>
                         Editar
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                     {!isCommonArea && (
-                      <TouchableOpacity
-                        style={[
+                      <Pressable
+                        style={({ pressed }) => [
                           styles.actionButton,
                           styles.actionButtonPrimary,
                           isAssigned && styles.actionButtonDisabled,
+                          pressed && !isAssigned && styles.pressed,
                         ]}
                         onPress={() => handleToggleAvailability(room)}
                         disabled={isAssigned}
@@ -714,44 +991,64 @@ export const RoomManagementScreen: React.FC = () => {
                         <Ionicons
                           name={room.is_available ? 'pause' : 'play'}
                           size={16}
-                          color="#111827"
+                          color={theme.colors.primary}
                         />
                         <Text style={[styles.actionText, styles.actionTextPrimary]}>
                           {room.is_available ? 'Pausar' : 'Activar'}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     )}
                     {!isCommonArea && (
-                      <TouchableOpacity
-                        style={[
+                      <Pressable
+                        style={({ pressed }) => [
                           styles.actionButton,
                           isAssigned && styles.actionButtonDisabled,
+                          pressed && !isAssigned && styles.pressed,
                         ]}
                         onPress={() => handleCreateInvite(room, isAssigned)}
                         disabled={isAssigned}
                       >
-                        <Ionicons name="ticket-outline" size={16} color="#111827" />
+                        <Ionicons
+                          name="ticket-outline"
+                          size={16}
+                          color={theme.colors.textStrong}
+                        />
                         <Text style={styles.actionText}>Invitar</Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     )}
                     {!isCommonArea && (
-                      <TouchableOpacity
-                        style={styles.actionButton}
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.actionButton,
+                          pressed && styles.pressed,
+                        ]}
                         onPress={() => handleViewInterests(room)}
                       >
-                        <Ionicons name="heart-outline" size={16} color="#111827" />
+                        <Ionicons
+                          name="heart-outline"
+                          size={16}
+                          color={theme.colors.textStrong}
+                        />
                         <Text style={styles.actionText}>Interesados</Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     )}
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.deleteButton]}
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.actionButton,
+                        styles.deleteButton,
+                        pressed && styles.pressed,
+                      ]}
                       onPress={() => handleDeleteRoom(room)}
                     >
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      <Ionicons
+                        name="trash-outline"
+                        size={16}
+                        color={theme.colors.error}
+                      />
                       <Text style={[styles.actionText, styles.deleteButtonText]}>
                         Eliminar
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
               );
@@ -761,6 +1058,81 @@ export const RoomManagementScreen: React.FC = () => {
           )}
         </ScrollView>
       )}
+
+      <Modal transparent animationType="fade" visible={inviteModalVisible}>
+        <View style={styles.inviteOverlay}>
+          <LinearGradient
+            colors={[theme.colors.overlayLight, theme.colors.overlay]}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setInviteModalVisible(false)}
+          />
+          <View
+            style={[
+              styles.inviteCard,
+              {
+                backgroundColor: theme.colors.glassUltraLightAlt,
+                borderColor: theme.colors.glassBorderSoft,
+              },
+            ]}
+          >
+            <BlurView
+              blurType="light"
+              blurAmount={14}
+              reducedTransparencyFallbackColor={theme.colors.glassUltraLightAlt}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View
+              style={[
+                styles.inviteCardFill,
+                { backgroundColor: theme.colors.glassUltraLightAlt },
+              ]}
+            />
+            <View style={styles.inviteHeader}>
+              <Ionicons
+                name="mail-open-outline"
+                size={20}
+                color={theme.colors.primary}
+              />
+              <Text style={styles.inviteTitleText}>Invitacion creada</Text>
+            </View>
+            <Text style={styles.inviteCodeLabel}>Codigo</Text>
+            <View style={styles.inviteCodeRow}>
+              <Text style={styles.inviteCodeValue}>{inviteCode}</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.inviteCopyButton,
+                  pressed && styles.pressed,
+                ]}
+                onPress={handleCopyInvite}
+              >
+                <Ionicons
+                  name={inviteCopied ? 'checkmark' : 'copy-outline'}
+                  size={16}
+                  color={
+                    inviteCopied ? theme.colors.successDark : theme.colors.primary
+                  }
+                />
+                <Text style={styles.inviteCopyText}>
+                  {inviteCopied ? 'Copiado' : 'Copiar'}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={styles.inviteExpiresText}>{inviteExpires}</Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.inviteCloseButton,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => setInviteModalVisible(false)}
+            >
+              <Text style={styles.inviteCloseText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

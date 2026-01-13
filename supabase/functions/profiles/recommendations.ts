@@ -110,7 +110,7 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // Obtener perfil del usuario  
     const { data: seekerProfile, error: seekerError } = await supabaseClient  
       .from('profiles')  
-      .select('*')  
+      .select('*, users!profiles_id_fkey(first_name, last_name)')  
       .eq('id', userId) // Cambiado de user_id a id  
       .single()  
   
@@ -124,6 +124,16 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
       )  
     }  
   
+    if (seekerProfile.is_searchable === false) {  
+      return new Response(  
+        JSON.stringify({ recommendations: [] }),  
+        {     
+          status: 200,     
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }  
+        }  
+      )  
+    }  
+  
     // Parsear filtros opcionales del body  
     const body: { filters?: { gender?: string } } = await req.json()  
     const filters = body.filters || {}  
@@ -131,8 +141,9 @@ const handler = withAuth(async (req: Request, payload: JWTPayload): Promise<Resp
     // Construir query para obtener otros perfiles  
     let query = supabaseClient  
       .from('profiles')  
-      .select('*')  
+      .select('*, users!profiles_id_fkey(first_name, last_name)')  
       .neq('id', userId) // Excluir propio perfil  
+      .neq('is_searchable', false)  
   
     // Aplicar filtros (simplificados)  
     if (filters.gender) {  

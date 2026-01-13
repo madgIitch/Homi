@@ -10,13 +10,15 @@
   participants?: string[];
   creator?: {
     id: string;
-    display_name?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
     avatar_url?: string | null;
   } | null;
 }
 
 export interface FlatExpenseMember {
   id: string;
-  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   avatar_url?: string | null;
 }

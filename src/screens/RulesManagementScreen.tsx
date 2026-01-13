@@ -1,13 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  Alert,
+  TouchableOpacity,
+  ImageBackground,
+  StyleSheet,
+  Dimensions,
+  Keyboard,
+  UIManager,
+  findNodeHandle,
+} from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { useTheme } from '../theme/ThemeContext';
-import { Button } from '../components/Button';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useTheme, useThemeController } from '../theme/ThemeContext';
+import { BlurView } from '@react-native-community/blur';
+import LinearGradient from 'react-native-linear-gradient';
 import { TextArea } from '../components/TextArea';
 import { ChipGroup } from '../components/ChipGroup';
 import { roomService } from '../services/roomService';
-import { RulesManagementScreenStyles as styles } from '../styles/screens';
+import { RulesManagementScreenStyles } from '../styles/screens';
+import { spacing } from '../theme';
 
 const RULE_OPTIONS = [
   { id: 'ruido', label: 'Ruido' },
@@ -19,7 +35,7 @@ const RULE_OPTIONS = [
   { id: 'banos', label: 'Mantener banos en orden' },
   { id: 'basura', label: 'Sacar la basura segun el turno' },
   { id: 'seguridad', label: 'Cerrar siempre la puerta con llave' },
-  { id: 'otros', label: 'Otros' },
+  { id: 'otros', label: '+ Otros' },
 ];
 
 const SUB_RULE_OPTIONS: Record<string, { id: string; label: string }[]> = {
@@ -27,40 +43,49 @@ const SUB_RULE_OPTIONS: Record<string, { id: string; label: string }[]> = {
     { id: 'ruido_22_08', label: 'Silencio 22:00 - 08:00' },
     { id: 'ruido_23_08', label: 'Silencio 23:00 - 08:00' },
     { id: 'ruido_flexible', label: 'Horario flexible' },
-    { id: 'ruido_otros', label: 'Otros' },
+    { id: 'ruido_otros', label: '+ Otros' },
   ],
   visitas: [
     { id: 'visitas_si', label: 'Si, con aviso' },
     { id: 'visitas_no', label: 'No permitidas' },
     { id: 'visitas_sin_dormir', label: 'Si, pero sin dormir' },
     { id: 'visitas_libre', label: 'Sin problema' },
-    { id: 'visitas_otros', label: 'Otros' },
+    { id: 'visitas_otros', label: '+ Otros' },
   ],
   limpieza: [
     { id: 'limpieza_semanal', label: 'Turnos semanales' },
     { id: 'limpieza_quincenal', label: 'Turnos quincenales' },
     { id: 'limpieza_por_uso', label: 'Limpieza por uso' },
     { id: 'limpieza_profesional', label: 'Servicio de limpieza' },
-    { id: 'limpieza_otros', label: 'Otros' },
+    { id: 'limpieza_otros', label: '+ Otros' },
   ],
   fumar: [
     { id: 'fumar_no', label: 'No fumar' },
     { id: 'fumar_terraza', label: 'Solo en terraza/balcon' },
     { id: 'fumar_si', label: 'Permitido en zonas comunes' },
-    { id: 'fumar_otros', label: 'Otros' },
+    { id: 'fumar_otros', label: '+ Otros' },
   ],
   mascotas: [
     { id: 'mascotas_no', label: 'No se permiten' },
     { id: 'mascotas_gatos', label: 'Solo gatos' },
     { id: 'mascotas_perros', label: 'Solo perros' },
     { id: 'mascotas_acuerdo', label: 'Permitidas bajo acuerdo' },
-    { id: 'mascotas_otros', label: 'Otros' },
+    { id: 'mascotas_otros', label: '+ Otros' },
   ],
 };
 
 export const RulesManagementScreen: React.FC = () => {
   const theme = useTheme();
+  const { isDark } = useThemeController();
+  const styles = useMemo(() => RulesManagementScreenStyles(theme), [theme]);
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
+  const scrollRef = React.useRef<ScrollView>(null);
+  const focusedInputHandle = React.useRef<number | null>(null);
+  const keyboardHeightRef = React.useRef(0);
+  const keyboardTopRef = React.useRef(Dimensions.get('window').height);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const scrollYRef = React.useRef(0);
   const route = useRoute();
   const routeParams = route.params as { flatId?: string | null } | undefined;
   const flatId = routeParams?.flatId ?? null;
@@ -160,6 +185,96 @@ export const RulesManagementScreen: React.FC = () => {
     loadRules();
   }, [loadRules]);
 
+  const scrollToFocusedInput = useCallback(
+    (extraOffset?: number) => {
+      const scrollNode = scrollRef.current;
+      const target = focusedInputHandle.current;
+      if (!scrollNode || !target) return;
+
+      UIManager.measureInWindow(target, (_x, y, _width, height) => {
+        const windowHeight = Dimensions.get('window').height;
+        const keyboardOffset =
+          keyboardHeightRef.current > 0
+            ? keyboardHeightRef.current * 0.18
+            : 0;
+        const resolvedOffset =
+          extraOffset ??
+          Math.round(
+            Math.min(80, Math.max(12, windowHeight * 0.035, keyboardOffset))
+          );
+        const resolvedKeyboardTop =
+          keyboardHeightRef.current > 0
+            ? keyboardTopRef.current
+            : windowHeight;
+        const targetBottom = y + height;
+        const targetTop = y;
+
+        if (
+          keyboardHeightRef.current > 0 &&
+          targetBottom > resolvedKeyboardTop - resolvedOffset
+        ) {
+          const delta = targetBottom - (resolvedKeyboardTop - resolvedOffset);
+          scrollNode.scrollTo({
+            y: Math.max(0, scrollYRef.current + delta),
+            animated: true,
+          });
+          return;
+        }
+
+        const safeTop = insets.top + 16;
+        if (targetTop < safeTop) {
+          const delta = safeTop - targetTop;
+          scrollNode.scrollTo({
+            y: Math.max(0, scrollYRef.current - delta),
+            animated: true,
+          });
+        }
+      });
+    },
+    [insets.top]
+  );
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardHeightRef.current = event.endCoordinates.height;
+      keyboardTopRef.current = event.endCoordinates.screenY;
+      setKeyboardHeight(event.endCoordinates.height);
+      requestAnimationFrame(() => scrollToFocusedInput());
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardHeightRef.current = 0;
+      keyboardTopRef.current = Dimensions.get('window').height;
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [scrollToFocusedInput]);
+
+  const handleInputFocus = useCallback(
+    (event: any) => {
+      const rawTarget = event?.target ?? event?.nativeEvent?.target;
+      let target: number | null = null;
+
+      if (typeof rawTarget === 'number') {
+        target = rawTarget;
+      } else if (rawTarget) {
+        const handle = findNodeHandle(rawTarget as any);
+        if (typeof handle === 'number') {
+          target = handle;
+        }
+      }
+
+      if (target != null) {
+        focusedInputHandle.current = target;
+      }
+
+      setTimeout(() => scrollToFocusedInput(), 50);
+    },
+    [scrollToFocusedInput]
+  );
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -209,115 +324,165 @@ export const RulesManagementScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          Reglas del piso
-        </Text>
+    <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
+      <ImageBackground
+        source={{
+          uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        }}
+        blurRadius={18}
+        style={styles.background}
+      >
+        <LinearGradient
+          colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </ImageBackground>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + spacing.md, paddingBottom: spacing.md },
+        ]}
+      >
+        <BlurView
+          blurType={isDark ? 'dark' : 'light'}
+          blurAmount={16}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerFill} />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.headerIconButton}
+        >
+          <Ionicons name="arrow-back" size={18} color={theme.colors.text} />
+        </TouchableOpacity>
+        <View style={styles.headerTitleWrap}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            Reglas del piso
+          </Text>
+        </View>
         <View style={styles.headerActions}>
-          <Button
-            title="Cancelar"
-            onPress={() => navigation.goBack()}
-            variant="tertiary"
-            size="small"
-          />
-          <Button
-            title="Guardar"
+          <TouchableOpacity
+            style={styles.headerIconButton}
             onPress={handleSave}
-            size="small"
-            loading={saving}
-          />
+            disabled={saving}
+          >
+            <Ionicons name="checkmark" size={20} color={theme.colors.text} />
+          </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.content}
+        contentContainerStyle={{
+          paddingBottom: insets.bottom + keyboardHeight + 24,
+        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onScroll={(event) => {
+          scrollYRef.current = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
+      >
         {!flatId && (
           <Text style={styles.emptyText}>
             No se encontro el piso seleccionado.
           </Text>
         )}
-        <ChipGroup
-          label="Selecciona las reglas principales"
-          options={RULE_OPTIONS}
-          selectedIds={selectedRules}
-          onSelect={(id) => {
-            setSelectedRules((prev) => {
-              const willRemove = prev.includes(id);
-              const next = willRemove
-                ? prev.filter((item) => item !== id)
-                : [...prev, id];
+        <View style={styles.rulesCard}>
+          <ChipGroup
+            label="Selecciona las reglas principales"
+            options={RULE_OPTIONS}
+            selectedIds={selectedRules}
+            onSelect={(id) => {
+              setSelectedRules((prev) => {
+                const willRemove = prev.includes(id);
+                const next = willRemove
+                  ? prev.filter((item) => item !== id)
+                  : [...prev, id];
 
-              if (SUB_RULE_OPTIONS[id]) {
-                setSubSelections((current) => {
-                  const nextSelections = { ...current };
-                  if (willRemove) {
-                    delete nextSelections[id];
-                  } else if (!nextSelections[id]) {
-                    nextSelections[id] = SUB_RULE_OPTIONS[id][0]?.id ?? null;
-                  }
-                  return nextSelections;
-                });
-                if (willRemove) {
-                  setSubCustom((current) => {
-                    const nextCustom = { ...current };
-                    delete nextCustom[id];
-                    return nextCustom;
+                if (SUB_RULE_OPTIONS[id]) {
+                  setSubSelections((current) => {
+                    const nextSelections = { ...current };
+                    if (willRemove) {
+                      delete nextSelections[id];
+                    } else if (!nextSelections[id]) {
+                      nextSelections[id] = SUB_RULE_OPTIONS[id][0]?.id ?? null;
+                    }
+                    return nextSelections;
                   });
+                  if (willRemove) {
+                    setSubCustom((current) => {
+                      const nextCustom = { ...current };
+                      delete nextCustom[id];
+                      return nextCustom;
+                    });
+                  }
                 }
-              }
 
-              return next;
-            });
-          }}
-          multiline
-        />
-        {Object.keys(SUB_RULE_OPTIONS)
-          .filter((ruleId) => selectedRules.includes(ruleId))
-          .map((ruleId) => {
-            const options = SUB_RULE_OPTIONS[ruleId];
-            const active = subSelections[ruleId];
-            const label = ruleLabelById.get(ruleId) ?? 'Regla';
-            return (
-              <View key={ruleId} style={styles.ruleBlock}>
-                <Text style={styles.ruleBlockLabel}>{label}</Text>
-                <View style={styles.ruleOptions}>
-                  {options.map((option) => {
-                    const isActive = active === option.id;
-                    return (
-                      <TouchableOpacity
-                        key={option.id}
-                        style={[
-                          styles.ruleOptionChip,
-                          isActive && styles.ruleOptionChipActive,
-                        ]}
-                        onPress={() =>
-                          setSubSelections((prev) => ({
-                            ...prev,
-                            [ruleId]: option.id,
-                          }))
-                        }
-                      >
-                        <Text
+                return next;
+              });
+            }}
+            multiline
+            labelStyle={styles.compactLabel}
+            chipContainerStyle={styles.compactChipContainer}
+            chipStyle={styles.compactChip}
+            textStyle={styles.compactChipText}
+          />
+          {Object.keys(SUB_RULE_OPTIONS)
+            .filter((ruleId) => selectedRules.includes(ruleId))
+            .map((ruleId) => {
+              const options = SUB_RULE_OPTIONS[ruleId];
+              const active = subSelections[ruleId];
+              const label = ruleLabelById.get(ruleId) ?? 'Regla';
+              return (
+                <View key={ruleId} style={styles.ruleBlock}>
+                  <Text style={styles.ruleBlockLabel}>{label}</Text>
+                  <Text style={styles.ruleBlockSubtitle}>
+                    Elige una opcion
+                  </Text>
+                  <View style={styles.ruleOptions}>
+                    {options.map((option) => {
+                      const isActive = active === option.id;
+                      return (
+                        <TouchableOpacity
+                          key={option.id}
                           style={[
-                            styles.ruleOptionText,
-                            isActive && styles.ruleOptionTextActive,
+                            styles.ruleOptionChip,
+                            isActive && styles.ruleOptionChipActive,
                           ]}
+                          onPress={() =>
+                            setSubSelections((prev) => ({
+                              ...prev,
+                              [ruleId]: option.id,
+                            }))
+                          }
                         >
-                          {option.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {active?.endsWith('_otros') && (
+                          <Text
+                            style={[
+                              styles.ruleOptionText,
+                              isActive && styles.ruleOptionTextActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {active?.endsWith('_otros') && (
                   <TextArea
                     label={`Texto para ${label}`}
+                    labelStyle={styles.textAreaLabel}
                     value={subCustom[ruleId] ?? ''}
                     onChangeText={(value) =>
                       setSubCustom((prev) => ({ ...prev, [ruleId]: value }))
                     }
+                    onFocus={handleInputFocus}
                     maxLength={300}
                     placeholder="Escribe tu regla"
+                    inputStyle={styles.textAreaInput}
                   />
                 )}
               </View>
@@ -326,14 +491,17 @@ export const RulesManagementScreen: React.FC = () => {
         {selectedRules.includes('otros') && (
           <TextArea
             label="Otras reglas"
+            labelStyle={styles.textAreaLabel}
             value={customRules}
             onChangeText={setCustomRules}
+            onFocus={handleInputFocus}
             maxLength={600}
             placeholder="Ej: No se puede fumar en balcon, visitas max 2 noches"
+            inputStyle={styles.textAreaInput}
           />
         )}
+        </View>
       </ScrollView>
     </View>
   );
 };
-

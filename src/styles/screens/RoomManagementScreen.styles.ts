@@ -1,8 +1,11 @@
 import { StyleSheet } from 'react-native';
-import { borderRadius, colors, semanticRadii, sizes, spacing } from '../../theme';
-import { commonStyles } from '../common';
+import type { Theme } from '../../theme';
+import { createCommonStyles } from '../common';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const commonStyles = createCommonStyles(theme);
+  const { colors, spacing, sizes, borderRadius, semanticRadii } = theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surfaceMutedAlt,
@@ -34,6 +37,16 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.s6,
   },
+  headerIconButton: {
+    width: sizes.s36,
+    height: sizes.s36,
+    borderRadius: borderRadius.s18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+  },
   headerActionText: {
     fontSize: 13,
     fontWeight: '600',
@@ -41,6 +54,9 @@ export const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: spacing.s40,
+  },
+  pressed: {
+    opacity: 0.75,
   },
   loadingContainer: {
     flex: 1,
@@ -73,8 +89,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.glassSurface,
   },
   flatChipActive: {
-    borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryTint,
+    borderColor: colors.chipSelectedBorder,
+    backgroundColor: colors.chipSelectedBackground,
   },
   flatChipText: {
     fontSize: 12,
@@ -82,7 +98,7 @@ export const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   flatChipTextActive: {
-    color: colors.primary,
+    color: colors.chipSelectedText,
   },
   flatChipAdd: {
     borderStyle: 'dashed',
@@ -101,10 +117,13 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.s40,
-    borderRadius: semanticRadii.card,
+    borderRadius: semanticRadii.sheet,
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
-    backgroundColor: colors.glassUltraLightAlt,
+    backgroundColor: colors.glassSurface,
+    overflow: 'hidden',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   createFlatButton: {
     marginTop: spacing.md,
@@ -212,15 +231,105 @@ export const styles = StyleSheet.create({
   segmentButtonTextDisabled: {
     color: colors.textTertiary,
   },
-  roomCard: {
-    marginTop: spacing.s12,
-    borderRadius: borderRadius.s18,
+  inviteOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  inviteCard: {
+    borderRadius: semanticRadii.sheet,
     borderWidth: 1,
-    borderColor: colors.glassBorder,
-    backgroundColor: colors.glassMid,
-    padding: spacing.s12,
+    borderColor: colors.glassBorderSoft,
+    padding: spacing.lg,
+    backgroundColor: colors.glassSurface,
+    overflow: 'hidden',
     shadowOpacity: 0,
     elevation: 0,
+  },
+  inviteCardFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.glassUltraLightAlt,
+  },
+  inviteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s10,
+    marginBottom: spacing.s12,
+  },
+  inviteTitleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  inviteCodeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.xs,
+  },
+  inviteCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s10,
+    justifyContent: 'space-between',
+  },
+  inviteCodeValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    letterSpacing: 1.2,
+    flex: 1,
+  },
+  inviteCopyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+  },
+  inviteCopyText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  inviteExpiresText: {
+    marginTop: spacing.s10,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  inviteCloseButton: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.s16,
+    paddingVertical: spacing.s8,
+    borderRadius: semanticRadii.pill,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  inviteCloseText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  roomCard: {
+    marginTop: spacing.s12,
+    borderRadius: semanticRadii.sheet,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+    paddingHorizontal: spacing.s18,
+    paddingVertical: spacing.md,
+    paddingBottom: spacing.lg,
+    shadowOpacity: 0,
+    elevation: 0,
+    overflow: 'hidden',
   },
   roomCardHeader: {
     flexDirection: 'row',
@@ -247,7 +356,7 @@ export const styles = StyleSheet.create({
   roomTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.textStrong,
   },
   roomMeta: {
     marginTop: spacing.xs,
@@ -259,12 +368,15 @@ export const styles = StyleSheet.create({
     gap: spacing.md,
   },
   card: {
-    borderRadius: semanticRadii.card,
+    borderRadius: semanticRadii.sheet,
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
-    backgroundColor: colors.glassUltraLight,
+    backgroundColor: colors.glassSurface,
     paddingHorizontal: spacing.s18,
     paddingVertical: spacing.s16,
+    overflow: 'hidden',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   cardHeader: {
     marginBottom: spacing.s12,
@@ -297,13 +409,19 @@ export const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: colors.textStrong,
   },
   statusAvailable: {
-    backgroundColor: colors.successLight,
+    backgroundColor: colors.successSoft,
   },
   statusPaused: {
     backgroundColor: colors.errorSoft,
+  },
+  statusAvailableText: {
+    color: colors.successDark,
+  },
+  statusPausedText: {
+    color: colors.errorDark,
   },
   statusReserved: {
     backgroundColor: colors.infoLight,
@@ -326,11 +444,11 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: spacing.s6,
-    backgroundColor: colors.glassSurface,
+    backgroundColor: colors.glassUltraLightAlt,
   },
   actionButtonPrimary: {
     borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryTint,
+    backgroundColor: colors.glassUltraLightAlt,
   },
   actionButtonDisabled: {
     opacity: 0.5,
@@ -338,7 +456,7 @@ export const styles = StyleSheet.create({
   actionText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textMuted,
+    color: colors.textStrong,
   },
   actionTextPrimary: {
     color: colors.primary,
@@ -350,4 +468,5 @@ export const styles = StyleSheet.create({
   deleteButtonText: {
     color: colors.error,
   },
-});
+  });
+};

@@ -1,5 +1,5 @@
 // src/screens/register/Phase2Name.tsx  
-import React, { useState } from 'react';  
+import React, { useState, useMemo } from 'react';  
 import {
   View,
   Text,
@@ -9,20 +9,23 @@ import {
 import { Button } from '../../components/Button';  
 import { useTheme } from '../../theme/ThemeContext';  
 import { Phase2Data } from '../../types/auth';  
-import { Phase2NameStyles as styles } from '../../styles/screens';
+import { Phase2NameStyles } from '../../styles/screens';
   
 interface Phase2NameProps {  
   onNext: (data: Phase2Data) => void;  
   onBack: () => void;  
+  onInputFocus?: (event: any) => void;
   loading: boolean;  
 }  
   
 export const Phase2Name: React.FC<Phase2NameProps> = ({  
   onNext,  
   onBack,  
+  onInputFocus,
   loading,  
 }) => {  
-  const theme = useTheme();  
+  const theme = useTheme();
+  const styles = useMemo(() => Phase2NameStyles(theme), [theme]);  
   const [firstName, setFirstName] = useState('');  
   const [lastName, setLastName] = useState('');  
   
@@ -70,6 +73,7 @@ export const Phase2Name: React.FC<Phase2NameProps> = ({
           placeholderTextColor={theme.colors.textTertiary}  
           value={firstName}  
           onChangeText={setFirstName}  
+          onFocus={onInputFocus}
         />  
   
         <TextInput  
@@ -85,6 +89,7 @@ export const Phase2Name: React.FC<Phase2NameProps> = ({
           placeholderTextColor={theme.colors.textTertiary}  
           value={lastName}  
           onChangeText={setLastName}  
+          onFocus={onInputFocus}
         />  
 
   

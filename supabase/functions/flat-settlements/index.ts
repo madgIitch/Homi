@@ -8,8 +8,9 @@ import type { JWTPayload } from '../_shared/types.ts';
 
 interface FlatSettlementMember {
   id: string;
-  display_name?: string | null;
   avatar_url?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   paid: number;
   share: number;
   balance: number;
@@ -43,6 +44,20 @@ interface FlatSettlementSummary {
 }
 
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
+
+const getNameFields = (
+  profile?: {
+    users?: { first_name?: string | null; last_name?: string | null } | null;
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null
+) => {
+  const firstName = profile?.users?.first_name ?? profile?.first_name ?? null;
+  const lastName = profile?.users?.last_name ?? profile?.last_name ?? null;
+  const trimmedFirst = firstName?.trim() || null;
+  const trimmedLast = lastName?.trim() || null;
+  return { first_name: trimmedFirst, last_name: trimmedLast };
+};
 
 const getMonthRange = (month: string) => {
   const [year, monthValue] = month.split('-').map(Number);
@@ -96,12 +111,23 @@ async function loadOwnerProfile(flatId: string) {
 
   const { data: ownerProfile, error: ownerError } = await supabaseAdmin
     .from('profiles')
-    .select('id, display_name, avatar_url')
+    .select('id, avatar_url, users!profiles_id_fkey(first_name, last_name)')
     .eq('id', flatRow.owner_id)
     .single();
 
   if (ownerError || !ownerProfile) return null;
-  return ownerProfile as { id: string; display_name?: string | null; avatar_url?: string | null };
+  const nameFields = getNameFields(ownerProfile);
+  return {
+    id: ownerProfile.id as string,
+    avatar_url: (ownerProfile.avatar_url as string | null) ?? null,
+    first_name: nameFields.first_name,
+    last_name: nameFields.last_name,
+  } as {
+    id: string;
+    avatar_url?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+  };
 }
 
 async function loadFlatInfo(flatId: string) {
@@ -125,27 +151,41 @@ async function loadFlatMembers(
   flatId: string,
   flatInfo: { owner_id: string; created_at: string } | null
 ): Promise<
-  { id: string; display_name?: string | null; avatar_url?: string | null; joined_at: string }[]
+      {
+        id: string;
+        avatar_url?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        joined_at: string;
+  }[]
 > {
   const members = new Map<
     string,
-    { id: string; display_name?: string | null; avatar_url?: string | null; joined_at: string }
+      {
+        id: string;
+        avatar_url?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        joined_at: string;
+    }
   >();
 
   if (flatInfo?.owner_id) {
     const { data: ownerProfile, error: ownerError } = await supabaseAdmin
       .from('profiles')
-      .select('id, display_name, avatar_url')
+      .select('id, avatar_url, users!profiles_id_fkey(first_name, last_name)')
       .eq('id', flatInfo.owner_id)
       .single();
 
     if (!ownerError && ownerProfile) {
-      members.set(ownerProfile.id as string, {
-        id: ownerProfile.id as string,
-        display_name: (ownerProfile.display_name as string | null) ?? null,
-        avatar_url: (ownerProfile.avatar_url as string | null) ?? null,
-        joined_at: toDateKey(flatInfo.created_at),
-      });
+      const nameFields = getNameFields(ownerProfile);
+        members.set(ownerProfile.id as string, {
+          id: ownerProfile.id as string,
+          avatar_url: (ownerProfile.avatar_url as string | null) ?? null,
+          first_name: nameFields.first_name,
+          last_name: nameFields.last_name,
+          joined_at: toDateKey(flatInfo.created_at),
+        });
     }
   }
 
@@ -155,7 +195,7 @@ async function loadFlatMembers(
       `
       assignee_id,
       updated_at,
-      assignee:profiles(id, display_name, avatar_url),
+      assignee:profiles(id, avatar_url, users!profiles_id_fkey(first_name, last_name)),
       room:rooms!inner(flat_id)
     `
     )
@@ -166,17 +206,19 @@ async function loadFlatMembers(
     assignments.forEach((row) => {
       const assignee = row.assignee as {
         id: string;
-        display_name?: string | null;
         avatar_url?: string | null;
+        users?: { first_name?: string | null; last_name?: string | null } | null;
       } | null;
       const joinedAt = row.updated_at ? toDateKey(row.updated_at as string) : null;
       if (assignee?.id && joinedAt) {
-        members.set(assignee.id, {
-          id: assignee.id,
-          display_name: assignee.display_name ?? null,
-          avatar_url: assignee.avatar_url ?? null,
-          joined_at: joinedAt,
-        });
+        const nameFields = getNameFields(assignee);
+          members.set(assignee.id, {
+            id: assignee.id,
+            avatar_url: assignee.avatar_url ?? null,
+            first_name: nameFields.first_name,
+            last_name: nameFields.last_name,
+            joined_at: joinedAt,
+          });
       }
     });
   }
@@ -264,7 +306,13 @@ function buildSettlementSummary(
     owner_id: string;
     created_at: string;
   } | null,
-  members: { id: string; display_name?: string | null; avatar_url?: string | null; joined_at: string }[],
+    members: {
+      id: string;
+      avatar_url?: string | null;
+      first_name?: string | null;
+      last_name?: string | null;
+    joined_at: string;
+  }[],
   expenses: { id: string; created_by: string; amount: number; expense_date: string }[],
   expenseParticipants: Map<string, string[]>,
   paidSet: Set<string>,
@@ -330,10 +378,11 @@ function buildSettlementSummary(
     const baseBalance = paid - share;
     const adjustment = paymentAdjustments.get(member.id) ?? 0;
     const balance = baseBalance + adjustment;
-    return {
-      id: member.id,
-      display_name: member.display_name ?? null,
-      avatar_url: member.avatar_url ?? null,
+      return {
+        id: member.id,
+        avatar_url: member.avatar_url ?? null,
+        first_name: member.first_name ?? null,
+        last_name: member.last_name ?? null,
       paid: fromCents(paid),
       share: fromCents(share),
       balance: fromCents(balance),

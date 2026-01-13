@@ -80,6 +80,8 @@ const defaultHeaders = {
 };
 
 const AUTH_REFRESH_TOKEN_KEY = 'authRefreshToken';
+const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
+const JOINED_WITH_INVITE_KEY = 'joinedWithInvite';
 
 class AuthService {
   async persistSession(
@@ -172,16 +174,50 @@ class AuthService {
     };
   }
 
-  async loginWithGoogle(): Promise<AuthResponse> {
+  async loginWithGoogle(requireExisting: boolean = true): Promise<AuthResponse> {
     console.log('[AuthService.loginWithGoogle] Iniciando login con Google');
     await GoogleSignin.hasPlayServices();
     const result = await GoogleSignin.signIn();
     const idToken = result.data?.idToken;
+    const email =
+      result.data?.user?.email ||
+      (result as any)?.user?.email ||
+      (result as any)?.data?.profile?.email ||
+      (result as any)?.profile?.email;
 
     console.log('[AuthService.loginWithGoogle] Google idToken exists:', !!idToken);
 
     if (!idToken) {
       throw new Error('No se pudo obtener el idToken de Google');
+    }
+
+    if (!email) {
+      throw new Error('No se pudo obtener el email de Google');
+    }
+
+    if (requireExisting) {
+      const emailCheckResponse = await fetch(
+        `${API_CONFIG.FUNCTIONS_URL}/auth-check-email`,
+        {
+          method: 'POST',
+          headers: defaultHeaders,
+          body: JSON.stringify({ email }),
+        }
+      );
+
+      if (!emailCheckResponse.ok) {
+        const detail = await emailCheckResponse.text();
+        console.error(
+          '[AuthService.loginWithGoogle] email check failed:',
+          detail
+        );
+        throw new Error('No se pudo verificar el email');
+      }
+
+      const emailCheck = await emailCheckResponse.json();
+      if (!emailCheck?.exists) {
+        throw new Error('No existe una cuenta asociada a este Google');
+      }
     }
 
     const { data, error } = await supabaseClient.auth.signInWithIdToken({
@@ -364,6 +400,8 @@ class AuthService {
     console.log('[AuthService.logout] Removing authToken from storage');
     await AsyncStorage.removeItem('authToken');
     await AsyncStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
+    await AsyncStorage.removeItem(ONBOARDING_COMPLETED_KEY);
+    await AsyncStorage.removeItem(JOINED_WITH_INVITE_KEY);
   }
 
   async refreshToken(): Promise<string | null> {
@@ -516,6 +554,38 @@ class AuthService {
   // Limpiar registro temporal (útil si el usuario abandona el proceso)
   async clearTempRegistration(): Promise<void> {
     await AsyncStorage.removeItem('tempRegistration');
+  }
+
+  // Verificar si un email ya existe en la base de datos
+  async checkEmailExists(email: string): Promise<boolean> {
+    console.log('[AuthService.checkEmailExists] Checking email:', email);
+
+    try {
+      const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-check-email`, {
+        method: 'POST',
+        headers: defaultHeaders,
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      console.log('[AuthService.checkEmailExists] Response:', {
+        status: response.status,
+        ok: response.ok,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[AuthService.checkEmailExists] Error:', errorText);
+        throw new Error('Error al verificar el email');
+      }
+
+      const result = await response.json();
+      console.log('[AuthService.checkEmailExists] Result:', result);
+      
+      return result.exists === true;
+    } catch (error) {
+      console.error('[AuthService.checkEmailExists] Error:', error);
+      throw error;
+    }
   }
 }
 

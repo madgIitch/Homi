@@ -1,0 +1,65 @@
+name: Edge Functions Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  edge-functions-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Verify Deno installation
+        run: deno --version
+
+      - name: Set environment variables for tests
+        run: |
+          echo "SUPABASE_URL=http://localhost:54321" >> $GITHUB_ENV
+          echo "SUPABASE_ANON_KEY=test-anon-key" >> $GITHUB_ENV
+          echo "SUPABASE_SERVICE_ROLE_KEY=test-service-role-key" >> $GITHUB_ENV
+
+      - name: Run auth-login tests
+        run: deno run --allow-all supabase/functions/_tests/auth-login.test.ts
+
+      - name: Run profiles tests
+        run: deno run --allow-all supabase/functions/_tests/profiles.test.ts
+
+      - name: Run matches tests
+        run: deno run --allow-all supabase/functions/_tests/matches.test.ts
+
+      - name: Run room-assignments tests
+        run: deno run --allow-all supabase/functions/_tests/room-assignments.test.ts
+
+      - name: Run auth-register-phase3 tests
+        run: deno run --allow-all supabase/functions/_tests/auth-register-phase3.test.ts
+
+      - name: Run rooms tests
+        run: deno run --allow-all supabase/functions/_tests/rooms.test.ts
+
+      - name: Run chats tests
+        run: deno run --allow-all supabase/functions/_tests/chats.test.ts
+
+      - name: Run all tests with summary
+        run: deno run --allow-all supabase/functions/_tests/run-all-tests.ts
+
+      - name: Check test results
+        run: |
+          if [ $? -ne 0 ]; then
+            echo "❌ Some edge function tests failed!"
+            exit 1
+          fi
+          echo "✅ All edge function tests passed!"

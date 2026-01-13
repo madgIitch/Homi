@@ -1,8 +1,11 @@
 import { StyleSheet } from 'react-native';
-import { colors, semanticRadii, spacing } from '../../theme';
-import { commonStyles } from '../common';
+import type { Theme } from '../../theme';
+import { createCommonStyles } from '../common';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const commonStyles = createCommonStyles(theme);
+  const { colors, spacing, semanticRadii } = theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
     padding: spacing.lg,
@@ -42,4 +45,5 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
-});
+  });
+};

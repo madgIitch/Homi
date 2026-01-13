@@ -91,9 +91,10 @@ async function getSignedAvatarUrl(avatarUrl: string): Promise<string | null> {
 }
 
 async function getProfile(userId: string): Promise<Profile | null> {
+  console.log('[profile-share-image] fetch profile', userId);
   const { data, error } = await supabaseAdmin
     .from('profiles')
-    .select('*, users!profiles_id_fkey(birth_date)')
+    .select('*, users!profiles_id_fkey(birth_date, first_name, last_name)')
     .eq('id', userId)
     .single();
 
@@ -102,11 +103,13 @@ async function getProfile(userId: string): Promise<Profile | null> {
   }
 
   const { users, ...profileData } = data as Profile & {
-    users?: { birth_date?: string | null };
+    users?: { birth_date?: string | null; first_name?: string | null; last_name?: string | null };
   };
   const profile: Profile = {
     ...profileData,
-    birth_date: users?.birth_date ?? undefined,
+    birth_date: users?.birth_date ?? profileData.birth_date ?? undefined,
+    first_name: users?.first_name ?? profileData.first_name ?? undefined,
+    last_name: users?.last_name ?? profileData.last_name ?? undefined,
   };
   if (profile.avatar_url) {
     const signedUrl = await getSignedAvatarUrl(profile.avatar_url);
@@ -116,6 +119,89 @@ async function getProfile(userId: string): Promise<Profile | null> {
   }
 
   return profile;
+}
+
+async function getPlaceLabels(placeIds: string[]): Promise<string[]> {
+  const filtered = placeIds.filter((value) => value);
+  if (filtered.length === 0) return [];
+  console.log('[profile-share-image] resolve place labels', {
+    count: filtered.length,
+  });
+
+  const { data: placeRows, error: placeError } = await supabaseAdmin
+    .from('city_places')
+    .select('id, name, city_id')
+    .in('id', filtered);
+
+  if (placeError) {
+    console.warn('[profile-share-image] place lookup failed', {
+      error: placeError.message,
+    });
+  }
+
+  const places = (placeRows ?? []) as Array<{
+    id?: string | null;
+    name?: string | null;
+    city_id?: string | null;
+  }>;
+  const placeMap = new Map<string, { name?: string | null; city_id?: string | null }>();
+  const cityIds = new Set<string>();
+  places.forEach((row) => {
+    if (!row.id) return;
+    placeMap.set(row.id, { name: row.name ?? null, city_id: row.city_id ?? null });
+    if (row.city_id) {
+      cityIds.add(row.city_id);
+    }
+  });
+
+  const { data: cityRows, error: cityError } = await supabaseAdmin
+    .from('cities')
+    .select('id, name')
+    .in('id', Array.from(cityIds));
+
+  if (cityError) {
+    console.warn('[profile-share-image] city lookup failed', {
+      error: cityError.message,
+    });
+  }
+
+  const cityMap = new Map<string, string>();
+  (cityRows ?? []).forEach((row) => {
+    const city = row as { id?: string | null; name?: string | null };
+    if (city.id && city.name) {
+      cityMap.set(city.id, city.name);
+    }
+  });
+
+  const { data: fallbackCities } = await supabaseAdmin
+    .from('cities')
+    .select('id, name')
+    .in('id', filtered);
+  const fallbackCityMap = new Map<string, string>();
+  (fallbackCities ?? []).forEach((row) => {
+    const city = row as { id?: string | null; name?: string | null };
+    if (city.id && city.name) {
+      fallbackCityMap.set(city.id, city.name);
+    }
+  });
+
+  const labels = filtered
+    .map((placeId) => {
+      const place = placeMap.get(placeId);
+      const placeName = place?.name ?? null;
+      const cityName = place?.city_id ? cityMap.get(place.city_id) ?? null : null;
+      const label =
+        cityName && placeName
+          ? `${cityName}\u00A0-\u00A0${placeName}`
+          : placeName ?? cityName;
+      return label ?? fallbackCityMap.get(placeId) ?? null;
+    })
+    .filter((label): label is string => Boolean(label));
+
+  console.log('[profile-share-image] resolved place labels', {
+    labels,
+  });
+  return labels;
 }
 
 function calculateAge(birthDate?: string | null): number | null {
@@ -163,7 +249,40 @@ function chip(text: string, isFilled = false) {
   );
 }
 
-function infoRow(icon: string, label: string, detail?: string | null) {
+function locationChip(text: string, chipKey?: string) {
+  return h(
+    'div',
+    {
+      key: chipKey,
+      style: {
+        padding: '8px 18px',
+        borderRadius: '999px',
+        fontSize: '22px',
+        fontWeight: 600,
+        display: 'flex',
+        alignItems: 'center',
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
+        color: COLORS.lightText,
+        border: `2px solid ${COLORS.lightText}`,
+        marginRight: '14px',
+        marginBottom: '10px',
+      },
+    },
+    text
+  );
+}
+
+function infoRow(
+  icon: string,
+  label: React.ReactNode,
+  detail?: string | null,
+  options?: { iconSize?: number; iconBoxWidth?: number; minHeight?: number }
+) {
+  const hasDetail = Boolean(detail);
+  const iconSize = options?.iconSize ?? 34;
+  const iconBoxWidth = options?.iconBoxWidth ?? 40;
+  const minHeight = options?.minHeight ?? 120;
   return h(
     'div',
     {
@@ -173,8 +292,10 @@ function infoRow(icon: string, label: string, detail?: string | null) {
         justifyContent: 'space-between',
         backgroundColor: COLORS.darkSurface,
         borderRadius: '48px',
-        padding: '22px 28px',
-        marginTop: '18px',
+        padding: '32px 38px',
+        marginTop: '26px',
+        minHeight: `${minHeight}px`,
+        gap: '16px',
       },
     },
     h(
@@ -183,28 +304,43 @@ function infoRow(icon: string, label: string, detail?: string | null) {
         style: {
           display: 'flex',
           alignItems: 'center',
-          gap: '14px',
+          gap: '18px',
+          flex: 1,
+          minWidth: 0,
         },
       },
       h(
         'div',
         {
           style: {
-            fontSize: '26px',
+            fontSize: `${iconSize}px`,
+            lineHeight: `${iconSize + 6}px`,
+            width: `${iconBoxWidth}px`,
+            textAlign: 'center',
+            flexShrink: 0,
           },
         },
         icon
       ),
     h(
       'div',
-      {
-        style: {
-          fontSize: '28px',
-          fontWeight: 600,
-          color: COLORS.lightText,
+        {
+          style: {
+            display: 'flex',
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            fontSize: '34px',
+            fontWeight: 600,
+            color: COLORS.lightText,
+            lineHeight: '40px',
+            flex: 1,
+            minWidth: 0,
+            whiteSpace: 'pre-wrap',
+          },
         },
-      },
-      label
+        label
       )
     ),
     detail
@@ -212,8 +348,12 @@ function infoRow(icon: string, label: string, detail?: string | null) {
           'div',
           {
             style: {
-              fontSize: '22px',
+              fontSize: '26px',
               color: COLORS.mutedText,
+              lineHeight: '34px',
+              textAlign: 'right',
+              whiteSpace: 'pre-wrap',
+              flexShrink: 0,
             },
           },
           detail
@@ -226,7 +366,7 @@ function renderShareCard({
   name,
   age,
   bio,
-  city,
+  cityLabels,
   housingLabel,
   budgetLabel,
   photos,
@@ -234,12 +374,19 @@ function renderShareCard({
   name: string;
   age: string | null;
   bio: string;
-  city: string;
+  cityLabels: string[];
   housingLabel: string;
   budgetLabel: string | null;
   photos: Array<string | null>;
 }) {
   const nameLine = age ? `${name}, ${age}` : name;
+  const cityChipLabels = cityLabels.filter((label) => label.trim().length > 0);
+  const cityChipContent =
+    cityChipLabels.length > 0
+      ? cityChipLabels.map((label, index) =>
+          locationChip(label, `city-${index}`)
+        )
+      : cityLabels.join(' - ');
   return h(
     'div',
     {
@@ -266,8 +413,7 @@ function renderShareCard({
       h(
         'div',
         { style: { display: 'flex', alignItems: 'center' } },
-        chip(housingLabel === 'Busco piso' ? 'SEARCH' : 'OFFER'),
-        chip('MIXED')
+        chip('SEARCH')
       ),
       h(
         'div',
@@ -362,7 +508,7 @@ function renderShareCard({
           'OK'
         )
       ),
-      infoRow('\u{1F3D9}', city),
+      infoRow('\u{1F3D9}', cityChipContent, null, { iconBoxWidth: 40 }),
       infoRow('\u{1F3E0}', housingLabel, budgetLabel),
       infoRow('\u{1F4C5}', 'Disponible', 'Desde hoy'),
       h(
@@ -378,18 +524,6 @@ function renderShareCard({
           },
         },
         bio
-      ),
-      h(
-        'div',
-        {
-          style: {
-            marginTop: '32px',
-            textAlign: 'center',
-            fontSize: '26px',
-            color: COLORS.mutedText,
-          },
-        },
-        housingLabel.toLowerCase()
       ),
       h(
         'div',
@@ -421,6 +555,10 @@ serve(
       const url = new URL(req.url);
       const profileId = url.searchParams.get('profile_id');
       const userId = getUserId(payload);
+      console.log('[profile-share-image] request', {
+        profileId: profileId ?? null,
+        userId,
+      });
 
       if (profileId && profileId !== userId) {
         return new Response(JSON.stringify({ error: 'Forbidden' }), {
@@ -452,9 +590,30 @@ serve(
 
       const ageValue = profile.birth_date ? calculateAge(profile.birth_date) : null;
       const ageLabel = ageValue != null ? `${ageValue}` : null;
-      const name = profile.display_name ?? 'Usuario';
+      const nameParts = [profile.first_name?.trim(), profile.last_name?.trim()].filter(Boolean);
+      const name = nameParts.length > 0 ? nameParts.join(' ') : 'Usuario';
       const bio = profile.bio ?? 'Sin descripcion por ahora.';
-      const city = profile.preferred_zones?.[0] ?? 'Ciudad';
+      const preferredPlaces = profile.preferred_zones ?? [];
+      const resolvedPlaces = await getPlaceLabels(preferredPlaces);
+      const maxPlaces = 4;
+      const cityLabels = resolvedPlaces.slice(0, maxPlaces);
+      const extraCityCount =
+        resolvedPlaces.length > maxPlaces
+          ? resolvedPlaces.length - maxPlaces
+          : 0;
+      const cityLabelsWithExtra = [
+        ...cityLabels,
+        extraCityCount > 0 ? `+${extraCityCount}` : null,
+      ].filter(Boolean) as string[];
+      const cityLabelText = cityLabelsWithExtra.join(' - ');
+      console.log('[profile-share-image] share payload', {
+        profileId: profile.id,
+        preferredPlaces,
+        resolvedPlaces,
+        cityLabels,
+        extraCityCount,
+        cityLabelText,
+      });
     const housingLabel =
       profile.housing_situation === 'offering'
         ? 'Tengo piso'
@@ -467,7 +626,7 @@ serve(
         name,
         age: ageLabel,
         bio,
-        city,
+        cityLabels: cityLabelsWithExtra,
         housingLabel,
         budgetLabel,
         photos,
@@ -478,6 +637,7 @@ serve(
         height: CANVAS_HEIGHT,
         headers: {
           ...corsHeaders,
+          'Cache-Control': 'no-store',
         },
       });
     } catch (error) {
