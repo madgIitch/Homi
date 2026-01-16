@@ -65,11 +65,18 @@ type ApiResponse<T> = {
   error?: string;
 };
 
+type MessageRequestResponse = {
+  match_id: string;
+  chat_id: string;
+  status: string;
+};
+
 const FALLBACK_AVATAR =
   'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80';
 
 const MATCHES_ENDPOINT = `${API_CONFIG.FUNCTIONS_URL}/matches`;
 const CHATS_ENDPOINT = `${API_CONFIG.FUNCTIONS_URL}/chats`;
+const MESSAGE_REQUESTS_ENDPOINT = `${API_CONFIG.FUNCTIONS_URL}/message-requests`;
 
 const resolveAvatarUrl = (avatarUrl?: string | null) => {
   if (!avatarUrl) return FALLBACK_AVATAR;
@@ -94,7 +101,7 @@ const mapApiProfileToProfile = (profile?: ApiProfile | null): Profile | null => 
     budget_max: profile.budget_max ?? null,
     birth_date: profile.users?.birth_date ?? profile.birth_date ?? null,
     first_name: profile.users?.first_name ?? profile.first_name ?? null,
-    last_name: profile.users?.last_name ?? profile.last_name ?? null,
+    last_name: (profile.users?.last_name ?? profile.last_name) || undefined,
     avatar_url: resolveAvatarUrl(profile.avatar_url ?? undefined),
     created_at: profile.updated_at ?? new Date().toISOString(),
     updated_at: profile.updated_at ?? new Date().toISOString(),
@@ -109,7 +116,7 @@ const formatTime = (iso?: string | null) => {
 };
 
 class ChatService {
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  private async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem('authToken');
     return {
       'Content-Type': 'application/json',
@@ -419,6 +426,32 @@ class ChatService {
     };
   }
 
+  async sendMessageRequest(
+    recipientId: string,
+    text: string
+  ): Promise<{ matchId: string; chatId: string; status: Match['status'] }> {
+    const response = await this.fetchWithAuth(MESSAGE_REQUESTS_ENDPOINT, {
+      method: 'POST',
+      body: JSON.stringify({ recipient_id: recipientId, body: text }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al enviar solicitud');
+    }
+
+    const payload = (await response.json()) as ApiResponse<MessageRequestResponse>;
+    if (!payload.data) {
+      throw new Error('Respuesta invalida al enviar solicitud');
+    }
+
+    return {
+      matchId: payload.data.match_id,
+      chatId: payload.data.chat_id,
+      status: payload.data.status as Match['status'],
+    };
+  }
+
   async markMessagesAsRead(chatId: string): Promise<void> {
     const response = await this.fetchWithAuth(
       `${CHATS_ENDPOINT}?chat_id=${chatId}`,
@@ -428,6 +461,18 @@ class ChatService {
     if (!response.ok) {
       const error = await response.text();
       throw new Error(error || 'Error al marcar mensajes como leidos');
+    }
+  }
+
+  async deleteMatch(matchId: string): Promise<void> {
+    const response = await this.fetchWithAuth(
+      `${MATCHES_ENDPOINT}?match_id=${matchId}`,
+      { method: 'DELETE' }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al eliminar match');
     }
   }
 }

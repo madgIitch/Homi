@@ -18,7 +18,15 @@ const runner = new TestRunner();
 // ====================
 
 runner.test('matches: debe validar match status correcto', () => {
-  const validStatuses = ['pending', 'accepted', 'rejected', 'room_offer', 'room_assigned', 'room_declined'];
+  const validStatuses = [
+    'pending',
+    'accepted',
+    'rejected',
+    'room_offer',
+    'room_assigned',
+    'room_declined',
+    'unmatched',
+  ];
   const invalidStatuses = ['pendiente', 'aceptado', 'rechazado', 'invalid'];
 
   for (const status of validStatuses) {

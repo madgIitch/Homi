@@ -28,12 +28,27 @@ interface MessageValidationData {
   body?: string;
 }
 
+const readableMatchStatuses = [
+  'pending',
+  'accepted',
+  'room_offer',
+  'room_assigned',
+  'room_declined',
+  'unmatched',
+];
+const writableMatchStatuses = [
+  'accepted',
+  'room_offer',
+  'room_assigned',
+  'room_declined',
+];
+
 async function getUserMatchIds(userId: string): Promise<string[]> {
   const { data, error } = await supabaseClient
     .from('matches')
     .select('id')
     .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-    .in('status', ['accepted', 'room_offer', 'room_assigned', 'room_declined']);
+    .in('status', readableMatchStatuses);
 
   if (error || !data) {
     return [];
@@ -63,10 +78,12 @@ async function getMatchById(matchId: string): Promise<MatchWithProfiles | null> 
   return (data as MatchWithProfiles) ?? null;
 }
 
-const isActiveMatchForUser = (match: MatchWithProfiles, userId: string) =>
-  ['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(
-    match.status
-  ) &&
+const isMatchWithStatusForUser = (
+  match: MatchWithProfiles,
+  userId: string,
+  statuses: string[]
+) =>
+  statuses.includes(match.status) &&
   (userId === match.user_a_id || userId === match.user_b_id);
 
 async function getUserChats(userId: string): Promise<Chat[]> {
@@ -128,7 +145,7 @@ async function getChatByMatchId(
     throw new Error('Unauthorized: You can only access chats you participate in');
   }
 
-  if (!['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(match.status)) {
+  if (!readableMatchStatuses.includes(match.status)) {
     return null;
   }
 
@@ -163,7 +180,7 @@ async function getChatById(chatId: string, userId: string): Promise<Chat | null>
     throw new Error('Unauthorized: You can only access chats you participate in');
   }
 
-  if (!['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(match.status)) {
+  if (!readableMatchStatuses.includes(match.status)) {
     return null;
   }
 
@@ -224,7 +241,7 @@ async function getChatMessages(
     throw new Error('Unauthorized: You can only access chats you participate in');
   }
 
-  if (!['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(match.status)) {
+  if (!readableMatchStatuses.includes(match.status)) {
     throw new Error('Chat not available');
   }
 
@@ -376,7 +393,7 @@ const handler = withAuth(
       }
 
       const match = await getMatchById(body.match_id);
-      if (!match || !isActiveMatchForUser(match, userId)) {
+      if (!match || !isMatchWithStatusForUser(match, userId, writableMatchStatuses)) {
         return new Response(JSON.stringify({ error: 'Match not active' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -406,7 +423,38 @@ const handler = withAuth(
             );
           }
 
-          await getChatMessages(body.chat_id, userId);
+          const chat = await getChatById(body.chat_id, userId);
+          if (!chat) {
+            return new Response(JSON.stringify({ error: 'Chat not found' }), {
+              status: 404,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+          const match = (chat as Chat & { match: MatchWithProfiles }).match;
+          if (match.status === 'pending') {
+            if (userId !== match.user_b_id) {
+              return new Response(JSON.stringify({ error: 'Chat not available' }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+            const { error: acceptError } = await supabaseClient
+              .from('matches')
+              .update({ status: 'accepted' })
+              .eq('id', match.id);
+            if (acceptError) {
+              return new Response(JSON.stringify({ error: 'Failed to accept match' }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+          } else if (!writableMatchStatuses.includes(match.status)) {
+            return new Response(JSON.stringify({ error: 'Chat not available' }), {
+              status: 403,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
           const message = await sendMessage(body.chat_id, userId, body.body);
           const response: ApiResponse<Message> = { data: message };
           return new Response(JSON.stringify(response), {

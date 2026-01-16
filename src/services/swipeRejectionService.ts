@@ -18,7 +18,7 @@ type ApiResponse<T> = {
 const ENDPOINT = `${API_CONFIG.FUNCTIONS_URL}/swipe-rejections`;
 
 class SwipeRejectionService {
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  private async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem('authToken');
     return {
       'Content-Type': 'application/json',

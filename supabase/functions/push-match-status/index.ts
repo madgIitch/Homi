@@ -191,6 +191,11 @@ const statusContent = (status: string, otherName: string) => {
         title: 'Oferta rechazada',
         body: `${otherName} rechazo la oferta.`,
       };
+    case 'unmatched':
+      return {
+        title: 'Match eliminado',
+        body: 'Ya no puedes enviar mensajes a esta persona.',
+      };
     default:
       return {
         title: `Nuevo match con ${otherName}`,

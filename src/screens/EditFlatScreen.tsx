@@ -53,8 +53,8 @@ export const EditFlatScreen: React.FC = () => {
   const userGender = authContext?.user?.gender ?? null;
   const [profileGender, setProfileGender] = useState<Gender | null>(null);
   const [address, setAddress] = useState(flat?.address ?? '');
-  const [city, setCity] = useState(flat?.city ?? '');
-  const [district, setDistrict] = useState<string | null>(flat?.district ?? null);
+  const [_city, setCity] = useState(flat?.city ?? '');
+  const [_district, setDistrict] = useState<string | null>(flat?.district ?? null);
   const [cityQuery, setCityQuery] = useState('');
   const [cities, setCities] = useState<LocationOption[]>([]);
   const [isLoadingCities, setIsLoadingCities] = useState(false);
@@ -190,7 +190,9 @@ export const EditFlatScreen: React.FC = () => {
       }
     };
 
-    void loadProfileGender();
+    loadProfileGender().catch((error) => {
+      console.error('Error cargando perfil:', error);
+    });
     return () => {
       isMounted = false;
     };
@@ -250,7 +252,9 @@ export const EditFlatScreen: React.FC = () => {
       }
     };
 
-    void loadSelectedCity();
+    loadSelectedCity().catch((error) => {
+      console.warn('[EditFlat] Error cargando ciudad:', error);
+    });
     return () => {
       isMounted = false;
     };
@@ -272,7 +276,9 @@ export const EditFlatScreen: React.FC = () => {
       }
     };
 
-    void loadSelectedPlace();
+    loadSelectedPlace().catch((error) => {
+      console.warn('[EditFlat] Error cargando zona:', error);
+    });
     return () => {
       isMounted = false;
     };

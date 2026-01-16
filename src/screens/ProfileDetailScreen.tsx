@@ -20,6 +20,7 @@ import {
   Modal,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  TextInput,
   Animated,
   useWindowDimensions,
 } from 'react-native';
@@ -38,6 +39,8 @@ import { sizes, spacing } from '../theme';
 import { API_CONFIG } from '../config/api';
 import { supabaseClient } from '../services/authService';
 import { profileService } from '../services/profileService';
+import { chatService } from '../services/chatService';
+import { usePremium } from '../context/PremiumContext';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { shareService } from '../services/shareService';
 import { roomService } from '../services/roomService';
@@ -64,7 +67,7 @@ const commonAreaLabel = new Map([
   ['salon', 'Salon'],
   ['cocina', 'Cocina'],
   ['comedor', 'Comedor'],
-  ['bano_compartido', 'Bano compartido'],
+  ['bano_compartido', 'Baño compartido'],
   ['terraza', 'Terraza'],
   ['patio', 'Patio'],
   ['lavadero', 'Lavadero'],
@@ -114,7 +117,7 @@ const getRuleIcon = (rule?: string | null) => {
     if (normalized.includes('fumar')) return 'fumar';
     if (normalized.includes('mascotas') || normalized.includes('mascot')) return 'mascotas';
     if (normalized.includes('cocina')) return 'cocina';
-    if (normalized.includes('banos')) return 'banos';
+    if (normalized.includes('banos')) return 'baños';
     if (normalized.includes('basura')) return 'basura';
     if (
       normalized.includes('puerta') ||
@@ -189,6 +192,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 }) => {
   const theme = useTheme();
   const { isDark, toggleTheme } = useThemeController();
+  const { isPremium } = usePremium();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const headerFillStyle = useMemo(
@@ -274,6 +278,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [lightboxFrameWidth, setLightboxFrameWidth] = useState(0);
   const [isSearchEnabled, setIsSearchEnabled] = useState(true);
   const [isTogglingSearch, setIsTogglingSearch] = useState(false);
+  const [isRequestModalVisible, setIsRequestModalVisible] = useState(false);
+  const [requestMessage, setRequestMessage] = useState('');
+  const [isSendingRequest, setIsSendingRequest] = useState(false);
   const lightboxScrollRef = useRef<ScrollView>(null);
   const lightboxScaleStates = useRef<
     Array<{ base: Animated.Value; pinch: Animated.Value; lastScale: number }>
@@ -407,6 +414,11 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     try {
       const data = await profileService.getProfile();
       if (isMountedRef.current) {
+        if (!data) {
+          setProfile(null);
+          setIsSearchEnabled(true);
+          return;
+        }
         setProfile(data);
         setIsSearchEnabled(data.is_searchable ?? true);
       }
@@ -454,7 +466,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         ...profileData,
         birth_date: users?.birth_date ?? null,
         first_name: users?.first_name ?? profileData.first_name ?? null,
-        last_name: users?.last_name ?? profileData.last_name ?? null,
+        last_name: users?.last_name ?? profileData.last_name ?? undefined,
       };
       if (isMountedRef.current) {
         setProfile(nextProfile);
@@ -636,7 +648,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     };
 
     refreshAcceptedRoomForProfile();
-    void subscribeToAcceptedAssignments();
+    subscribeToAcceptedAssignments().catch((error) => {
+      console.warn('[ProfileDetail] Error suscribiendo asignaciones:', error);
+    });
 
     return () => {
       isMounted = false;
@@ -691,7 +705,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       }
     };
 
-    void loadZoneNames();
+    loadZoneNames().catch((error) => {
+      console.warn('[ProfileDetail] Error cargando zonas:', error);
+    });
     return () => {
       isActive = false;
     };
@@ -1032,7 +1048,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       assignmentChannelRef.current = channel;
     };
 
-    void subscribeToAssignments();
+    subscribeToAssignments().catch((error) => {
+      console.warn('[ProfileDetail] Error suscribiendo asignaciones:', error);
+    });
 
     return () => {
       isMounted = false;
@@ -1060,6 +1078,28 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     if (flats.length <= 1) return;
     setActiveFlatIndex((prev) => (prev + 1) % flats.length);
   };
+
+  const resolvedAvatarUrl =
+    profile?.avatar_url && !profile.avatar_url.startsWith('http')
+      ? `${API_CONFIG.SUPABASE_URL}/storage/v1/object/public/avatars/${profile.avatar_url}`
+      : profile?.avatar_url;
+  const carouselPhotos =
+    profilePhotos.length > 0
+      ? profilePhotos
+      : resolvedAvatarUrl && profile
+      ? [
+          {
+            id: 'avatar',
+            profile_id: profile.id,
+            path: resolvedAvatarUrl,
+            position: 1,
+            is_primary: true,
+            signedUrl: resolvedAvatarUrl,
+            created_at: profile.updated_at,
+          },
+        ]
+      : [];
+  const lightboxCount = carouselPhotos.length;
 
   useEffect(() => {
     if (lightboxCount === 0) {
@@ -1120,6 +1160,35 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       Alert.alert('Error', 'No se pudo compartir el perfil');
     } finally {
       setIsSharing(false);
+    }
+  };
+
+  const handleSendRequest = async () => {
+    if (!profile?.id) return;
+    const trimmed = requestMessage.trim();
+    if (!trimmed) {
+      Alert.alert('Error', 'Escribe un mensaje para enviar la solicitud');
+      return;
+    }
+
+    setIsSendingRequest(true);
+    try {
+      await profileService.updateProfile({ is_premium: isPremium });
+      const response = await chatService.sendMessageRequest(profile.id, trimmed);
+      setIsRequestModalVisible(false);
+      setRequestMessage('');
+      navigation.navigate('Chat', {
+        chatId: response.chatId,
+        matchId: response.matchId,
+        name: getUserName(profile, 'Usuario'),
+        avatarUrl: resolvedAvatarUrl ?? '',
+        profile,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errorMessage || 'No se pudo enviar la solicitud');
+    } finally {
+      setIsSendingRequest(false);
     }
   };
 
@@ -1220,27 +1289,6 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     (isOwnProfile && flats.length > 0) ||
     (!isOwnProfile && hasAcceptedRoomForProfile);
 
-  const resolvedAvatarUrl =
-    profile.avatar_url && !profile.avatar_url.startsWith('http')
-      ? `${API_CONFIG.SUPABASE_URL}/storage/v1/object/public/avatars/${profile.avatar_url}`
-      : profile.avatar_url;
-  const carouselPhotos =
-    profilePhotos.length > 0
-      ? profilePhotos
-      : resolvedAvatarUrl
-      ? [
-          {
-            id: 'avatar',
-            profile_id: profile.id,
-            path: resolvedAvatarUrl,
-            position: 1,
-            is_primary: true,
-            signedUrl: resolvedAvatarUrl,
-            created_at: profile.updated_at,
-          },
-        ]
-      : [];
-  const lightboxCount = carouselPhotos.length;
   const handleLightboxPrev = () => {
     if (lightboxCount <= 1) return;
     setLightboxIndex((prev) => (prev - 1 + lightboxCount) % lightboxCount);
@@ -1265,6 +1313,43 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const interestChips = interestLabels.filter(
     (item): item is string => Boolean(item)
   );
+  const profileProgress = (() => {
+    const hasPhoto = profilePhotos.length > 0 || Boolean(profile.avatar_url);
+    const hasName = getUserName(profile, '').trim().length > 0;
+    const hasBio = Boolean(profile.bio?.trim());
+    const hasOccupation = Boolean(
+      profile.occupation?.trim() ||
+        profile.university?.trim() ||
+        profile.field_of_study?.trim()
+    );
+    const hasInterests = interests.length > 0;
+    const hasLifestyle = Boolean(
+      profile.lifestyle_preferences &&
+        Object.values(profile.lifestyle_preferences).some((value) => Boolean(value))
+    );
+    const showZones =
+      profile.housing_situation === 'seeking' || profile.is_seeking === true;
+
+    const items = [
+      { id: 'photo', complete: hasPhoto },
+      { id: 'name', complete: hasName },
+      { id: 'bio', complete: hasBio },
+      { id: 'occupation', complete: hasOccupation },
+      { id: 'interests', complete: hasInterests },
+      { id: 'lifestyle', complete: hasLifestyle },
+    ];
+
+    if (showZones) {
+      items.push({ id: 'zones', complete: preferredZones.length > 0 });
+    }
+
+    const completedCount = items.filter((item) => item.complete).length;
+    const totalCount = items.length;
+    const progress =
+      totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    return { completedCount, totalCount, progress };
+  })();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
@@ -1445,7 +1530,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                   </Text>
                 </View>
               ) : null}
-              {housingBadge ? (
+            {housingBadge ? (
                 <View style={[styles.identityBadgeLight, badgeLightStyle]}>
                   <Text style={[styles.identityBadgeLightText, badgeLightTextStyle]}>
                     {housingBadge}
@@ -1454,6 +1539,26 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               ) : null}
             </View>
             {isOwnProfile && (
+              <View style={styles.profileProgressBar}>
+                <View
+                  style={[
+                    styles.profileProgressTrack,
+                    { backgroundColor: theme.colors.glassBorderSoft },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.profileProgressFill,
+                      {
+                        width: `${profileProgress.progress}%`,
+                        backgroundColor: theme.colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            )}
+            {isOwnProfile && (
               <TouchableOpacity
                 style={styles.profileStatusRow}
                 onPress={toggleSearchEnabled}
@@ -1461,10 +1566,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                 activeOpacity={0.7}
               >
                 <View style={styles.profileStatusTextRow}>
-                  <View style={[
-                    styles.statusDot,
-                    { backgroundColor: isSearchEnabled ? '#10B981' : '#9CA3AF' }
-                  ]} />
+                  <View
+                    style={[
+                      styles.statusDot,
+                      isSearchEnabled
+                        ? styles.statusDotActive
+                        : styles.statusDotInactive,
+                    ]}
+                  />
                   <Text style={[styles.profileStatusText, { color: theme.colors.text }]}>
                     {isSearchEnabled ? 'Perfil activo' : 'Perfil inactivo'}
                   </Text>
@@ -2031,11 +2140,110 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           <TouchableOpacity style={styles.bottomButton}>
             <Ionicons name="close" size={22} color={theme.colors.textStrong} />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.bottomButton}
+            onPress={() => setIsRequestModalVisible(true)}
+          >
+            <Ionicons
+              name="chatbubble-ellipses"
+              size={22}
+              color={theme.colors.textStrong}
+            />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.bottomButton}>
             <Ionicons name="heart" size={22} color={theme.colors.textStrong} />
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal
+        visible={isRequestModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setIsRequestModalVisible(false);
+          setRequestMessage('');
+        }}
+      >
+        <View style={styles.requestModalOverlay}>
+          <TouchableOpacity
+            style={styles.requestModalBackdrop}
+            activeOpacity={1}
+            onPress={() => {
+              setIsRequestModalVisible(false);
+              setRequestMessage('');
+            }}
+          />
+          <View
+            style={[
+              styles.requestModalCard,
+              {
+                backgroundColor: theme.colors.background,
+                borderColor: theme.colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.requestModalTitle, { color: theme.colors.text }]}>
+              Enviar mensaje
+            </Text>
+            <Text
+              style={[
+                styles.requestModalSubtitle,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Tu solicitud se enviara a esta persona.
+            </Text>
+            <TextInput
+              value={requestMessage}
+              onChangeText={setRequestMessage}
+              placeholder="Escribe tu mensaje..."
+              placeholderTextColor={theme.colors.textSecondary}
+              multiline
+              style={[
+                styles.requestModalInput,
+                {
+                  color: theme.colors.text,
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.colors.surfaceLight,
+                },
+              ]}
+            />
+            <View style={styles.requestModalActions}>
+              <TouchableOpacity
+                style={[styles.requestModalButton, styles.requestModalCancel]}
+                onPress={() => {
+                  setIsRequestModalVisible(false);
+                  setRequestMessage('');
+                }}
+                disabled={isSendingRequest}
+              >
+                <Text
+                  style={[
+                    styles.requestModalButtonText,
+                    { color: theme.colors.text },
+                  ]}
+                >
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.requestModalButton,
+                  styles.requestModalSend,
+                  isSendingRequest && styles.requestModalButtonDisabled,
+                ]}
+                onPress={handleSendRequest}
+                disabled={isSendingRequest}
+              >
+                <Text style={styles.requestModalSendText}>
+                  {isSendingRequest ? 'Enviando...' : 'Enviar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={lightboxVisible}

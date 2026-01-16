@@ -13,6 +13,9 @@ export const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surfaceMutedAlt,
   },
+  flexFill: {
+    flex: 1,
+  },
   background: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -46,8 +49,37 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  headerMenuButton: {
+    width: sizes.s30,
+    height: sizes.s30,
+    borderRadius: borderRadius.s14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerSpacer: {
     width: sizes.s22,
+  },
+  matchMenu: {
+    alignSelf: 'flex-end',
+    marginRight: spacing.md,
+    marginTop: spacing.xs,
+    borderRadius: semanticRadii.soft,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassUltraLightAlt,
+    overflow: 'hidden',
+  },
+  matchMenuItem: {
+    paddingHorizontal: spacing.s14,
+    paddingVertical: spacing.s10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s8,
+  },
+  matchMenuText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.errorDark,
   },
   typingRow: {
     paddingHorizontal: spacing.md,
@@ -392,6 +424,22 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.lavenderBorder,
+  },
+  unmatchedNotice: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.s12,
+    paddingHorizontal: spacing.s14,
+    paddingVertical: spacing.s12,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassUltraLightAlt,
+  },
+  unmatchedNoticeText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   inputGlassFill: {
     ...StyleSheet.absoluteFillObject,

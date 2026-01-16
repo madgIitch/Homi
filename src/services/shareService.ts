@@ -14,9 +14,13 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     const byte1 = bytes[i];
     const byte2 = i + 1 < bytes.length ? bytes[i + 1] : 0;
     const byte3 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    // eslint-disable-next-line no-bitwise
     const enc1 = byte1 >> 2;
+    // eslint-disable-next-line no-bitwise
     const enc2 = ((byte1 & 3) << 4) | (byte2 >> 4);
+    // eslint-disable-next-line no-bitwise
     const enc3 = ((byte2 & 15) << 2) | (byte3 >> 6);
+    // eslint-disable-next-line no-bitwise
     const enc4 = byte3 & 63;
     output += base64Chars.charAt(enc1);
     output += base64Chars.charAt(enc2);
@@ -38,7 +42,7 @@ class ShareService {
     let headers = await this.getAuthHeaders();
     const url = new URL(`${API_CONFIG.FUNCTIONS_URL}/profile-share-image`);
     if (profileId) {
-      url.searchParams.set('profile_id', profileId);
+      (url.searchParams as any).set?.('profile_id', profileId);
     }
     console.log('[ShareService] Request profile share image', {
       url: url.toString(),

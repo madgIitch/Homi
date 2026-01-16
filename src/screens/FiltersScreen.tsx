@@ -37,7 +37,7 @@ import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import { usePremium } from '../context/PremiumContext';
 import type { HousingFilter, SwipeFilters } from '../types/swipeFilters';
 import type { GenderFilter } from '../types/gender';
-import type { Gender, HousingSituation } from '../types/profile';
+import type { HousingSituation, ProfileCreateRequest } from '../types/profile';
 import { profileService } from '../services/profileService';
 import { locationService } from '../services/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -90,8 +90,7 @@ export const FiltersScreen: React.FC = () => {
   const [profileHousing, setProfileHousing] = useState<HousingSituation | null>(
     null
   );
-  const [profileGender, setProfileGender] = useState<Gender | null>(null);
-  const [profileIsSeeking, setProfileIsSeeking] = useState(false);
+  const [ownerIsSeeking, setOwnerIsSeeking] = useState(false);
   const [isDraggingBudget, setIsDraggingBudget] = useState(false);
   const [isDraggingAge, setIsDraggingAge] = useState(false);
   const [isDraggingRoommates, setIsDraggingRoommates] = useState(false);
@@ -134,21 +133,30 @@ export const FiltersScreen: React.FC = () => {
   }, [filters]);
 
   useEffect(() => {
+    if (!isOwner) return;
+    setDraft((prev) => ({
+      ...prev,
+      housingSituation: ownerIsSeeking ? 'any' : 'seeking',
+    }));
+  }, [isOwner, ownerIsSeeking]);
+
+  useEffect(() => {
     let isMounted = true;
     const loadProfile = async () => {
       try {
         const profile = await profileService.getProfile();
         if (isMounted) {
           setProfileHousing(profile?.housing_situation ?? null);
-          setProfileGender(profile?.gender ?? null);
-          setProfileIsSeeking(profile?.is_seeking === true);
+          setOwnerIsSeeking(profile?.is_seeking === true);
         }
       } catch (error) {
         console.error('[FiltersScreen] Error cargando perfil:', error);
       }
     };
 
-    void loadProfile();
+    loadProfile().catch((error) => {
+      console.error('[FiltersScreen] Error cargando perfil:', error);
+    });
     return () => {
       isMounted = false;
     };
@@ -205,7 +213,9 @@ export const FiltersScreen: React.FC = () => {
     };
 
     if (activeCityId) {
-      void loadRecentPlaces();
+      loadRecentPlaces().catch((error) => {
+        console.warn('[FiltersScreen] Error cargando recientes:', error);
+      });
     } else {
       setRecentPlaces([]);
     }
@@ -242,11 +252,13 @@ export const FiltersScreen: React.FC = () => {
       }
     };
 
-    void loadSelectedCities();
+    loadSelectedCities().catch((error) => {
+      console.warn('[FiltersScreen] Error cargando ciudades:', error);
+    });
     return () => {
       isActive = false;
     };
-  }, [draft.cities]);
+  }, [activeCityId, draft.cities]);
 
   useEffect(() => {
     let isActive = true;
@@ -275,7 +287,9 @@ export const FiltersScreen: React.FC = () => {
       }
     };
 
-    void loadZoneCities();
+    loadZoneCities().catch((error) => {
+      console.warn('[FiltersScreen] Error cargando zonas:', error);
+    });
     return () => {
       isActive = false;
     };
@@ -379,13 +393,13 @@ export const FiltersScreen: React.FC = () => {
   }, [draft.housingSituation, profileHousing]);
 
   useEffect(() => {
-    if (isOwner && profileIsSeeking === false && draft.housingSituation === 'any') {
+    if (isOwner && ownerIsSeeking === false && draft.housingSituation === 'any') {
       setDraft((prev) => ({
         ...prev,
         housingSituation: 'seeking',
       }));
     }
-  }, [draft.housingSituation, isOwner, profileIsSeeking]);
+  }, [draft.housingSituation, isOwner, ownerIsSeeking]);
 
   const handleApply = async () => {
     let budgetMin = clamp(draft.budgetMin, BUDGET_MIN, BUDGET_MAX);
@@ -423,16 +437,23 @@ export const FiltersScreen: React.FC = () => {
     });
 
     const shouldSyncPreferredZones =
-      profileHousing === 'seeking' || profileIsSeeking;
-    if (shouldSyncPreferredZones) {
-      try {
-        await profileService.updateProfile({
-          preferred_zones: draft.zones,
-          desired_roommates_min: finalRoommatesMin,
-          desired_roommates_max: finalRoommatesMax,
-        });
-      } catch (error) {
-        console.warn('[FiltersScreen] Error sincronizando zonas:', error);
+      profileHousing === 'seeking' || ownerIsSeeking;
+    if (shouldSyncPreferredZones || isOwner) {
+      const profileUpdates: Partial<ProfileCreateRequest> = {};
+      if (shouldSyncPreferredZones) {
+        profileUpdates.preferred_zones = draft.zones;
+        profileUpdates.desired_roommates_min = finalRoommatesMin;
+        profileUpdates.desired_roommates_max = finalRoommatesMax;
+      }
+      if (isOwner) {
+        profileUpdates.is_seeking = ownerIsSeeking;
+      }
+      if (Object.keys(profileUpdates).length > 0) {
+        try {
+          await profileService.updateProfile(profileUpdates);
+        } catch (error) {
+          console.warn('[FiltersScreen] Error sincronizando perfil:', error);
+        }
       }
     }
 
@@ -464,7 +485,7 @@ export const FiltersScreen: React.FC = () => {
 
   const handleResetDraft = () => {
     const defaultHousing =
-      isOwner && profileIsSeeking ? 'any' : isOwner ? 'seeking' : 'any';
+      isOwner && ownerIsSeeking ? 'any' : isOwner ? 'seeking' : 'any';
     setDraft({
       housingSituation: defaultHousing,
       gender: 'any',
@@ -714,7 +735,14 @@ export const FiltersScreen: React.FC = () => {
                         const label =
                           recentPlaces.find((item) => item.id === id)?.label ?? '';
                         if (activeCityId) {
-                          void handleToggleZone(id, label, activeCityId);
+                          handleToggleZone(id, label, activeCityId).catch(
+                            (error) => {
+                              console.warn(
+                                '[FiltersScreen] Error toggling zona:',
+                                error
+                              );
+                            }
+                          );
                         }
                       }}
                       multiline
@@ -729,7 +757,12 @@ export const FiltersScreen: React.FC = () => {
                     const label =
                       topPlaces.find((item) => item.id === id)?.label ?? '';
                     if (activeCityId) {
-                      void handleToggleZone(id, label, activeCityId);
+                      handleToggleZone(id, label, activeCityId).catch((error) => {
+                        console.warn(
+                          '[FiltersScreen] Error toggling zona:',
+                          error
+                        );
+                      });
                     }
                   }}
                   multiline
@@ -748,7 +781,12 @@ export const FiltersScreen: React.FC = () => {
                     const label =
                       places.find((item) => item.id === id)?.label ?? '';
                     if (activeCityId) {
-                      void handleToggleZone(id, label, activeCityId);
+                      handleToggleZone(id, label, activeCityId).catch((error) => {
+                        console.warn(
+                          '[FiltersScreen] Error toggling zona:',
+                          error
+                        );
+                      });
                     }
                   }}
                   multiline
@@ -782,12 +820,18 @@ export const FiltersScreen: React.FC = () => {
                         isActive && styles.segmentButtonActive,
                         !isPremium && styles.segmentButtonDisabled,
                       ]}
-                      onPress={() =>
+                      onPress={() => {
                         setDraft((prev) => ({
                           ...prev,
                           housingSituation: option.id,
-                        }))
-                      }
+                        }));
+                        if (
+                          isOwner &&
+                          (option.id === 'any' || option.id === 'seeking')
+                        ) {
+                          setOwnerIsSeeking(option.id === 'any');
+                        }
+                      }}
                       disabled={!isPremium}
                     >
                       <Text
@@ -805,6 +849,38 @@ export const FiltersScreen: React.FC = () => {
             </FormSection>
           </View>
         </TouchableOpacity>
+        {isOwner ? (
+          <FormSection title="Busqueda del owner" iconName="home-outline">
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleCopy}>
+                <Text style={styles.toggleLabel}>Tambien busco piso</Text>
+                <Text style={styles.toggleHint}>
+                  Activa esto si también quieres aparecer a otros dueños de pisos.
+                </Text>
+              </View>
+              <Switch
+                value={ownerIsSeeking}
+                onValueChange={(value) => {
+                  setOwnerIsSeeking(value);
+                  setDraft((prev) => ({
+                    ...prev,
+                    housingSituation: value ? 'any' : 'seeking',
+                  }));
+                }}
+                trackColor={{
+                  false: theme.colors.glassBorderSoft,
+                  true: theme.colors.primaryMuted,
+                }}
+                thumbColor={
+                  ownerIsSeeking
+                    ? theme.colors.primary
+                    : theme.colors.textTertiary
+                }
+                ios_backgroundColor={theme.colors.glassBorderSoft}
+              />
+            </View>
+          </FormSection>
+        ) : null}
 
         <TouchableOpacity
           activeOpacity={isPremium ? 1 : 0.7}
@@ -819,8 +895,8 @@ export const FiltersScreen: React.FC = () => {
             )}
             <FormSection title="Edad" iconName="calendar-outline">
               <View style={styles.budgetValues}>
-                <Text style={styles.budgetValue}>Min: {ageMin} anos</Text>
-                <Text style={styles.budgetValue}>Max: {ageMax} anos</Text>
+                <Text style={styles.budgetValue}>Min: {ageMin} años</Text>
+                <Text style={styles.budgetValue}>Max: {ageMax} años</Text>
               </View>
               <View pointerEvents={isPremium ? 'auto' : 'none'}>
                 <AgeRange

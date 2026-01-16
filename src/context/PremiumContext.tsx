@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { profileService } from '../services/profileService';
 
 type PremiumContextType = {
   isPremium: boolean;
@@ -22,7 +23,13 @@ export const PremiumProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
         if (stored != null) {
-          setIsPremium(stored === 'true');
+          const next = stored === 'true';
+          setIsPremium(next);
+          try {
+            await profileService.updateProfile({ is_premium: next });
+          } catch (error) {
+            console.warn('[PremiumContext] Error syncing status:', error);
+          }
         }
       } catch (error) {
         console.warn('[PremiumContext] Error loading status:', error);
@@ -38,6 +45,7 @@ export const PremiumProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsPremium(next);
     try {
       await AsyncStorage.setItem(STORAGE_KEY, String(next));
+      await profileService.updateProfile({ is_premium: next });
     } catch (error) {
       console.warn('[PremiumContext] Error saving status:', error);
     }

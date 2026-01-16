@@ -26,7 +26,6 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
-import { colors } from '../theme';
 import { API_CONFIG } from '../config/api';
 import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
@@ -314,16 +313,22 @@ export const FlatExpensesScreen: React.FC = () => {
       clearTimeout(refreshTimeoutRef.current);
     }
     refreshTimeoutRef.current = setTimeout(() => {
-      void loadExpenses();
+      loadExpenses().catch((error) => {
+        console.error('Error cargando gastos:', error);
+      });
     }, 400);
   }, [loadExpenses]);
 
   useEffect(() => {
-    void loadFlats();
+    loadFlats().catch((error) => {
+      console.error('Error cargando pisos:', error);
+    });
   }, [loadFlats]);
 
   useEffect(() => {
-    void loadExpenses();
+    loadExpenses().catch((error) => {
+      console.error('Error cargando gastos:', error);
+    });
   }, [loadExpenses]);
 
   useEffect(() => {
@@ -397,7 +402,9 @@ export const FlatExpensesScreen: React.FC = () => {
       channelRef.current = channel;
     };
 
-    void subscribeToExpenses();
+    subscribeToExpenses().catch((error) => {
+      console.warn('[FlatExpenses] Error suscribiendo gastos:', error);
+    });
 
     return () => {
       isMounted = false;
@@ -487,7 +494,9 @@ export const FlatExpensesScreen: React.FC = () => {
       participantsChannelRef.current = channel;
     };
 
-    void subscribeToParticipants();
+    subscribeToParticipants().catch((error) => {
+      console.warn('[FlatExpenses] Error suscribiendo participantes:', error);
+    });
 
     return () => {
       isMounted = false;
@@ -518,7 +527,7 @@ export const FlatExpensesScreen: React.FC = () => {
                 prev[member.id] ? prev : { ...prev, [member.id]: url }
               );
             }
-          } catch (error) {
+          } catch {
             const url = resolveAvatarUrl(member.avatar_url);
             if (url && isActive) {
               setMemberPhotosById((prev) =>
@@ -530,7 +539,9 @@ export const FlatExpensesScreen: React.FC = () => {
       );
     };
 
-    loadMemberPhotos().catch(() => undefined);
+    loadMemberPhotos().catch((error) => {
+      console.warn('[FlatExpenses] Error cargando fotos:', error);
+    });
     return () => {
       isActive = false;
     };
@@ -864,7 +875,9 @@ export const FlatExpensesScreen: React.FC = () => {
                                     key={member.id}
                                     style={[
                                       styles.avatarCircle,
-                                      { marginLeft: index === 0 ? 0 : -6 },
+                                      index === 0
+                                        ? styles.avatarStackFirst
+                                        : styles.avatarStackOverlap,
                                     ]}
                                   >
                                     {avatarUrl ? (

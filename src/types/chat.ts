@@ -5,7 +5,8 @@ export type MatchStatus =
   | 'rejected'
   | 'room_offer'
   | 'room_assigned'
-  | 'room_declined';
+  | 'room_declined'
+  | 'unmatched';
 
 export interface Match {
   id: string;

@@ -37,7 +37,7 @@ const openChatFromData = async (data?: Record<string, string>) => {
   const chat = await chatService.getChatDetails(chatId);
   if (!chat) return;
 
-  navigationRef.navigate('Chat', {
+  (navigationRef.navigate as any)('Chat', {
     chatId: chat.id,
     name: chat.name,
     avatarUrl: chat.avatarUrl,
@@ -57,7 +57,7 @@ const openMatchFromData = async (data?: Record<string, string>) => {
     return;
   }
 
-  navigationRef.navigate('Main', { screen: 'Matches' });
+  (navigationRef.navigate as any)('Main', { screen: 'Matches' });
 };
 
 const openFlatExpenses = async () => {
@@ -68,7 +68,7 @@ const openFlatExpenses = async () => {
     );
     return;
   }
-  navigationRef.navigate('FlatExpenses');
+  (navigationRef.navigate as any)('FlatExpenses');
 };
 
 const openFlatSettlements = async () => {
@@ -79,7 +79,7 @@ const openFlatSettlements = async () => {
     );
     return;
   }
-  navigationRef.navigate('FlatSettlement');
+  (navigationRef.navigate as any)('FlatSettlement');
 };
 
 const openChatFromMatchId = async (matchId?: string) => {
@@ -95,11 +95,11 @@ const openChatFromMatchId = async (matchId?: string) => {
 
   const chat = await chatService.getChatByMatchId(matchId);
   if (!chat) {
-    navigationRef.navigate('Main', { screen: 'Matches' });
+    (navigationRef.navigate as any)('Main', { screen: 'Matches' });
     return;
   }
 
-  navigationRef.navigate('Chat', {
+  (navigationRef.navigate as any)('Chat', {
     chatId: chat.id,
     name: chat.name,
     avatarUrl: chat.avatarUrl,
@@ -146,24 +146,25 @@ export const notificationService = {
     await ensureAndroidChannel();
 
     const unsubscribe = messaging().onMessage(async (remoteMessage) => {
-      if (shouldSuppressForeground(remoteMessage.data?.chat_id)) {
+      const data = remoteMessage.data as Record<string, string> | undefined;
+      if (shouldSuppressForeground(data?.chat_id)) {
         return;
       }
 
       const title =
-        remoteMessage.data?.sender_name ??
+        data?.sender_name ??
         remoteMessage.notification?.title ??
         'Nuevo mensaje';
       const body =
-        remoteMessage.data?.message_body ??
+        data?.message_body ??
         remoteMessage.notification?.body ??
         'Tienes un nuevo mensaje';
-      const largeIcon = remoteMessage.data?.sender_avatar_url;
+      const largeIcon = data?.sender_avatar_url;
 
       await notifee.displayNotification({
         title,
         body,
-        data: remoteMessage.data,
+        data: data as Record<string, string> | undefined,
         android: {
           channelId: ANDROID_CHANNEL_ID,
           pressAction: { id: 'default' },
@@ -182,7 +183,7 @@ export const notificationService = {
   initNotificationOpener(): () => void {
     const unsubscribeOpen = messaging().onNotificationOpenedApp(
       async (remoteMessage) => {
-        await openFromData(remoteMessage.data);
+        await openFromData(remoteMessage.data as Record<string, string> | undefined);
       }
     );
 
@@ -193,11 +194,11 @@ export const notificationService = {
       await openFromData(detail.notification?.data as Record<string, string>);
     });
 
-    void messaging()
+    messaging()
       .getInitialNotification()
       .then(async (remoteMessage) => {
         if (remoteMessage) {
-          await openFromData(remoteMessage.data);
+          await openFromData(remoteMessage.data as Record<string, string> | undefined);
         }
       })
       .catch((error) => {

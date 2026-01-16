@@ -57,7 +57,7 @@ const COMMON_AREA_OPTIONS = [
   { id: 'salon', label: 'Salon' },
   { id: 'cocina', label: 'Cocina' },
   { id: 'comedor', label: 'Comedor' },
-  { id: 'bano_compartido', label: 'Bano compartido' },
+  { id: 'bano_compartido', label: 'Baño compartido' },
   { id: 'terraza', label: 'Terraza' },
   { id: 'patio', label: 'Patio' },
   { id: 'lavadero', label: 'Lavadero' },
@@ -259,7 +259,7 @@ export const RoomEditScreen: React.FC = () => {
         return;
       }
       const extras = await roomExtrasService.getExtrasForRooms(
-        filtered.map((room) => room.id)
+        filtered.map((item) => item.id)
       );
       setFlatRoomExtras(
         Object.fromEntries(
@@ -370,8 +370,8 @@ export const RoomEditScreen: React.FC = () => {
 
     if (!baseLabel) return '';
 
-    const count = flatRooms.reduce((acc, room) => {
-      const extras = flatRoomExtras[room.id];
+    const count = flatRooms.reduce((acc, item) => {
+      const extras = flatRoomExtras[item.id];
       if (roomCategory === 'habitacion') {
         if (extras?.category === 'habitacion' && extras?.room_type === roomType) {
           return acc + 1;
@@ -392,7 +392,7 @@ export const RoomEditScreen: React.FC = () => {
         }
       }
 
-      if (room.title?.toLowerCase().startsWith(baseLabel.toLowerCase())) {
+      if (item.title?.toLowerCase().startsWith(baseLabel.toLowerCase())) {
         return acc + 1;
       }
 
@@ -466,7 +466,7 @@ export const RoomEditScreen: React.FC = () => {
 
     const sizeValue = size ? parseNumber(size) : null;
     if (size && sizeValue == null) {
-      Alert.alert('Error', 'Introduce un tamano valido');
+      Alert.alert('Error', 'Introduce un tamaño valido');
       return;
     }
 

@@ -13,6 +13,9 @@ export const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
+  transparentBackground: {
+    backgroundColor: 'transparent',
+  },
   header: {
     alignItems: 'center',
     marginTop: spacing.s40,
@@ -22,6 +25,9 @@ export const styles = StyleSheet.create({
     width: sizes.s72,
     height: sizes.s72,
     marginBottom: spacing.s10,
+  },
+  logoImageMuted: {
+    opacity: 0.85,
   },
   logo: {
     fontSize: 20,

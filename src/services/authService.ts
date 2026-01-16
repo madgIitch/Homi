@@ -4,7 +4,6 @@ import {
   LoginRequest,
   RegisterRequest,
   Phase1Data,
-  Phase2Data,
   PhaseGenderData,
   Phase3Data,
   TempRegistration,
@@ -102,7 +101,7 @@ class AuthService {
 
     if (error || !data.session) {
       console.log('[AuthService.persistSession] setSession failed:', error?.message);
-      const refreshAttempt = await supabaseClient.auth.refreshSession(refreshToken);
+      const refreshAttempt = await supabaseClient.auth.refreshSession({ refresh_token: refreshToken });
       if (refreshAttempt.data.session) {
         await AsyncStorage.setItem(
           'authToken',
@@ -131,7 +130,7 @@ class AuthService {
       return;
     }
 
-    const { data, error } = await supabaseClient.auth.refreshSession(refreshToken);
+    const { data, error } = await supabaseClient.auth.refreshSession({ refresh_token: refreshToken });
     if (data.session) {
       await AsyncStorage.setItem('authToken', data.session.access_token);
       await AsyncStorage.setItem(
@@ -265,19 +264,20 @@ class AuthService {
   async handleRecoveryLink(url: string): Promise<boolean> {
     try {
       const parsedUrl = new URL(url);
+      const hash = (parsedUrl as any).hash || '';
       const hashParams = new URLSearchParams(
-        parsedUrl.hash ? parsedUrl.hash.slice(1) : ''
+        hash ? hash.slice(1) : ''
       );
       const accessToken =
-        hashParams.get('access_token') ||
-        parsedUrl.searchParams.get('access_token');
+        (hashParams as any).get?.('access_token') ||
+        (parsedUrl.searchParams as any).get?.('access_token');
       const refreshToken =
-        hashParams.get('refresh_token') ||
-        parsedUrl.searchParams.get('refresh_token');
+        (hashParams as any).get?.('refresh_token') ||
+        (parsedUrl.searchParams as any).get?.('refresh_token');
       const type =
-        hashParams.get('type') || parsedUrl.searchParams.get('type');
+        (hashParams as any).get?.('type') || (parsedUrl.searchParams as any).get?.('type');
       const code =
-        hashParams.get('code') || parsedUrl.searchParams.get('code');
+        (hashParams as any).get?.('code') || (parsedUrl.searchParams as any).get?.('code');
 
       if (code) {
         const { error } = await supabaseClient.auth.exchangeCodeForSession(
@@ -413,7 +413,7 @@ class AuthService {
         console.log('[AuthService.refreshToken] Missing refresh token');
         return null;
       }
-      const { data, error } = await supabaseClient.auth.refreshSession(refreshToken);
+      const { data, error } = await supabaseClient.auth.refreshSession({ refresh_token: refreshToken });
 
       console.log('[AuthService.refreshToken] Supabase response:', {
         hasSession: !!data?.session,

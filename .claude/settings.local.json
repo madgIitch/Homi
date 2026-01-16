@@ -4,7 +4,13 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(deno run:*)"
+      "Bash(deno run:*)",
+      "Bash(find:*)",
+      "Bash(for file in src/services/flatExpenseService.ts src/services/interestService.ts src/services/matchService.ts src/services/roomAssignmentService.ts src/services/roomExtrasService.ts src/services/roomInvitationService.ts src/services/roomService.ts src/services/swipeLimitService.ts src/services/swipeRejectionService.ts)",
+      "Bash(do sed -i 's/Promise<HeadersInit>/Promise<Record<string, string>>/g' \"$file\")",
+      "Bash(done)",
+      "Bash(grep:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

@@ -25,7 +25,7 @@ class LocationService {
   private buildUrl(path: string, params: Record<string, string>) {
     const url = new URL(`${API_CONFIG.FUNCTIONS_URL}/locations${path}`);
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== '') url.searchParams.set(key, value);
+      if (value !== '') (url.searchParams as any).set?.(key, value);
     });
     return url.toString();
   }

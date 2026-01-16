@@ -18,7 +18,7 @@ const supabaseClient = createClient(
 interface MatchValidationData {
   user_a_id: string;
   user_b_id: string;
-  status?: 'pending' | 'accepted' | 'rejected' | 'room_offer' | 'room_assigned' | 'room_declined';
+  status?: 'pending' | 'accepted' | 'rejected' | 'room_offer' | 'room_assigned' | 'room_declined' | 'unmatched';
 }
 
 async function getUserMatches(userId: string): Promise<Match[]> {
@@ -131,9 +131,15 @@ function validateMatchData(
 
   if (
     data.status &&
-    !['pending', 'accepted', 'rejected', 'room_offer', 'room_assigned', 'room_declined'].includes(
-      data.status
-    )
+    ![
+      'pending',
+      'accepted',
+      'rejected',
+      'room_offer',
+      'room_assigned',
+      'room_declined',
+      'unmatched',
+    ].includes(data.status)
   ) {
     errors.push('Invalid status value');
   }
@@ -296,9 +302,15 @@ const handler = withAuth(
 
         if (
           updates.status &&
-          !['pending', 'accepted', 'rejected', 'room_offer', 'room_assigned', 'room_declined'].includes(
-            updates.status
-          )
+          ![
+            'pending',
+            'accepted',
+            'rejected',
+            'room_offer',
+            'room_assigned',
+            'room_declined',
+            'unmatched',
+          ].includes(updates.status)
         ) {
           return new Response(
             JSON.stringify({ error: 'Invalid status value' }),

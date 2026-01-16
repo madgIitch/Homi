@@ -19,6 +19,9 @@ export const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.lg,
   },
+  roleStepContent: {
+    position: 'relative',
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -139,6 +142,11 @@ export const styles = StyleSheet.create({
   roleCenter: {
     flexGrow: 1,
     gap: spacing.s12,
+  },
+  roleCenterFloating: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
   },
   inviteNotice: {
     flexDirection: 'row',

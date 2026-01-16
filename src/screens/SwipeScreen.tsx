@@ -4,10 +4,13 @@ import {
   ActivityIndicator,
   Image,
   ImageBackground,
+  Alert,
+  Modal,
   PanResponder,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -72,6 +75,107 @@ type SwipeProfile = {
 const SWIPE_LIMIT = 20;
 let isSwiping = false;
 
+type GlassProps = {
+  style?: object;
+  children: React.ReactNode;
+};
+
+const GlassPanel: React.FC<GlassProps & { glassFillStyle: object; styles: any; theme: any }> = ({ style, children, glassFillStyle, styles, theme }) => (
+  <View style={[styles.glassPanel, style]}>
+    <BlurView
+      blurType="light"
+      blurAmount={16}
+      reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={[styles.glassFill, glassFillStyle]} />
+    {children}
+  </View>
+);
+
+const GlassChip: React.FC<GlassProps & { glassFillStyle: object; styles: any; theme: any }> = ({ style, children, glassFillStyle, styles, theme }) => (
+  <View style={[styles.glassChip, style]}>
+    <BlurView
+      blurType="light"
+      blurAmount={14}
+      reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={[styles.glassFill, glassFillStyle]} />
+    {children}
+  </View>
+);
+
+const GlassButton: React.FC<GlassProps & { glassFillStyle: object; styles: any; theme: any }> = ({ style, children, glassFillStyle, styles, theme }) => (
+  <View style={[styles.glassButton, style]}>
+    <BlurView
+      blurType="light"
+      blurAmount={16}
+      reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
+      style={StyleSheet.absoluteFillObject}
+    />
+    <View style={[styles.glassFill, glassFillStyle]} />
+    {children}
+  </View>
+);
+
+const ActionButton = ({
+  icon,
+  onPress,
+  disabled,
+  size,
+  styles,
+  theme,
+}: {
+  icon: string;
+  onPress?: () => void;
+  disabled?: boolean;
+  size: number;
+  styles: any;
+  theme: any;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const sizeStyle = useMemo(
+    () => ({
+      width: size,
+      height: size,
+      borderRadius: Math.round(size / 2),
+    }),
+    [size]
+  );
+  const animatedStyle = useMemo(() => ({ transform: [{ scale }] }), [scale]);
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}
+    >
+      <Animated.View style={animatedStyle}>
+        <View style={[styles.actionButton, sizeStyle]}>
+          <Ionicons name={icon} size={22} color={theme.colors.textStrong} />
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
 export const SwipeScreen: React.FC = () => {
   const theme = useTheme();
   const styles = useMemo(() => SwipeScreenStyles(theme), [theme]);
@@ -88,8 +192,11 @@ export const SwipeScreen: React.FC = () => {
   const [profiles, setProfiles] = useState<SwipeProfile[]>([]);
   const [excludedProfileIds, setExcludedProfileIds] = useState<string[]>([]);
   const [loadingProfiles, setLoadingProfiles] = useState(true);
+  const [isRequestModalVisible, setIsRequestModalVisible] = useState(false);
+  const [requestMessage, setRequestMessage] = useState('');
+  const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [profileHousing, setProfileHousing] = useState<HousingSituation | null>(
+  const [_profileHousing, setProfileHousing] = useState<HousingSituation | null>(
     null
   );
   const [isSearchEnabled, setIsSearchEnabled] = useState(true);
@@ -149,103 +256,6 @@ export const SwipeScreen: React.FC = () => {
     () => ({ backgroundColor: theme.colors.glassLight }),
     [theme.colors.glassLight]
   );
-
-  type GlassProps = {
-    style?: object;
-    children: React.ReactNode;
-  };
-
-  const GlassPanel: React.FC<GlassProps> = ({ style, children }) => (
-    <View style={[styles.glassPanel, style]}>
-      <BlurView
-        blurType="light"
-        blurAmount={16}
-        reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View style={[styles.glassFill, glassFillStyle]} />
-      {children}
-    </View>
-  );
-
-  const GlassChip: React.FC<GlassProps> = ({ style, children }) => (
-    <View style={[styles.glassChip, style]}>
-      <BlurView
-        blurType="light"
-        blurAmount={14}
-        reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View style={[styles.glassFill, glassFillStyle]} />
-      {children}
-    </View>
-  );
-
-  const GlassButton: React.FC<GlassProps> = ({ style, children }) => (
-    <View style={[styles.glassButton, style]}>
-      <BlurView
-        blurType="light"
-        blurAmount={16}
-        reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View style={[styles.glassFill, glassFillStyle]} />
-      {children}
-    </View>
-  );
-
-  const ActionButton = ({
-    icon,
-    onPress,
-    disabled,
-    size,
-  }: {
-    icon: string;
-    onPress?: () => void;
-    disabled?: boolean;
-    size: number;
-  }) => {
-    const scale = useRef(new Animated.Value(1)).current;
-    const sizeStyle = useMemo(
-      () => ({
-        width: size,
-        height: size,
-        borderRadius: Math.round(size / 2),
-      }),
-      [size]
-    );
-    const animatedStyle = useMemo(() => ({ transform: [{ scale }] }), [scale]);
-
-    const handlePressIn = () => {
-      if (disabled) return;
-      Animated.spring(scale, {
-        toValue: 0.96,
-        useNativeDriver: true,
-      }).start();
-    };
-
-    const handlePressOut = () => {
-      Animated.spring(scale, {
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
-    };
-
-    return (
-      <Pressable
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled}
-      >
-        <Animated.View style={animatedStyle}>
-          <View style={[styles.actionButton, sizeStyle]}>
-            <Ionicons name={icon} size={22} color={theme.colors.textStrong} />
-          </View>
-        </Animated.View>
-      </Pressable>
-    );
-  };
 
   const safeAreaStyle = useMemo(
     () => ({
@@ -388,6 +398,36 @@ export const SwipeScreen: React.FC = () => {
       );
       isSwiping = false;
     });
+  };
+
+  const handleSendRequest = async () => {
+    const profile = currentProfile;
+    if (!profile) return;
+    const trimmed = requestMessage.trim();
+    if (!trimmed) {
+      Alert.alert('Error', 'Escribe un mensaje para enviar la solicitud');
+      return;
+    }
+
+    setIsSendingRequest(true);
+    try {
+      await profileService.updateProfile({ is_premium: isPremium });
+      const response = await chatService.sendMessageRequest(profile.id, trimmed);
+      setIsRequestModalVisible(false);
+      setRequestMessage('');
+      navigation.navigate('Chat', {
+        chatId: response.chatId,
+        matchId: response.matchId,
+        name: profile.name,
+        avatarUrl: profile.photoUrl ?? '',
+        profile: profile.profile,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      Alert.alert('Error', errorMessage || 'No se pudo enviar la solicitud');
+    } finally {
+      setIsSendingRequest(false);
+    }
   };
 
   const panResponder = useRef(
@@ -706,6 +746,7 @@ export const SwipeScreen: React.FC = () => {
         ]);
         const excluded = new Set<string>();
         existingMatches.forEach((match) => {
+          if (!match.status || !match.profileId) return;
           const isOutgoingPending = match.status === 'pending' && match.isOutgoing;
           const isResolvedStatus = [
             'accepted',
@@ -713,14 +754,17 @@ export const SwipeScreen: React.FC = () => {
             'room_offer',
             'room_assigned',
             'room_declined',
+            'unmatched',
           ].includes(match.status);
           if (isResolvedStatus || isOutgoingPending) {
             excluded.add(match.profileId);
           }
         });
-        rejections.forEach((rejection) =>
-          excluded.add(rejection.rejectedProfileId)
-        );
+        rejections.forEach((rejection) => {
+          if (rejection.rejectedProfileId) {
+            excluded.add(rejection.rejectedProfileId);
+          }
+        });
         const mapped = recommendations
           .map((rec) => mapProfileToSwipe(rec.profile))
           .filter((profile): profile is SwipeProfile => Boolean(profile));
@@ -806,7 +850,7 @@ export const SwipeScreen: React.FC = () => {
 
       try {
         const photos = await profilePhotoService.getPhotosForProfile(profileId);
-        const urls = photos.map((photo) => photo.signedUrl).filter(Boolean);
+        const urls = photos.map((photo) => photo.signedUrl).filter((url): url is string => Boolean(url));
         if (urls.length > 0) {
           setProfilePhotosById((prev) => ({
             ...prev,
@@ -814,10 +858,11 @@ export const SwipeScreen: React.FC = () => {
           }));
           return;
         }
-        if (currentProfile.photoUrl) {
+        const photoUrl = currentProfile.photoUrl;
+        if (photoUrl && typeof photoUrl === 'string') {
           setProfilePhotosById((prev) => ({
             ...prev,
-            [profileId]: [currentProfile.photoUrl],
+            [profileId]: [photoUrl],
           }));
           return;
         }
@@ -827,10 +872,11 @@ export const SwipeScreen: React.FC = () => {
         }));
       } catch (error) {
         console.error('Error cargando fotos del perfil:', error);
-        if (currentProfile.photoUrl) {
+        const photoUrl = currentProfile.photoUrl;
+        if (photoUrl && typeof photoUrl === 'string') {
           setProfilePhotosById((prev) => ({
             ...prev,
-            [profileId]: [currentProfile.photoUrl],
+            [profileId]: [photoUrl],
           }));
         } else {
           setProfilePhotosById((prev) => ({
@@ -1019,7 +1065,7 @@ export const SwipeScreen: React.FC = () => {
               </Text>
             </View>
           )}
-          <GlassPanel style={styles.cardInfo}>
+          <GlassPanel style={styles.cardInfo} glassFillStyle={glassFillStyle} styles={styles} theme={theme}>
               <View style={styles.nameRow}>
                 <Text style={styles.profileName}>
                   {profile.age ? `${profile.name}, ${profile.age}` : profile.name}
@@ -1027,7 +1073,7 @@ export const SwipeScreen: React.FC = () => {
               </View>
               <View style={styles.tagRow}>
                 {chips.map((chip) => (
-                  <GlassChip style={styles.tag} key={chip}>
+                  <GlassChip style={styles.tag} key={chip} glassFillStyle={glassFillStyle} styles={styles} theme={theme}>
                     <Text style={styles.tagText}>{chip}</Text>
                   </GlassChip>
                 ))}
@@ -1076,7 +1122,7 @@ export const SwipeScreen: React.FC = () => {
                 })
               }
             >
-              <GlassButton style={styles.profileButtonGlass}>
+              <GlassButton style={styles.profileButtonGlass} glassFillStyle={glassFillStyle} styles={styles} theme={theme}>
                 <Text style={styles.profileButtonText}>Ver perfil completo</Text>
                 <Ionicons
                   name="chevron-forward"
@@ -1213,6 +1259,16 @@ export const SwipeScreen: React.FC = () => {
               }
               disabled={!currentProfile || !canSwipe}
               size={actionButtonSize}
+              styles={styles}
+              theme={theme}
+            />
+            <ActionButton
+              icon="paper-plane"
+              onPress={() => setIsRequestModalVisible(true)}
+              disabled={!currentProfile}
+              size={actionButtonSize}
+              styles={styles}
+              theme={theme}
             />
             <ActionButton
               icon="heart"
@@ -1221,10 +1277,101 @@ export const SwipeScreen: React.FC = () => {
               }
               disabled={!currentProfile || !canSwipe}
               size={actionButtonSize}
+              styles={styles}
+              theme={theme}
             />
           </View>
         </View>
       </View>
+
+      <Modal
+        visible={isRequestModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setIsRequestModalVisible(false);
+          setRequestMessage('');
+        }}
+      >
+        <View style={styles.requestModalOverlay}>
+          <TouchableOpacity
+            style={styles.requestModalBackdrop}
+            activeOpacity={1}
+            onPress={() => {
+              setIsRequestModalVisible(false);
+              setRequestMessage('');
+            }}
+          />
+          <View
+            style={[
+              styles.requestModalCard,
+              {
+                backgroundColor: theme.colors.background,
+                borderColor: theme.colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.requestModalTitle, { color: theme.colors.text }]}>
+              Enviar mensaje
+            </Text>
+            <Text
+              style={[
+                styles.requestModalSubtitle,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Tu solicitud se enviara a esta persona.
+            </Text>
+            <TextInput
+              value={requestMessage}
+              onChangeText={setRequestMessage}
+              placeholder="Escribe tu mensaje..."
+              placeholderTextColor={theme.colors.textSecondary}
+              multiline
+              style={[
+                styles.requestModalInput,
+                {
+                  color: theme.colors.text,
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.colors.surfaceLight,
+                },
+              ]}
+            />
+            <View style={styles.requestModalActions}>
+              <TouchableOpacity
+                style={[styles.requestModalButton, styles.requestModalCancel]}
+                onPress={() => {
+                  setIsRequestModalVisible(false);
+                  setRequestMessage('');
+                }}
+                disabled={isSendingRequest}
+              >
+                <Text
+                  style={[
+                    styles.requestModalButtonText,
+                    { color: theme.colors.text },
+                  ]}
+                >
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.requestModalButton,
+                  styles.requestModalSend,
+                  isSendingRequest && styles.requestModalButtonDisabled,
+                ]}
+                onPress={handleSendRequest}
+                disabled={isSendingRequest}
+              >
+                <Text style={styles.requestModalSendText}>
+                  {isSendingRequest ? 'Enviando...' : 'Enviar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

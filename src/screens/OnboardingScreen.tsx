@@ -594,13 +594,7 @@ const OnboardingFlowProvider: React.FC<
 
       return { profileData, interesesFinal, housingSituation, isSeeking };
     },
-    [
-      authContext?.user?.first_name,
-      authContext?.user?.last_name,
-      intereses,
-      estiloVida,
-      situacionVivienda,
-    ]
+    [intereses, estiloVida, situacionVivienda]
   );
 
   const handleFinish = useCallback(
@@ -849,7 +843,15 @@ const OnboardingStepLayout: React.FC<{
   contentStyle?: StyleProp<ViewStyle>;
   onSkip?: () => void;
   children: React.ReactNode;
-}> = ({ title, subtitle, routeName, onHeaderLayout, contentStyle, onSkip, children }) => {
+}> = ({
+  title,
+  subtitle,
+  routeName,
+  onHeaderLayout,
+  contentStyle,
+  onSkip: _onSkip,
+  children,
+}) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { situacionVivienda } = useOnboardingFlow();
@@ -929,10 +931,10 @@ const RoleStep: React.FC = () => {
       routeName="OnboardingRole"
       title="Encuentra tu proximo hogar."
       subtitle="Y a las personas que lo hacen tuyo."
-      contentStyle={{ minHeight: availableHeight, position: 'relative' }}
+      contentStyle={[styles.roleStepContent, { minHeight: availableHeight }]}
     >
       <View
-        style={[styles.roleCenter, { position: 'absolute', top: roleTop, left: 0, right: 0 }]}
+        style={[styles.roleCenter, styles.roleCenterFloating, { top: roleTop }]}
         onLayout={(event) => setRoleHeight(event.nativeEvent.layout.height)}
       >
         {joinedWithInvite ? (
@@ -1380,7 +1382,6 @@ const LifestyleStep: React.FC = () => {
     setLifestyleOption,
     cardStyle,
     primaryButtonStyle,
-    secondaryButtonStyle,
   } = useOnboardingFlow();
   const navigation = useNavigation<StackNavigationProp<any>>();
 

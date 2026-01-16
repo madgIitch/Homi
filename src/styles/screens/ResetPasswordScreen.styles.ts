@@ -17,6 +17,9 @@ export const styles = (theme: Theme) => {
   scrollContent: {
     flexGrow: 1,
   },
+  transparentBackground: {
+    backgroundColor: 'transparent',
+  },
   header: {
     marginTop: spacing.xl,
     marginBottom: spacing.xl,

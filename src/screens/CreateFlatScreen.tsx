@@ -46,8 +46,6 @@ export const CreateFlatScreen: React.FC = () => {
   const userGender = authContext?.user?.gender ?? null;
   const [profileGender, setProfileGender] = useState<Gender | null>(null);
   const [address, setAddress] = useState('');
-  const [city, setCity] = useState('');
-  const [district, setDistrict] = useState<string | null>(null);
   const [cityQuery, setCityQuery] = useState('');
   const [cities, setCities] = useState<LocationOption[]>([]);
   const [isLoadingCities, setIsLoadingCities] = useState(false);
@@ -166,7 +164,9 @@ export const CreateFlatScreen: React.FC = () => {
       }
     };
 
-    void loadProfileGender();
+    loadProfileGender().catch((error) => {
+      console.error('Error cargando perfil:', error);
+    });
     return () => {
       isMounted = false;
     };
@@ -332,9 +332,6 @@ export const CreateFlatScreen: React.FC = () => {
 
     const cityValue = selectedCity.label;
     const districtValue = selectedPlace.label;
-    setCity(cityValue);
-    setDistrict(districtValue);
-
     try {
       setSaving(true);
       await roomService.createFlat({
@@ -446,8 +443,6 @@ export const CreateFlatScreen: React.FC = () => {
                 if (selectedCity?.id === id) {
                   setSelectedCity(null);
                   setSelectedPlace(null);
-                  setCity('');
-                  setDistrict(null);
                   setCityQuery('');
                   setPlaceQuery('');
                   setPlaces([]);
@@ -457,8 +452,6 @@ export const CreateFlatScreen: React.FC = () => {
                 const selected = cityOptions.find((item) => item.id === id) || null;
                 setSelectedCity(selected);
                 setSelectedPlace(null);
-                setCity(selected?.label ?? '');
-                setDistrict(null);
                 setCityQuery('');
                 setPlaceQuery('');
                 setPlaces([]);
@@ -490,13 +483,11 @@ export const CreateFlatScreen: React.FC = () => {
               onSelect={(id) => {
                 if (selectedPlace?.id === id) {
                   setSelectedPlace(null);
-                  setDistrict(null);
                   return;
                 }
                 const selected =
                   placeOptions.find((item) => item.id === id) || null;
                 setSelectedPlace(selected);
-                setDistrict(selected?.label ?? null);
                 setPlaceQuery('');
               }}
               multiline

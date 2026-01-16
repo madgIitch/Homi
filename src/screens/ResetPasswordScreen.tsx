@@ -112,7 +112,7 @@ export const ResetPasswordScreen: React.FC = () => {
         />
       </ImageBackground>
       <KeyboardAwareContainer
-        style={{ backgroundColor: 'transparent' }}
+        style={styles.transparentBackground}
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }]}
         withSafeAreaBottom
         extraScrollHeight={120}

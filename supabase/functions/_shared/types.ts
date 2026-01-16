@@ -71,6 +71,7 @@ export interface Profile {
   desired_roommates_min?: number
   desired_roommates_max?: number
   is_searchable?: boolean
+  is_premium?: boolean
 }
   
 export interface Flat {    
@@ -118,7 +119,7 @@ export interface Match {
   id: string    
   user_a_id: string    
   user_b_id: string    
-  status: 'pending' | 'accepted' | 'rejected'    
+  status: 'pending' | 'accepted' | 'rejected' | 'room_offer' | 'room_assigned' | 'room_declined' | 'unmatched'
   matched_at: string    
 }  
   
@@ -259,6 +260,7 @@ export type MatchStatus =
   | 'room_offer'
   | 'room_assigned'
   | 'room_declined'
+  | 'unmatched'
   
 // ====================    
 // Tipos para Errores    

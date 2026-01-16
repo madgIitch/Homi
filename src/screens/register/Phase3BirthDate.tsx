@@ -22,6 +22,7 @@ export const Phase3BirthDate: React.FC<Phase3BirthDateProps> = ({
   const styles = useMemo(() => Phase3BirthDateStyles(theme), [theme]);  
   const [birthDate, setBirthDate] = useState<Date | null>(null);  
   const [showPicker, setShowPicker] = useState(false);  
+  const [isTooYoung, setIsTooYoung] = useState(false);
   
   const formatDate = (date: Date) => {  
     return date.toLocaleDateString('es-ES', {  
@@ -30,19 +31,34 @@ export const Phase3BirthDate: React.FC<Phase3BirthDateProps> = ({
       year: 'numeric',  
     });  
   };  
+
+  const isOlderThan16 = (date: Date) => {
+    const today = new Date();
+    const cutoff = new Date(
+      today.getFullYear() - 16,
+      today.getMonth(),
+      today.getDate()
+    );
+    return date < cutoff;
+  };
   
   const handleComplete = () => {  
     if (!birthDate) {  
       Alert.alert('Error', 'Por favor selecciona tu fecha de nacimiento');  
       return;  
     }  
+    if (!isOlderThan16(birthDate)) {
+      Alert.alert('Error', 'Debes tener mas de 16 anos para registrarte');
+      return;
+    }
     onComplete({ birthDate: birthDate.toISOString().split('T')[0] });  
   };  
   
   const onChange = (event: any, selectedDate?: Date) => {  
     setShowPicker(Platform.OS === 'ios');  
     if (selectedDate) {  
-      setBirthDate(selectedDate);  
+      setBirthDate(selectedDate);
+      setIsTooYoung(!isOlderThan16(selectedDate));
     }  
   };  
   
@@ -95,9 +111,19 @@ export const Phase3BirthDate: React.FC<Phase3BirthDateProps> = ({
           />  
         )}  
   
+        {isTooYoung && (
+          <Text style={[styles.subtitle, { color: theme.colors.error }]}>
+            Debes tener mas de 16 anos para registrarte.
+          </Text>
+        )}
         <View style={styles.buttonContainer}>  
           <Button title="Anterior" onPress={onBack} variant="tertiary" />  
-          <Button title="Completar registro" onPress={handleComplete} loading={loading} />  
+          <Button
+            title="Completar registro"
+            onPress={handleComplete}
+            loading={loading}
+            disabled={isTooYoung}
+          />  
         </View>  
       </View>
     </View>  

@@ -53,7 +53,7 @@ const commonAreaLabel = new Map([
   ['salon', 'Salon'],
   ['cocina', 'Cocina'],
   ['comedor', 'Comedor'],
-  ['bano_compartido', 'Bano compartido'],
+  ['bano_compartido', 'Baño compartido'],
   ['terraza', 'Terraza'],
   ['patio', 'Patio'],
   ['lavadero', 'Lavadero'],
@@ -99,7 +99,7 @@ const getRuleIcon = (rule?: string | null) => {
     if (normalized.includes('fumar')) return 'fumar';
     if (normalized.includes('mascotas') || normalized.includes('mascot')) return 'mascotas';
     if (normalized.includes('cocina')) return 'cocina';
-    if (normalized.includes('banos')) return 'banos';
+    if (normalized.includes('banos')) return 'baños';
     if (normalized.includes('basura')) return 'basura';
     if (
       normalized.includes('puerta') ||
@@ -268,7 +268,9 @@ export const RoomDetailScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    void refreshRoom();
+    refreshRoom().catch((error) => {
+      console.error('Error refrescando habitacion:', error);
+    });
   }, [refreshRoom]);
 
   useEffect(() => {
@@ -296,7 +298,9 @@ export const RoomDetailScreen: React.FC = () => {
           },
           () => {
             if (!isMounted) return;
-            void refreshRoom();
+            refreshRoom().catch((error) => {
+              console.error('Error refrescando habitacion:', error);
+            });
           }
         )
         .on(
@@ -309,7 +313,9 @@ export const RoomDetailScreen: React.FC = () => {
           },
           () => {
             if (!isMounted) return;
-            void refreshRoom();
+            refreshRoom().catch((error) => {
+              console.error('Error refrescando habitacion:', error);
+            });
           }
         )
         .on(
@@ -322,7 +328,9 @@ export const RoomDetailScreen: React.FC = () => {
           },
           () => {
             if (!isMounted) return;
-            void refreshRoom();
+            refreshRoom().catch((error) => {
+              console.error('Error refrescando habitacion:', error);
+            });
           }
         )
         .subscribe();
@@ -330,7 +338,9 @@ export const RoomDetailScreen: React.FC = () => {
       assignmentChannelRef.current = channel;
     };
 
-    void subscribeToAssignments();
+    subscribeToAssignments().catch((error) => {
+      console.warn('[RoomDetail] Error suscribiendo asignaciones:', error);
+    });
 
     return () => {
       isMounted = false;
@@ -671,7 +681,7 @@ export const RoomDetailScreen: React.FC = () => {
                     size={16}
                     color={theme.colors.textSecondary}
                   />
-                  <Text style={[styles.detailLabel, detailLabelStyle]}>Tamano</Text>
+                  <Text style={[styles.detailLabel, detailLabelStyle]}>Tamaño</Text>
                 </View>
                 <Text style={[styles.detailValue, detailValueStyle]}>
                   {roomState.size_m2} m2

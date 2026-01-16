@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Image,
   ImageBackground,
   Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -16,8 +16,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
 import { BlurView } from '@react-native-community/blur';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
-import { colors, spacing } from '../theme';
+import { spacing } from '../theme';
 import { chatService } from '../services/chatService';
 import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
@@ -47,7 +48,7 @@ export const MatchesScreen: React.FC = () => {
       ]);
       setMatches(
         nextMatches.filter((match) =>
-          ['accepted', 'room_offer', 'room_assigned', 'room_declined'].includes(
+          ['accepted', 'room_offer', 'room_assigned', 'room_declined', 'unmatched'].includes(
             match.status ?? 'pending'
           )
         )
@@ -181,7 +182,9 @@ export const MatchesScreen: React.FC = () => {
       matchesChannelRef.current = channel;
     };
 
-    void subscribeToMatches();
+    subscribeToMatches().catch((error) => {
+      console.warn('[MatchesScreen] Error suscribiendo matches:', error);
+    });
 
     return () => {
       isMounted = false;
@@ -283,6 +286,32 @@ export const MatchesScreen: React.FC = () => {
     }
   };
 
+  const handleDeleteMatch = (matchId: string, name: string) => {
+    Alert.alert(
+      'Eliminar conversacion',
+      `¿Estas seguro de que quieres eliminar la conversacion con ${name}?`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatService.deleteMatch(matchId);
+              loadData().catch(() => undefined);
+            } catch (error) {
+              console.error('Error eliminando match:', error);
+              Alert.alert('Error', 'No se pudo eliminar la conversacion');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderMatch = ({ item }: { item: Match }) => {
     const photoUrl = matchPhotoByProfile[item.profileId] || item.avatarUrl;
     return (
@@ -303,61 +332,91 @@ export const MatchesScreen: React.FC = () => {
     );
   };
 
-  const renderChat = ({ item }: { item: Chat }) => (
-    <Pressable
-      style={({ pressed }) => [
-        styles.chatRow,
-        {
-          backgroundColor: theme.colors.glassSurface,
-          borderColor: theme.colors.glassBorderSoft,
-        },
-        pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
-      ]}
-      onPress={() =>
-        navigation.navigate('Chat', {
-          chatId: item.id,
-          matchId: item.matchId,
-          name: item.name,
-          avatarUrl: item.avatarUrl,
-          profile: item.profile,
-        })
-      }
-    >
-      <Image
-        source={{
-          uri:
-            matchPhotoByProfile[item.profileId ?? ''] ||
-            item.avatarUrl,
+  const renderChat = ({ item }: { item: Chat }) => {
+    const isUnmatched = item.matchStatus === 'unmatched';
+
+    return (
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: spacing.s12,
         }}
-        style={styles.chatAvatar}
-      />
-      <View style={styles.chatBody}>
-        <View style={styles.chatHeaderRow}>
-          <Text style={[styles.chatName, { color: theme.colors.text }]}>
-            {item.name}
-          </Text>
-          <Text
-            style={[styles.chatTime, { color: theme.colors.textSecondary }]}
-          >
-            {item.lastMessageAt}
-          </Text>
-        </View>
-        <View style={styles.chatPreviewRow}>
-          <Text
-            style={[styles.chatPreview, { color: theme.colors.textSecondary }]}
-            numberOfLines={1}
-          >
-            {item.lastMessage}
-          </Text>
-          {item.unreadCount > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{item.unreadCount}</Text>
+      >
+        <Pressable
+          style={({ pressed }) => [
+            styles.chatRow,
+            {
+              flex: 1,
+              marginBottom: 0,
+              backgroundColor: theme.colors.glassSurface,
+              borderColor: theme.colors.glassBorderSoft,
+            },
+            pressed && { backgroundColor: theme.colors.glassUltraLightAlt },
+          ]}
+          onPress={() =>
+            navigation.navigate('Chat', {
+              chatId: item.id,
+              matchId: item.matchId,
+              name: item.name,
+              avatarUrl: item.avatarUrl,
+              profile: item.profile,
+            })
+          }
+        >
+          <Image
+            source={{
+              uri:
+                matchPhotoByProfile[item.profileId ?? ''] ||
+                item.avatarUrl,
+            }}
+            style={styles.chatAvatar}
+          />
+          <View style={styles.chatBody}>
+            <View style={styles.chatHeaderRow}>
+              <Text style={[styles.chatName, { color: theme.colors.text }]}>
+                {item.name}
+              </Text>
+              <Text
+                style={[styles.chatTime, { color: theme.colors.textSecondary }]}
+              >
+                {item.lastMessageAt}
+              </Text>
             </View>
-          )}
-        </View>
+            <View style={styles.chatPreviewRow}>
+              <Text
+                style={[styles.chatPreview, { color: theme.colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                {item.lastMessage}
+              </Text>
+              {item.unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Pressable>
+        {isUnmatched && (
+          <Pressable
+            style={({ pressed }) => [
+              {
+                marginLeft: spacing.sm,
+                padding: spacing.sm,
+                borderRadius: 12,
+                backgroundColor: theme.colors.error || '#ff4444',
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => handleDeleteMatch(item.matchId, item.name)}
+          >
+            <Ionicons name="trash-outline" size={24} color="#fff" />
+          </Pressable>
+        )}
       </View>
-    </Pressable>
-  );
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>

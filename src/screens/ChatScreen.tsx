@@ -20,6 +20,7 @@ import {
   View,
   Modal,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { BlurView } from '@react-native-community/blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -102,6 +103,7 @@ export const ChatScreen: React.FC = () => {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const [matchId, setMatchId] = useState<string | null>(routeMatchId ?? null);
   const [matchStatus, setMatchStatus] = useState<MatchStatus | null>(null);
+  const [matchUserBId, setMatchUserBId] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [seekerId, setSeekerId] = useState<string | null>(null);
   const [otherUserId, setOtherUserId] = useState<string | null>(null);
@@ -118,6 +120,7 @@ export const ChatScreen: React.FC = () => {
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [isAssignmentCollapsed, setIsAssignmentCollapsed] = useState(true);
   const [isRoommatesCollapsed, setIsRoommatesCollapsed] = useState(true);
+  const [isMatchMenuVisible, setIsMatchMenuVisible] = useState(false);
   const listRef = useRef<FlatList<Message> | null>(null);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [showScrollToEnd, setShowScrollToEnd] = useState(false);
@@ -127,6 +130,7 @@ export const ChatScreen: React.FC = () => {
   const layoutHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
   const assignmentChannelRef = useRef<RealtimeChannel | null>(null);
+  const matchChannelRef = useRef<RealtimeChannel | null>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -135,6 +139,7 @@ export const ChatScreen: React.FC = () => {
       isMountedRef.current = false;
     };
   }, []);
+
 
   useEffect(() => {
     if (routeChatId && routeChatId !== chatId) {
@@ -162,7 +167,7 @@ export const ChatScreen: React.FC = () => {
   const updateTypingState = useCallback(
     (typing: boolean) => {
       if (!currentUserId || !channelRef.current) return;
-      void channelRef.current.track({
+      channelRef.current.track({
         user_id: currentUserId,
         typing,
         at: Date.now(),
@@ -208,7 +213,7 @@ export const ChatScreen: React.FC = () => {
       }
     };
 
-    void loadHeaderAvatar();
+    loadHeaderAvatar();
     return () => {
       isMounted = false;
     };
@@ -256,6 +261,7 @@ export const ChatScreen: React.FC = () => {
             : match.user_a_id;
 
         if (isMounted) {
+          setMatchUserBId(match.user_b_id ?? null);
           setOwnerId(owner);
           setSeekerId(seeker);
           setOtherUserId(other ?? null);
@@ -268,11 +274,11 @@ export const ChatScreen: React.FC = () => {
       }
     };
 
-    void loadMatchDetails();
+    loadMatchDetails();
     return () => {
       isMounted = false;
     };
-  }, [chatId, matchId, matchStatus]);
+  }, [chatId, matchId, matchStatus, currentUserId]);
 
   const loadAssignments = useCallback(async () => {
     if (!matchId) return;
@@ -297,7 +303,7 @@ export const ChatScreen: React.FC = () => {
   }, [matchId]);
 
   useEffect(() => {
-    void loadAssignments();
+    loadAssignments();
   }, [loadAssignments]);
 
   const loadOwnerAssignments = useCallback(async () => {
@@ -317,7 +323,7 @@ export const ChatScreen: React.FC = () => {
       setOwnerAssignments([]);
       return;
     }
-    void loadOwnerAssignments();
+    loadOwnerAssignments();
   }, [currentUserId, ownerId, loadOwnerAssignments]);
 
   const loadOwnerRoomAssignments = useCallback(async () => {
@@ -337,7 +343,7 @@ export const ChatScreen: React.FC = () => {
       setOwnerRoomAssignments([]);
       return;
     }
-    void loadOwnerRoomAssignments();
+    loadOwnerRoomAssignments();
   }, [currentUserId, ownerId, loadOwnerRoomAssignments]);
 
   useEffect(() => {
@@ -373,7 +379,7 @@ export const ChatScreen: React.FC = () => {
           },
           () => {
             if (!isMounted) return;
-            void loadAssignments();
+            loadAssignments();
           }
         )
         .on(
@@ -386,7 +392,7 @@ export const ChatScreen: React.FC = () => {
           },
           () => {
             if (!isMounted) return;
-            void loadAssignments();
+            loadAssignments();
           }
         )
         .on(
@@ -399,7 +405,7 @@ export const ChatScreen: React.FC = () => {
           },
           () => {
             if (!isMounted) return;
-            void loadAssignments();
+            loadAssignments();
           }
         )
         .subscribe();
@@ -407,7 +413,7 @@ export const ChatScreen: React.FC = () => {
       assignmentChannelRef.current = channel;
     };
 
-    void subscribeToAssignments();
+    subscribeToAssignments();
 
     return () => {
       isMounted = false;
@@ -448,7 +454,7 @@ export const ChatScreen: React.FC = () => {
   }, [currentUserId, ownerId]);
 
   useEffect(() => {
-    void refreshOwnerRooms();
+    refreshOwnerRooms();
   }, [refreshOwnerRooms]);
 
   const isOwner = Boolean(currentUserId && ownerId === currentUserId);
@@ -615,7 +621,14 @@ export const ChatScreen: React.FC = () => {
             const next = mapRealtimeMessage(payload.new, currentUserId);
             setMessages((prev) => upsertMessage(prev, next));
             if (!next.isMine) {
-              void chatService.markMessagesAsRead(chatId);
+              chatService
+                .markMessagesAsRead(chatId)
+                .catch((error) =>
+                  console.error('Error marcando mensajes como leidos:', error)
+                );
+              if (matchStatus === 'pending') {
+                setMatchStatus('accepted');
+              }
             }
           }
         )
@@ -652,13 +665,13 @@ export const ChatScreen: React.FC = () => {
       channelRef.current = channel;
       channel.subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            void refreshMessages();
+            refreshMessages();
             updateTypingState(false);
           }
         });
     };
 
-    void subscribeToMessages();
+    subscribeToMessages();
 
     return () => {
       isMounted = false;
@@ -671,10 +684,59 @@ export const ChatScreen: React.FC = () => {
         typingTimeoutRef.current = null;
       }
     };
-  }, [chatId, currentUserId, refreshMessages, updateTypingState]);
+  }, [chatId, currentUserId, matchStatus, refreshMessages, updateTypingState]);
 
   useEffect(() => {
-    void refreshMessages();
+    if (!matchId) return;
+    let isMounted = true;
+
+    const subscribeToMatch = async () => {
+      const token = await AsyncStorage.getItem('authToken');
+      if (token) {
+        supabaseClient.realtime.setAuth(token);
+      }
+
+      if (matchChannelRef.current) {
+        supabaseClient.removeChannel(matchChannelRef.current);
+        matchChannelRef.current = null;
+      }
+
+      const channel = supabaseClient
+        .channel(`matches:chat:${matchId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'matches',
+            filter: `id=eq.${matchId}`,
+          },
+          (payload) => {
+            if (!isMounted) return;
+            const nextStatus = payload.new?.status as MatchStatus | undefined;
+            if (nextStatus) {
+              setMatchStatus(nextStatus);
+            }
+          }
+        )
+        .subscribe();
+
+      matchChannelRef.current = channel;
+    };
+
+    subscribeToMatch().catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+      if (matchChannelRef.current) {
+        supabaseClient.removeChannel(matchChannelRef.current);
+        matchChannelRef.current = null;
+      }
+    };
+  }, [matchId]);
+
+  useEffect(() => {
+    refreshMessages();
   }, [refreshMessages]);
 
   const orderedMessages = useMemo(() => {
@@ -682,6 +744,17 @@ export const ChatScreen: React.FC = () => {
       (a, b) => toTimestamp(a.createdAtIso) - toTimestamp(b.createdAtIso)
     );
   }, [messages]);
+  const isUnmatched = matchStatus === 'unmatched';
+  const isPending = matchStatus === 'pending';
+  const isPendingRecipient =
+    isPending && Boolean(currentUserId && matchUserBId === currentUserId);
+  const canSendMessage = !isUnmatched && (!isPending || isPendingRecipient);
+
+  useEffect(() => {
+    if (isUnmatched) {
+      setIsMatchMenuVisible(false);
+    }
+  }, [isUnmatched]);
 
   useEffect(() => {
     if (!didInitialScrollRef.current || !isAtBottomRef.current) return;
@@ -691,6 +764,7 @@ export const ChatScreen: React.FC = () => {
   const sendMessage = async () => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
+    if (!canSendMessage) return;
     setInputValue('');
     updateTypingState(false);
     try {
@@ -709,9 +783,45 @@ export const ChatScreen: React.FC = () => {
       }
       const next = await chatService.sendMessage(resolvedChatId, trimmed);
       setMessages((prev) => upsertMessage(prev, next));
+      if (isPendingRecipient) {
+        setMatchStatus('accepted');
+      }
     } catch (error) {
       console.error('Error enviando mensaje:', error);
     }
+  };
+
+  const handleToggleMatchMenu = () => {
+    setIsMatchMenuVisible((prev) => !prev);
+  };
+
+  const handleUnmatch = () => {
+    if (!matchId) return;
+    Alert.alert(
+      'Eliminar match',
+      'Se eliminará el match y no podrás enviar más mensajes a esta persona.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const updated = await matchService.updateMatchStatus(
+                matchId,
+                'unmatched'
+              );
+              if (isMountedRef.current) {
+                setMatchStatus(updated.status ?? 'unmatched');
+                setIsMatchMenuVisible(false);
+              }
+            } catch (error) {
+              console.error('Error eliminando match:', error);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
@@ -829,8 +939,39 @@ export const ChatScreen: React.FC = () => {
             {name}
           </Text>
         </TouchableOpacity>
-        <View style={styles.headerSpacer} />
+        <Pressable
+          style={({ pressed }) => [
+            styles.headerMenuButton,
+            pressed && { opacity: 0.7 },
+          ]}
+          onPress={handleToggleMatchMenu}
+          disabled={!matchId || isUnmatched}
+        >
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={20}
+            color={theme.colors.text}
+          />
+        </Pressable>
       </View>
+      {isMatchMenuVisible && !isUnmatched && (
+        <View style={styles.matchMenu}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.matchMenuItem,
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={handleUnmatch}
+          >
+            <Ionicons
+              name="heart-dislike"
+              size={16}
+              color={theme.colors.errorDark}
+            />
+            <Text style={styles.matchMenuText}>Eliminar match</Text>
+          </Pressable>
+        </View>
+      )}
       {isOtherTyping && (
         <View style={styles.typingRow}>
           <BlurView
@@ -1065,7 +1206,7 @@ export const ChatScreen: React.FC = () => {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
-        style={{ flex: 1 }}
+        style={styles.flexFill}
       >
       <FlatList
         ref={listRef}
@@ -1074,7 +1215,7 @@ export const ChatScreen: React.FC = () => {
         renderItem={renderMessage}
         contentContainerStyle={styles.messagesList}
         showsVerticalScrollIndicator={false}
-        style={{ flex: 1 }}
+        style={styles.flexFill}
         onScroll={(event) => {
           const { contentOffset, contentSize, layoutMeasurement } =
             event.nativeEvent;
@@ -1122,7 +1263,7 @@ export const ChatScreen: React.FC = () => {
       <View
         style={[
           styles.inputFooter,
-          { paddingBottom: Math.max(insets.bottom, 8) },
+          { paddingBottom: Math.max(insets.bottom, 12) },
         ]}
       >
         {showScrollToEnd && (
@@ -1148,33 +1289,47 @@ export const ChatScreen: React.FC = () => {
             <Text style={styles.scrollToEndText}>Ir al ultimo mensaje</Text>
           </Pressable>
         )}
-        <View style={styles.inputGlass}>
-          <BlurView
-            blurType="light"
-            blurAmount={16}
-            reducedTransparencyFallbackColor={theme.colors.glassOverlay}
-            style={StyleSheet.absoluteFillObject}
-          />
-          <View style={styles.inputGlassFill} />
-          <View style={styles.inputRow}>
-            <TextInput
-              value={inputValue}
-              onChangeText={handleInputChange}
-              placeholder="Escribe un mensaje..."
-              placeholderTextColor={theme.colors.textTertiary}
-              style={styles.input}
-            />
-            <Pressable
-              style={({ pressed }) => [
-                styles.sendButton,
-                pressed && { opacity: 0.9 },
-              ]}
-              onPress={sendMessage}
-            >
-              <Ionicons name="send" size={18} color="#FFFFFF" />
-            </Pressable>
+        {isUnmatched ? (
+          <View style={styles.unmatchedNotice}>
+            <Text style={styles.unmatchedNoticeText}>
+              Se elimino el match, ya no puedes enviarle mas mensajes a esta persona.
+            </Text>
           </View>
-        </View>
+        ) : isPending && !isPendingRecipient ? (
+          <View style={styles.unmatchedNotice}>
+            <Text style={styles.unmatchedNoticeText}>
+              Solicitud enviada. Espera respuesta para poder escribir.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.inputGlass}>
+            <BlurView
+              blurType="light"
+              blurAmount={16}
+              reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={styles.inputGlassFill} />
+            <View style={styles.inputRow}>
+              <TextInput
+                value={inputValue}
+                onChangeText={handleInputChange}
+                placeholder="Escribe un mensaje..."
+                placeholderTextColor={theme.colors.textTertiary}
+                style={styles.input}
+              />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  pressed && { opacity: 0.9 },
+                ]}
+                onPress={sendMessage}
+              >
+                <Ionicons name="send" size={18} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          </View>
+        )}
       </View>
       </KeyboardAvoidingView>
 
@@ -1300,6 +1455,8 @@ const matchStatusLabel = (status: MatchStatus) => {
       return 'Propuesta rechazada';
     case 'accepted':
       return 'Match';
+    case 'unmatched':
+      return 'Match eliminado';
     default:
       return 'Pendiente';
   }

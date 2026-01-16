@@ -124,10 +124,8 @@ class ProfileService {
     }
 
     if (!response.ok) {
-      let errorMessage = 'Error al obtener recomendaciones';
       try {
         const error = await response.json();
-        errorMessage = error?.error || errorMessage;
         console.log(
           '[ProfileService.getProfileRecommendations] primary error body:',
           error

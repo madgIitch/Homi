@@ -18,7 +18,7 @@ type ApiResponse<T> = {
 };
 
 class MatchService {
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  private async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem('authToken');
     return {
       'Content-Type': 'application/json',
@@ -47,6 +47,29 @@ class MatchService {
 
     const payload = (await response.json()) as ApiResponse<ApiMatch>;
     return payload.data ?? null;
+  }
+
+  async updateMatchStatus(matchId: string, status: MatchStatus): Promise<ApiMatch> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/matches?id=${matchId}`,
+      {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al actualizar match');
+    }
+
+    const payload = (await response.json()) as ApiResponse<ApiMatch>;
+    if (!payload.data) {
+      throw new Error('Respuesta invalida al actualizar match');
+    }
+    return payload.data;
   }
 }
 

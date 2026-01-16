@@ -18,8 +18,15 @@ const runner = new TestRunner();
 // ====================
 
 runner.test('chats: solo matches activos pueden tener chat', () => {
-  const validStatuses = ['accepted', 'room_offer', 'room_assigned', 'room_declined'];
-  const invalidStatuses = ['pending', 'rejected'];
+  const validStatuses = [
+    'pending',
+    'accepted',
+    'room_offer',
+    'room_assigned',
+    'room_declined',
+    'unmatched',
+  ];
+  const invalidStatuses = ['rejected'];
 
   for (const status of validStatuses) {
     TestAssertions.assertTrue(validStatuses.includes(status), `${status} debe permitir chat`);
@@ -54,7 +61,13 @@ runner.test('chats: POST type=chat valida que usuario esté en match', () => {
 });
 
 runner.test('chats: POST type=chat valida status del match', () => {
-  const validStatuses = ['accepted', 'room_offer', 'room_assigned', 'room_declined'];
+  const validStatuses = [
+    'accepted',
+    'room_offer',
+    'room_assigned',
+    'room_declined',
+    'unmatched',
+  ];
   const matchStatus = 'pending';
 
   const isValid = validStatuses.includes(matchStatus);

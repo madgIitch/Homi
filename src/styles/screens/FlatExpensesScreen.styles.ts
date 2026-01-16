@@ -263,6 +263,12 @@ export const styles = (theme: Theme) => {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  avatarStackFirst: {
+    marginLeft: 0,
+  },
+  avatarStackOverlap: {
+    marginLeft: -6,
+  },
   avatarCircle: {
     width: sizes.s26,
     height: sizes.s26,

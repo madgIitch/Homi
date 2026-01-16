@@ -32,7 +32,7 @@ const RULE_OPTIONS = [
   { id: 'fumar', label: 'Fumar' },
   { id: 'mascotas', label: 'Mascotas' },
   { id: 'cocina', label: 'Dejar la cocina limpia tras usarla' },
-  { id: 'banos', label: 'Mantener banos en orden' },
+  { id: 'banos', label: 'Mantener baños en orden' },
   { id: 'basura', label: 'Sacar la basura segun el turno' },
   { id: 'seguridad', label: 'Cerrar siempre la puerta con llave' },
   { id: 'otros', label: '+ Otros' },

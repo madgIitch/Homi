@@ -39,6 +39,7 @@ export interface Profile {
 
   avatar_url: string | null;  
   is_searchable?: boolean | null;
+  is_premium?: boolean | null;
 
   created_at: string;  
   updated_at: string;  
@@ -77,4 +78,5 @@ export interface ProfileCreateRequest {
 
   avatar_url?: string;  
   is_searchable?: boolean;
+  is_premium?: boolean;
 }  

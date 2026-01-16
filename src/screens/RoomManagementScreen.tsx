@@ -58,7 +58,7 @@ const commonAreaLabel = new Map([
   ['salon', 'Salon'],
   ['cocina', 'Cocina'],
   ['comedor', 'Comedor'],
-  ['bano_compartido', 'Bano compartido'],
+  ['bano_compartido', 'Baño compartido'],
   ['terraza', 'Terraza'],
   ['patio', 'Patio'],
   ['lavadero', 'Lavadero'],
@@ -101,7 +101,7 @@ const getRuleIcon = (rule: string) => {
     if (normalized.includes('fumar')) return 'fumar';
     if (normalized.includes('mascotas') || normalized.includes('mascot')) return 'mascotas';
     if (normalized.includes('cocina')) return 'cocina';
-    if (normalized.includes('banos') || normalized.includes('baños')) return 'banos';
+    if (normalized.includes('banos') || normalized.includes('baños')) return 'baños';
     if (normalized.includes('basura')) return 'basura';
     if (
       normalized.includes('puerta') ||
@@ -255,7 +255,7 @@ export const RoomManagementScreen: React.FC = () => {
       }
     };
 
-    void loadProfileGender();
+    loadProfileGender().catch(() => undefined);
     return () => {
       isMounted = false;
     };
@@ -314,7 +314,7 @@ export const RoomManagementScreen: React.FC = () => {
       console.error('Error cargando pisos:', error);
       Alert.alert('Error', 'No se pudieron cargar los pisos');
     }
-  }, [selectedFlatId]);
+  }, []);
 
   const computeFlatCapacity = useCallback(
     (flatId: string, roomsData: Room[], extrasData: RoomExtrasMap) => {
@@ -370,7 +370,7 @@ export const RoomManagementScreen: React.FC = () => {
       loadFlats();
       loadRooms();
       return () => {
-        void syncFlatCapacities();
+        syncFlatCapacities().catch(() => undefined);
       };
     }, [loadRooms, loadFlats, syncFlatCapacities])
   );
@@ -380,7 +380,7 @@ export const RoomManagementScreen: React.FC = () => {
       clearTimeout(refreshTimeoutRef.current);
     }
     refreshTimeoutRef.current = setTimeout(() => {
-      void loadRooms({ silent: true });
+      loadRooms({ silent: true }).catch(() => undefined);
     }, 400);
   }, [loadRooms]);
 
@@ -455,7 +455,7 @@ export const RoomManagementScreen: React.FC = () => {
       assignmentChannelRef.current = channel;
     };
 
-    void subscribeToAssignments();
+    subscribeToAssignments().catch(() => undefined);
 
     return () => {
       isMounted = false;

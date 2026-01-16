@@ -6,7 +6,6 @@ import {
   Alert,
   Keyboard,
   TouchableOpacity,
-  Switch,
   Pressable,
   Image,
   ImageBackground,
@@ -117,7 +116,6 @@ export const EditProfileScreen: React.FC = () => {
 
   const navigation = useNavigation<StackNavigationProp<any>>();
   const { setFilters, filters } = useSwipeFilters();
-  const includeOtherOwners = filters.housingSituation === 'any';
 
   // Estados del formulario - solo campos que existen en la tabla profiles
   const [nombre, setNombre] = useState('');
@@ -324,11 +322,6 @@ export const EditProfileScreen: React.FC = () => {
     loadProfile();
     loadPhotos();
   }, [loadProfile, loadPhotos]);
-
-  useEffect(() => {
-    if (situacionVivienda !== 'tengo_piso') return;
-    setIsAlsoSeeking(includeOtherOwners);
-  }, [includeOtherOwners, situacionVivienda]);
 
   useEffect(() => {
     let isActive = true;
@@ -961,7 +954,7 @@ export const EditProfileScreen: React.FC = () => {
             value={biografia}
             onChangeText={setBiografia}
             maxLength={500}
-            placeholder="Cuentanos sobre ti..."
+            placeholder="Cuéntanos sobre ti..."
           />
           <Text style={styles.switchLabel}>Ocupacion</Text>
           <View style={styles.switchRow}>
@@ -1085,36 +1078,6 @@ export const EditProfileScreen: React.FC = () => {
               </Pressable>
             </View>
           </View>
-          {situacionVivienda === 'tengo_piso' ? (
-            <View style={styles.toggleRow}>
-              <View style={styles.toggleCopy}>
-                <Text style={styles.toggleLabel}>Tambien busco piso</Text>
-                <Text style={styles.toggleHint}>
-                  Activa esto si quieres aparecer como buscador de piso.
-                </Text>
-              </View>
-              <Switch
-                value={isAlsoSeeking}
-                onValueChange={(value) => {
-                  setIsAlsoSeeking(value);
-                  if (situacionVivienda === 'tengo_piso') {
-                    setFilters({
-                      ...filters,
-                      housingSituation: value ? 'any' : 'seeking',
-                    });
-                  }
-                }}
-                trackColor={{
-                  false: theme.colors.glassBorderSoft,
-                  true: theme.colors.primaryMuted,
-                }}
-                thumbColor={
-                  isAlsoSeeking ? theme.colors.primary : theme.colors.textTertiary
-                }
-                ios_backgroundColor={theme.colors.glassBorderSoft}
-              />
-            </View>
-          ) : null}
           {showZonePreferences ? (
             <>
               <Input

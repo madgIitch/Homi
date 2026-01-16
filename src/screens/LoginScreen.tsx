@@ -102,7 +102,7 @@ export const LoginScreen: React.FC = () => {
         />
       </ImageBackground>
       <KeyboardAwareContainer
-        style={{ backgroundColor: 'transparent' }}
+        style={styles.transparentBackground}
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top }]}
         withSafeAreaBottom
         extraScrollHeight={120}
@@ -110,7 +110,7 @@ export const LoginScreen: React.FC = () => {
         <View style={styles.header}>  
         <Image
           source={require('../assets/homiLogo.png')}
-          style={[styles.logoImage, { opacity: 0.85 }]}
+          style={[styles.logoImage, styles.logoImageMuted]}
           resizeMode="contain"
         />
   

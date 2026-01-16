@@ -12,7 +12,7 @@ interface SingleFlatExpenseResponse {
 }
 
 class FlatExpenseService {
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  private async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem('authToken');
     return {
       'Content-Type': 'application/json',

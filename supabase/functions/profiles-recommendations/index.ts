@@ -541,7 +541,9 @@ const handler = withAuth(
           const isOutgoingPending =
             match.status === 'pending' && match.user_a_id === userId;
           const isExcludedStatus =
-            match.status === 'accepted' || match.status === 'rejected';
+            match.status === 'accepted' ||
+            match.status === 'rejected' ||
+            match.status === 'unmatched';
           if (!isExcludedStatus && !isOutgoingPending) return;
           if (match.user_a_id) acceptedIds.add(match.user_a_id);
           if (match.user_b_id) acceptedIds.add(match.user_b_id);

@@ -307,6 +307,74 @@ export const styles = (theme: Theme) => {
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
   },
+  requestModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.s20,
+    backgroundColor: colors.overlayDark,
+  },
+  requestModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  requestModalCard: {
+    width: '100%',
+    borderRadius: semanticRadii.sheet,
+    padding: spacing.s18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    gap: spacing.s12,
+  },
+  requestModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  requestModalSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  requestModalInput: {
+    minHeight: sizes.s86,
+    borderRadius: borderRadius.s14,
+    borderWidth: 1,
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.s10,
+    fontSize: 14,
+    textAlignVertical: 'top',
+    backgroundColor: colors.surfaceLight,
+  },
+  requestModalActions: {
+    flexDirection: 'row',
+    gap: spacing.s10,
+  },
+  requestModalButton: {
+    flex: 1,
+    paddingVertical: spacing.s10,
+    borderRadius: semanticRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestModalCancel: {
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  requestModalSend: {
+    backgroundColor: colors.primary,
+  },
+  requestModalButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  requestModalSendText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  requestModalButtonDisabled: {
+    opacity: 0.7,
+  },
   emptyState: {
     alignItems: 'center',
     padding: spacing.lg,

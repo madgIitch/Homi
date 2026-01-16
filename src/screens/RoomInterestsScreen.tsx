@@ -137,7 +137,11 @@ export const RoomInterestsScreen: React.FC = () => {
     return matches.filter((match) => {
       if (!match.profileId) return false;
       if (!match.status) return true;
-      return match.status !== 'pending' && match.status !== 'rejected';
+      return (
+        match.status !== 'pending' &&
+        match.status !== 'rejected' &&
+        match.status !== 'unmatched'
+      );
     });
   }, [matches]);
 
