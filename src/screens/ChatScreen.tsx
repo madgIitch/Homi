@@ -578,6 +578,35 @@ export const ChatScreen: React.FC = () => {
     }
   };
 
+  const cancelAssignment = () => {
+    if (!matchAssignment || !matchId) return;
+
+    Alert.alert(
+      'Cancelar asignacion',
+      '¿Estas seguro de que quieres cancelar esta asignacion? El estado del match volvera a "Propuesta de habitacion".',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Si, cancelar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await roomAssignmentService.cancelAssignment(matchAssignment.id);
+              await matchService.updateMatchStatus(matchId, 'room_offer');
+              const data = await roomAssignmentService.getAssignments(matchId);
+              setAssignments(data.assignments);
+              setMatchAssignment(data.match_assignment ?? null);
+              setMatchStatus('room_offer');
+            } catch (error) {
+              console.error('Error cancelando asignacion:', error);
+              Alert.alert('Error', 'No se pudo cancelar la asignacion');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderRoomTitle = (room: Room) => {
     const extras = roomExtras[room.id];
     if (!extras) return room.title;
@@ -684,7 +713,7 @@ export const ChatScreen: React.FC = () => {
         typingTimeoutRef.current = null;
       }
     };
-  }, [chatId, currentUserId, matchStatus, refreshMessages, updateTypingState]);
+  }, [chatId, currentUserId, updateTypingState]);
 
   useEffect(() => {
     if (!matchId) return;
@@ -735,20 +764,19 @@ export const ChatScreen: React.FC = () => {
     };
   }, [matchId]);
 
-  useEffect(() => {
-    refreshMessages();
-  }, [refreshMessages]);
-
   const orderedMessages = useMemo(() => {
     return [...messages].sort(
       (a, b) => toTimestamp(a.createdAtIso) - toTimestamp(b.createdAtIso)
     );
   }, [messages]);
   const isUnmatched = matchStatus === 'unmatched';
+  const isRejected = matchStatus === 'rejected';
   const isPending = matchStatus === 'pending';
   const isPendingRecipient =
     isPending && Boolean(currentUserId && matchUserBId === currentUserId);
-  const canSendMessage = !isUnmatched && (!isPending || isPendingRecipient);
+  const isPendingSender = isPending && !isPendingRecipient;
+  const canSendMessage =
+    !isUnmatched && !isRejected && (!isPending || isPendingRecipient);
 
   useEffect(() => {
     if (isUnmatched) {
@@ -817,6 +845,33 @@ export const ChatScreen: React.FC = () => {
               }
             } catch (error) {
               console.error('Error eliminando match:', error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCancelRequest = () => {
+    if (!matchId) return;
+    Alert.alert(
+      'Cancelar solicitud',
+      'Se cancelará tu solicitud de chat. ¿Quieres continuar?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sí, cancelar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const updated = await matchService.updateMatchStatus(
+                matchId,
+                'rejected'
+              );
+              setMatchStatus(updated.status ?? 'rejected');
+            } catch (error) {
+              console.error('Error cancelando solicitud:', error);
+              Alert.alert('Error', 'No se pudo cancelar la solicitud');
             }
           },
         },
@@ -1083,6 +1138,26 @@ export const ChatScreen: React.FC = () => {
                       Ya tienes una habitacion asignada.
                     </Text>
                   )}
+                  {matchAssignment?.status === 'accepted' && (
+                    <View style={styles.offerCard}>
+                      <Text style={styles.offerTitle}>Asignacion activa</Text>
+                      <Text
+                        style={[styles.offerSubtitle, { color: theme.colors.textSecondary }]}
+                      >
+                        {matchAssignment.room?.title ?? 'Habitacion asignada'} - Asignada a {matchAssignment.assignee?.first_name ?? 'usuario'}
+                      </Text>
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.offerButton,
+                          styles.offerReject,
+                          pressed && { opacity: 0.9 },
+                        ]}
+                        onPress={cancelAssignment}
+                      >
+                        <Text style={styles.offerRejectText}>Cancelar asignacion</Text>
+                      </Pressable>
+                    </View>
+                  )}
                 </View>
               )}
               {isSeeker && matchAssignment?.status === 'offered' && (
@@ -1115,6 +1190,26 @@ export const ChatScreen: React.FC = () => {
                       <Text style={styles.offerRejectText}>Rechazar</Text>
                     </Pressable>
                   </View>
+                </View>
+              )}
+              {isSeeker && matchAssignment?.status === 'accepted' && (
+                <View style={styles.offerCard}>
+                  <Text style={styles.offerTitle}>Habitacion asignada</Text>
+                  <Text
+                    style={[styles.offerSubtitle, { color: theme.colors.textSecondary }]}
+                  >
+                    {matchAssignment.room?.title ?? 'Habitacion asignada'}
+                  </Text>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.offerButton,
+                      styles.offerReject,
+                      pressed && { opacity: 0.9 },
+                    ]}
+                    onPress={cancelAssignment}
+                  >
+                    <Text style={styles.offerRejectText}>Cancelar asignacion</Text>
+                  </Pressable>
                 </View>
               )}
             </>
@@ -1295,11 +1390,50 @@ export const ChatScreen: React.FC = () => {
               Se elimino el match, ya no puedes enviarle mas mensajes a esta persona.
             </Text>
           </View>
-        ) : isPending && !isPendingRecipient ? (
+        ) : isRejected ? (
           <View style={styles.unmatchedNotice}>
             <Text style={styles.unmatchedNoticeText}>
-              Solicitud enviada. Espera respuesta para poder escribir.
+              Solicitud cancelada. Ya no puedes enviar mensajes en este chat.
             </Text>
+          </View>
+        ) : isPendingSender ? (
+          <View style={styles.pendingNotice}>
+            <View style={styles.pendingHeader}>
+              <Ionicons
+                name="hourglass-outline"
+                size={16}
+                color={theme.colors.textSecondary}
+              />
+              <Text style={styles.pendingTitle}>Solicitud enviada</Text>
+            </View>
+            <Text style={styles.pendingBody}>
+              Espera respuesta para poder escribir. Mientras tanto puedes revisar
+              el mensaje enviado.
+            </Text>
+            {orderedMessages.length > 0 ? (
+              <View style={styles.pendingMessageCard}>
+                <Text style={styles.pendingMessageLabel}>Tu mensaje</Text>
+                <Text style={styles.pendingMessageText}>
+                  {orderedMessages[orderedMessages.length - 1]?.text}
+                </Text>
+                {orderedMessages[orderedMessages.length - 1]?.createdAt ? (
+                  <Text style={styles.pendingMessageMeta}>
+                    Enviado a las {orderedMessages[orderedMessages.length - 1]?.createdAt}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            <View style={styles.pendingActionsRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.pendingActionButton,
+                  pressed && { opacity: 0.85 },
+                ]}
+                onPress={handleCancelRequest}
+              >
+                <Text style={styles.pendingActionText}>Cancelar solicitud</Text>
+              </Pressable>
+            </View>
           </View>
         ) : (
           <View style={styles.inputGlass}>

@@ -171,6 +171,11 @@ export const styles = (theme: Theme) => {
   rulesList: {
     gap: spacing.s6,
   },
+  ruleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s6,
+  },
   servicesList: {
     gap: spacing.sm,
   },
@@ -178,6 +183,7 @@ export const styles = (theme: Theme) => {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.s6,
   },
   inlineAction: {
     marginTop: spacing.s12,

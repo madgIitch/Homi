@@ -150,19 +150,35 @@ class RoomService {
     if (flatIds.length === 0) return [];
     const headers = await this.getAuthHeaders();
 
-    const response = await fetch(
-      `${API_CONFIG.FUNCTIONS_URL}/rooms?type=rooms&flat_ids=${flatIds.join(',')}`,
-      {
-        method: 'GET',
-        headers,
-      }
-    );
+    const url = `${API_CONFIG.FUNCTIONS_URL}/rooms?type=rooms&flat_ids=${flatIds.join(',')}`;
+    console.log('[RoomService.getRoomsByFlatIds] Request:', {
+      url,
+      flatIds,
+      flatIdsCount: flatIds.length,
+    });
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+    });
 
     if (!response.ok) {
-      throw new Error('Error al obtener las habitaciones del piso');
+      const errorText = await response.text();
+      console.error('[RoomService.getRoomsByFlatIds] Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        flatIds,
+        url,
+        errorResponse: errorText,
+      });
+      throw new Error(`Error al obtener las habitaciones del piso: ${response.status} ${errorText || response.statusText}`);
     }
 
     const data: RoomResponse = await response.json();
+    console.log('[RoomService.getRoomsByFlatIds] Success:', {
+      roomsCount: data.data.length,
+      flatIds,
+    });
     return data.data;
   }
   

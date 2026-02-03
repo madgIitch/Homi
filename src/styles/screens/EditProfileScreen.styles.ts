@@ -62,6 +62,11 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: spacing.s10,
   },
   sectionCard: {
@@ -258,6 +263,10 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.text,
+    flex: 1,
+    flexWrap: 'wrap',
+    flexShrink: 1,
+    minWidth: 0,
   },
   checkLabelActive: {
     color: colors.text,

@@ -8,6 +8,7 @@ import 'react-native-url-polyfill/auto';
 
 import React, { useEffect } from 'react';
 import { StatusBar, useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
@@ -47,18 +48,24 @@ function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <ThemeProvider>
-        <AuthProvider>
-          <PremiumProvider>
-            <SwipeFiltersProvider>
-              <AppNavigator />
-            </SwipeFiltersProvider>
-          </PremiumProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar
+          barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+          translucent
+          backgroundColor="transparent"
+        />
+        <ThemeProvider>
+          <AuthProvider>
+            <PremiumProvider>
+              <SwipeFiltersProvider>
+                <AppNavigator />
+              </SwipeFiltersProvider>
+            </PremiumProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -15,16 +15,24 @@ import {
   NativeScrollEvent,
   Alert,
   StyleSheet,
+  Vibration,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { PinchGestureHandler, State } from 'react-native-gesture-handler';
+import {
+  GestureHandlerRootView,
+  PanGestureHandler,
+  PinchGestureHandler,
+  State,
+  TapGestureHandler,
+} from 'react-native-gesture-handler';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { BlurView } from '@react-native-community/blur';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import LinearGradient from 'react-native-linear-gradient';
+import Share from 'react-native-share';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useThemeController } from '../theme/ThemeContext';
 import { spacing } from '../theme';
@@ -33,10 +41,13 @@ import { roomExtrasService } from '../services/roomExtrasService';
 import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomService } from '../services/roomService';
 import { roomInvitationService } from '../services/roomInvitationService';
+import { shareService } from '../services/shareService';
 import { supabaseClient } from '../services/authService';
 import type { Flat, Room, RoomExtras } from '../types/room';
 import { Button } from '../components/Button';
+import { RoomSelector } from '../components/RoomSelector';
 import { RoomDetailScreenStyles as styles } from '../styles/screens';
+import { RuleIcon, ServiceIcon } from '../utils/iconUtils';
 
 type RouteParams = {
   room: Room;
@@ -65,109 +76,12 @@ const commonAreaLabel = new Map([
 
 const LIGHTBOX_MIN_SCALE = 1;
 const LIGHTBOX_MAX_SCALE = 3;
+const LIGHTBOX_DOUBLE_TAP_SCALE = 2;
+const LIGHTBOX_CLOSE_SCALE = 0.85;
+const ZOOM_INDICATOR_TIMEOUT = 2500;
 
-const SUB_RULE_TYPE_MAP = new Map<
-  string,
-  { ruleType: 'visitas' | 'fumar' | 'mascotas'; isNegative: boolean }
->([
-  ['si, con aviso', { ruleType: 'visitas', isNegative: false }],
-  ['no permitidas', { ruleType: 'visitas', isNegative: true }],
-  ['si, pero sin dormir', { ruleType: 'visitas', isNegative: false }],
-  ['sin problema', { ruleType: 'visitas', isNegative: false }],
-  ['no fumar', { ruleType: 'fumar', isNegative: true }],
-  ['solo en terraza/balcon', { ruleType: 'fumar', isNegative: false }],
-  ['permitido en zonas comunes', { ruleType: 'fumar', isNegative: false }],
-  ['no se permiten', { ruleType: 'mascotas', isNegative: true }],
-  ['solo gatos', { ruleType: 'mascotas', isNegative: false }],
-  ['solo perros', { ruleType: 'mascotas', isNegative: false }],
-  ['permitidas bajo acuerdo', { ruleType: 'mascotas', isNegative: false }],
-]);
-
-const getRuleIcon = (rule?: string | null) => {
-  const normalized = typeof rule === 'string' ? rule.toLowerCase().trim() : '';
-  const subRuleMatch = SUB_RULE_TYPE_MAP.get(normalized);
-  const ruleType = subRuleMatch?.ruleType ?? (() => {
-    if (
-      normalized.includes('ruido') ||
-      normalized.includes('silencio') ||
-      normalized.includes('horario flexible')
-    ) {
-      return 'ruido';
-    }
-    if (normalized.includes('visitas')) return 'visitas';
-    if (normalized.includes('limpieza')) return 'limpieza';
-    if (normalized.includes('fumar')) return 'fumar';
-    if (normalized.includes('mascotas') || normalized.includes('mascot')) return 'mascotas';
-    if (normalized.includes('cocina')) return 'cocina';
-    if (normalized.includes('banos')) return 'baños';
-    if (normalized.includes('basura')) return 'basura';
-    if (
-      normalized.includes('puerta') ||
-      normalized.includes('llave') ||
-      normalized.includes('seguridad')
-    ) {
-      return 'seguridad';
-    }
-    return 'otros';
-  })();
-
-  const isNegative =
-    subRuleMatch?.isNegative ??
-    ((ruleType === 'visitas' && normalized.includes('no permitidas')) ||
-      (ruleType === 'fumar' && normalized.includes('no fumar')) ||
-      (ruleType === 'mascotas' && normalized.includes('no se permiten')));
-
-  const emojiByType: Record<string, { positive: string; negative: string }> = {
-    ruido: { positive: '\u{1F4E3}', negative: '\u{1F507}' },
-    visitas: {
-      positive: '\u{1F465}',
-      negative: '\u{1F465}\u{1F6AB}',
-    },
-    limpieza: {
-      positive: '\u{1F9F9}',
-      negative: '\u{1F6AB}\u{1F9F9}',
-    },
-    fumar: { positive: '\u{1F6AC}', negative: '\u{1F6AD}' },
-    mascotas: {
-      positive: '\u{1F43E}',
-      negative: '\u{1F43E}\u{1F6AB}',
-    },
-    cocina: {
-      positive: '\u{1F373}',
-      negative: '\u{1F6AB}\u{1F373}',
-    },
-    banos: {
-      positive: '\u{1F6BF}',
-      negative: '\u{1F6AB}\u{1F6BF}',
-    },
-    basura: {
-      positive: '\u{1F5D1}\u{FE0F}',
-      negative: '\u{1F6AB}\u{1F5D1}\u{FE0F}',
-    },
-    seguridad: { positive: '\u{1F510}', negative: '\u{1F513}' },
-    otros: { positive: '\u{2728}', negative: '\u{1F6AB}\u{2728}' },
-  };
-
-  const emoji = emojiByType[ruleType] ?? emojiByType.otros;
-  return isNegative ? emoji.negative : emoji.positive;
-};
-
-const getServiceIcon = (serviceName?: string | null) => {
-  const normalized = typeof serviceName === 'string' ? serviceName.toLowerCase() : '';
-  if (normalized.includes('luz') || normalized.includes('electric')) {
-    return '\u{26A1}';
-  }
-  if (normalized.includes('agua')) return '\u{1F4A7}';
-  if (normalized.includes('gas')) return '\u{1F525}';
-  if (normalized.includes('internet') || normalized.includes('wifi')) {
-    return '\u{1F4F6}';
-  }
-  if (normalized.includes('limpieza')) return '\u{1F9F9}';
-  if (normalized.includes('calefaccion') || normalized.includes('calefacción')) {
-    return '\u{1F321}\u{FE0F}';
-  }
-  return '\u{1F527}';
-};
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 export const RoomDetailScreen: React.FC = () => {
   const theme = useTheme();
@@ -192,20 +106,43 @@ export const RoomDetailScreen: React.FC = () => {
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxFrameWidth, setLightboxFrameWidth] = useState(0);
+  const [lightboxFrameHeight, setLightboxFrameHeight] = useState(0);
+  const [lightboxScrollEnabled, setLightboxScrollEnabled] = useState(true);
+  const [lightboxZoomLabel, setLightboxZoomLabel] = useState<string | null>(null);
   const lightboxScrollRef = useRef<ScrollView>(null);
   const lightboxScaleStates = useRef<
-    Array<{ base: Animated.Value; pinch: Animated.Value; lastScale: number }>
+    Array<{
+      base: Animated.Value;
+      pinch: Animated.Value;
+      lastScale: number;
+      maxScale: number;
+      maxScaleResolved: boolean;
+      baseX: Animated.Value;
+      baseY: Animated.Value;
+      panX: Animated.Value;
+      panY: Animated.Value;
+      lastX: number;
+      lastY: number;
+    }>
   >([]);
+  const zoomLabelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inviteCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assignmentChannelRef = useRef<RealtimeChannel | null>(null);
   const isMountedRef = useRef(true);
   const [hasAssignments, setHasAssignments] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [roomSelectorVisible, setRoomSelectorVisible] = useState(false);
+  const [allRooms, setAllRooms] = useState<Room[]>([]);
+  const [allExtras, setAllExtras] = useState<Record<string, RoomExtras | null>>({});
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       if (inviteCopyTimeoutRef.current) {
         clearTimeout(inviteCopyTimeoutRef.current);
+      }
+      if (zoomLabelTimeoutRef.current) {
+        clearTimeout(zoomLabelTimeoutRef.current);
       }
       if (assignmentChannelRef.current) {
         supabaseClient.removeChannel(assignmentChannelRef.current);
@@ -272,6 +209,34 @@ export const RoomDetailScreen: React.FC = () => {
       console.error('Error refrescando habitacion:', error);
     });
   }, [refreshRoom]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadAllRooms = async () => {
+      if (!room.flat_id) return;
+      try {
+        const rooms = await roomService.getRoomsByFlatIds([room.flat_id]);
+        if (!isMounted) return;
+        setAllRooms(rooms);
+
+        const roomIds = rooms.map((r) => r.id);
+        const extrasData = await roomExtrasService.getExtrasForRooms(roomIds);
+        if (!isMounted) return;
+        const extrasMap: Record<string, RoomExtras | null> = {};
+        extrasData.forEach((item) => {
+          extrasMap[item.room_id] = item;
+        });
+        setAllExtras(extrasMap);
+      } catch (error) {
+        console.error('Error cargando habitaciones del piso:', error);
+      }
+    };
+
+    loadAllRooms();
+    return () => {
+      isMounted = false;
+    };
+  }, [room.flat_id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -354,8 +319,120 @@ export const RoomDetailScreen: React.FC = () => {
   const photos = extrasState?.photos ?? [];
   const carouselWidth = Dimensions.get('window').width - 40;
   const isCommonArea = extrasState?.category === 'area_comun';
-  const isOwner = room.owner_id === currentUserId;
+  const isOwner = roomState.owner_id === currentUserId;
+  const canShareRoom = isOwner && !isCommonArea;
   const lightboxCount = photos.length;
+
+  const getAdaptiveMaxScale = useCallback((width: number, height: number) => {
+    const maxDimension = Math.max(width, height);
+    if (maxDimension >= 4000) return 5;
+    if (maxDimension >= 3000) return 4.5;
+    if (maxDimension >= 2500) return 4;
+    if (maxDimension >= 2000) return 3.5;
+    return LIGHTBOX_MAX_SCALE;
+  }, []);
+
+  const getPanBounds = useCallback(
+    (scale: number) => {
+      const maxX = Math.max(0, ((scale - 1) * lightboxFrameWidth) / 2);
+      const maxY = Math.max(0, ((scale - 1) * lightboxFrameHeight) / 2);
+      return { maxX, maxY };
+    },
+    [lightboxFrameWidth, lightboxFrameHeight]
+  );
+
+  const showZoomIndicator = useCallback((scaleValue: number) => {
+    const label = `${scaleValue.toFixed(1)}x`;
+    setLightboxZoomLabel(label);
+    if (zoomLabelTimeoutRef.current) {
+      clearTimeout(zoomLabelTimeoutRef.current);
+    }
+    zoomLabelTimeoutRef.current = setTimeout(() => {
+      setLightboxZoomLabel(null);
+    }, ZOOM_INDICATOR_TIMEOUT);
+  }, []);
+
+  const animateScaleState = useCallback(
+    (
+      scaleState: {
+        base: Animated.Value;
+        baseX: Animated.Value;
+        baseY: Animated.Value;
+      },
+      nextScale: number,
+      nextX: number,
+      nextY: number
+    ) => {
+      Animated.parallel([
+        Animated.spring(scaleState.base, {
+          toValue: nextScale,
+          useNativeDriver: false,
+          friction: 7,
+          tension: 80,
+        }),
+        Animated.spring(scaleState.baseX, {
+          toValue: nextX,
+          useNativeDriver: false,
+          friction: 7,
+          tension: 80,
+        }),
+        Animated.spring(scaleState.baseY, {
+          toValue: nextY,
+          useNativeDriver: false,
+          friction: 7,
+          tension: 80,
+        }),
+      ]).start();
+    },
+    []
+  );
+
+  const resetScaleState = useCallback(
+    (scaleState: (typeof lightboxScaleStates.current)[number], animate = true) => {
+      scaleState.lastScale = LIGHTBOX_MIN_SCALE;
+      scaleState.lastX = 0;
+      scaleState.lastY = 0;
+      scaleState.pinch.setValue(1);
+      scaleState.panX.setValue(0);
+      scaleState.panY.setValue(0);
+      if (animate) {
+        animateScaleState(scaleState, LIGHTBOX_MIN_SCALE, 0, 0);
+      } else {
+        scaleState.base.setValue(LIGHTBOX_MIN_SCALE);
+        scaleState.baseX.setValue(0);
+        scaleState.baseY.setValue(0);
+      }
+      setLightboxScrollEnabled(true);
+    },
+    [animateScaleState]
+  );
+
+  useEffect(() => {
+    if (!lightboxVisible || lightboxFrameWidth <= 0 || lightboxFrameHeight <= 0) {
+      return;
+    }
+    photos.forEach((photo, index) => {
+      const scaleState = lightboxScaleStates.current[index];
+      if (!scaleState || scaleState.maxScaleResolved) return;
+      Image.getSize(
+        photo.signedUrl,
+        (width, height) => {
+          scaleState.maxScale = getAdaptiveMaxScale(width, height);
+          scaleState.maxScaleResolved = true;
+        },
+        () => {
+          scaleState.maxScale = LIGHTBOX_MAX_SCALE;
+          scaleState.maxScaleResolved = true;
+        }
+      );
+    });
+  }, [
+    lightboxVisible,
+    lightboxFrameWidth,
+    lightboxFrameHeight,
+    photos,
+    getAdaptiveMaxScale,
+  ]);
   const detailCardStyle = useMemo(
     () => ({
       backgroundColor: isDark ? theme.colors.surfaceLight : theme.colors.glassSurface,
@@ -405,9 +482,30 @@ export const RoomDetailScreen: React.FC = () => {
         base: new Animated.Value(1),
         pinch: new Animated.Value(1),
         lastScale: 1,
+        maxScale: LIGHTBOX_MAX_SCALE,
+        maxScaleResolved: false,
+        baseX: new Animated.Value(0),
+        baseY: new Animated.Value(0),
+        panX: new Animated.Value(0),
+        panY: new Animated.Value(0),
+        lastX: 0,
+        lastY: 0,
       });
     }
   }, [lightboxCount, lightboxIndex]);
+
+  useEffect(() => {
+    if (!lightboxVisible) return;
+    const scaleState = lightboxScaleStates.current[lightboxIndex];
+    if (!scaleState) return;
+    setLightboxScrollEnabled(scaleState.lastScale <= LIGHTBOX_MIN_SCALE);
+  }, [lightboxIndex, lightboxVisible]);
+
+  useEffect(() => {
+    if (!lightboxVisible) {
+      setLightboxZoomLabel(null);
+    }
+  }, [lightboxVisible]);
 
   useEffect(() => {
     if (!lightboxVisible || lightboxFrameWidth <= 0) return;
@@ -484,7 +582,7 @@ export const RoomDetailScreen: React.FC = () => {
 
     setInviteLoading(true);
     try {
-      const invite = await roomInvitationService.createInvitation(room.id);
+      const invite = await roomInvitationService.createInvitation(roomState.id);
       const expiresText = invite.expires_at
         ? `Caduca: ${invite.expires_at}`
         : 'Sin caducidad';
@@ -510,6 +608,42 @@ export const RoomDetailScreen: React.FC = () => {
     inviteCopyTimeoutRef.current = setTimeout(() => {
       setInviteCopied(false);
     }, 1600);
+  };
+
+  const handleSelectRoom = (selectedRoom: Room, selectedExtras: RoomExtras | null) => {
+    setRoomState(selectedRoom);
+    setExtrasState(selectedExtras);
+    setActivePhotoIndex(0);
+    setLightboxIndex(0);
+    setIsAssigned(false);
+    setHasAssignments(false);
+  };
+
+  const hasMultipleRooms = allRooms.length > 1;
+
+  const handleShareRoom = async () => {
+    if (isSharing) return;
+    try {
+      setIsSharing(true);
+      console.log('[RoomDetail] Share room', {
+        roomId: roomState.id,
+        title: roomState.title,
+      });
+      const normalizedPath = await shareService.getRoomShareImageFile(roomState.id);
+      console.log('[RoomDetail] Share room image path', normalizedPath);
+      const shareTitle = isCommonArea ? 'Compartir zona comun' : 'Compartir habitacion';
+      await Share.open({
+        title: shareTitle,
+        url: normalizedPath,
+        type: 'image/png',
+        failOnCancel: false,
+      });
+    } catch (error) {
+      console.error('Error compartiendo habitacion:', error);
+      Alert.alert('Error', 'No se pudo compartir la habitacion');
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   return (
@@ -549,25 +683,65 @@ export const RoomDetailScreen: React.FC = () => {
         >
           <Ionicons name="arrow-back" size={20} color={theme.colors.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-          {room.title}
-        </Text>
-        {isOwner && !isCommonArea ? (
+        {hasMultipleRooms ? (
           <Pressable
             style={({ pressed }) => [
-              styles.headerAction,
-              { backgroundColor: theme.colors.surfaceLight, borderColor: theme.colors.border },
+              styles.headerTitlePressable,
               pressed && styles.pressed,
             ]}
-            onPress={() =>
-              navigation.navigate('RoomInterests', {
-                roomId: room.id,
-                roomTitle: room.title,
-              })
-            }
+            onPress={() => setRoomSelectorVisible(true)}
           >
-            <Ionicons name="people-outline" size={20} color={theme.colors.text} />
+            <Text
+              style={[styles.headerTitle, { color: theme.colors.text }]}
+              numberOfLines={1}
+            >
+              {roomState.title}
+            </Text>
+            <Ionicons
+              name="chevron-down"
+              size={16}
+              color={theme.colors.textSecondary}
+            />
           </Pressable>
+        ) : (
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            {roomState.title}
+          </Text>
+        )}
+        {canShareRoom ? (
+          <View style={styles.headerActions}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.headerAction,
+                { backgroundColor: theme.colors.surfaceLight, borderColor: theme.colors.border },
+                pressed && styles.pressed,
+                isSharing && styles.headerActionDisabled,
+              ]}
+              onPress={handleShareRoom}
+              disabled={isSharing}
+            >
+              <Ionicons
+                name="share-social-outline"
+                size={18}
+                color={theme.colors.text}
+              />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.headerAction,
+                { backgroundColor: theme.colors.surfaceLight, borderColor: theme.colors.border },
+                pressed && styles.pressed,
+              ]}
+              onPress={() =>
+                navigation.navigate('RoomInterests', {
+                  roomId: roomState.id,
+                  roomTitle: roomState.title,
+                })
+              }
+            >
+              <Ionicons name="people-outline" size={20} color={theme.colors.text} />
+            </Pressable>
+          </View>
         ) : (
           <View style={styles.headerSpacer} />
         )}
@@ -761,9 +935,10 @@ export const RoomDetailScreen: React.FC = () => {
             <Text style={[styles.sectionTitle, sectionTitleStyle]}>Reglas</Text>
             <View style={[styles.detailCard, detailCardStyle]}>
               {rules.map((rule) => (
-                <Text key={rule} style={[styles.detailNoteText, detailNoteTextStyle]}>
-                  {getRuleIcon(rule)} {rule}
-                </Text>
+                <View key={rule} style={styles.ruleRow}>
+                  <RuleIcon rule={rule} size={16} color={theme.colors.textSecondary} />
+                  <Text style={[styles.detailNoteText, detailNoteTextStyle]}>{rule}</Text>
+                </View>
               ))}
             </View>
           </View>
@@ -774,13 +949,13 @@ export const RoomDetailScreen: React.FC = () => {
             <Text style={[styles.sectionTitle, sectionTitleStyle]}>Servicios</Text>
             <View style={[styles.detailCard, detailCardStyle]}>
               {services.map((service) => (
-                <Text
-                  key={service.name}
-                  style={[styles.detailNoteText, detailNoteTextStyle]}
-                >
-                  {getServiceIcon(service.name)} {service.name}
-                  {service.price != null ? ` (${service.price} EUR)` : ''}
-                </Text>
+                <View key={service.name} style={styles.serviceRow}>
+                  <ServiceIcon serviceName={service.name} size={16} color={theme.colors.textSecondary} />
+                  <Text style={[styles.detailNoteText, detailNoteTextStyle]}>
+                    {service.name}
+                    {service.price != null ? ` (${service.price} EUR)` : ''}
+                  </Text>
+                </View>
               ))}
             </View>
           </View>
@@ -868,7 +1043,7 @@ export const RoomDetailScreen: React.FC = () => {
         animationType="fade"
         onRequestClose={() => setLightboxVisible(false)}
       >
-        <View style={styles.lightboxOverlay}>
+        <GestureHandlerRootView style={styles.lightboxOverlay}>
           <LinearGradient
             colors={[theme.colors.overlayLight, theme.colors.overlayDark]}
             style={StyleSheet.absoluteFillObject}
@@ -900,8 +1075,12 @@ export const RoomDetailScreen: React.FC = () => {
               style={styles.lightboxImageFrame}
               onLayout={(event) => {
                 const nextWidth = event.nativeEvent.layout.width;
+                const nextHeight = event.nativeEvent.layout.height;
                 if (nextWidth !== lightboxFrameWidth) {
                   setLightboxFrameWidth(nextWidth);
+                }
+                if (nextHeight !== lightboxFrameHeight) {
+                  setLightboxFrameHeight(nextHeight);
                 }
               }}
             >
@@ -911,6 +1090,7 @@ export const RoomDetailScreen: React.FC = () => {
                   pagingEnabled
                   showsHorizontalScrollIndicator={false}
                   ref={lightboxScrollRef}
+                  scrollEnabled={lightboxScrollEnabled}
                   onMomentumScrollEnd={handleLightboxScrollEnd}
                 >
                   {photos.map((photo, index) => {
@@ -918,48 +1098,221 @@ export const RoomDetailScreen: React.FC = () => {
                     const scale = scaleState
                       ? Animated.multiply(scaleState.base, scaleState.pinch)
                       : 1;
+                    const translateX = scaleState
+                      ? Animated.add(scaleState.baseX, scaleState.panX)
+                      : 0;
+                    const translateY = scaleState
+                      ? Animated.add(scaleState.baseY, scaleState.panY)
+                      : 0;
                     const onPinchEvent =
                       scaleState &&
                       Animated.event(
                         [{ nativeEvent: { scale: scaleState.pinch } }],
-                        { useNativeDriver: true }
+                        { useNativeDriver: false }
                       );
                     const onPinchStateChange = (event: any) => {
                       if (!scaleState) return;
+                      const maxScale = scaleState.maxScale ?? LIGHTBOX_MAX_SCALE;
+                      if (event.nativeEvent.state === State.ACTIVE) {
+                        setLightboxScrollEnabled(false);
+                      }
                       if (event.nativeEvent.oldState === State.ACTIVE) {
-                        const nextScale =
+                        const rawScale =
                           scaleState.lastScale * event.nativeEvent.scale;
-                        const clampedScale = Math.min(
-                          LIGHTBOX_MAX_SCALE,
-                          Math.max(LIGHTBOX_MIN_SCALE, nextScale)
+                        if (rawScale < LIGHTBOX_CLOSE_SCALE) {
+                          Vibration.vibrate(10);
+                          resetScaleState(scaleState, false);
+                          setLightboxVisible(false);
+                          return;
+                        }
+                        const clampedScale = clamp(
+                          rawScale,
+                          LIGHTBOX_MIN_SCALE,
+                          maxScale
                         );
+                        if (clampedScale !== rawScale) {
+                          Vibration.vibrate(8);
+                        }
                         scaleState.lastScale = clampedScale;
-                        scaleState.base.setValue(clampedScale);
                         scaleState.pinch.setValue(1);
+                        const { maxX, maxY } = getPanBounds(clampedScale);
+                        const nextX = clamp(scaleState.lastX, -maxX, maxX);
+                        const nextY = clamp(scaleState.lastY, -maxY, maxY);
+                        scaleState.lastX = nextX;
+                        scaleState.lastY = nextY;
+                        animateScaleState(scaleState, clampedScale, nextX, nextY);
+                        setLightboxScrollEnabled(
+                          clampedScale <= LIGHTBOX_MIN_SCALE
+                        );
+                        showZoomIndicator(clampedScale);
+                      }
+                    };
+                    const onPanEvent =
+                      scaleState &&
+                      Animated.event(
+                        [
+                          {
+                            nativeEvent: {
+                              translationX: scaleState.panX,
+                              translationY: scaleState.panY,
+                            },
+                          },
+                        ],
+                        { useNativeDriver: false }
+                      );
+                    const onPanStateChange = (event: any) => {
+                      if (!scaleState) return;
+                      const isZoomed =
+                        scaleState.lastScale > LIGHTBOX_MIN_SCALE;
+                      if (event.nativeEvent.state === State.ACTIVE && isZoomed) {
+                        setLightboxScrollEnabled(false);
+                      }
+                      if (event.nativeEvent.oldState === State.ACTIVE) {
+                        if (isZoomed) {
+                          const nextX =
+                            scaleState.lastX + event.nativeEvent.translationX;
+                          const nextY =
+                            scaleState.lastY + event.nativeEvent.translationY;
+                          const { maxX, maxY } = getPanBounds(
+                            scaleState.lastScale
+                          );
+                          const clampedX = clamp(nextX, -maxX, maxX);
+                          const clampedY = clamp(nextY, -maxY, maxY);
+                          if (clampedX !== nextX || clampedY !== nextY) {
+                            Vibration.vibrate(6);
+                          }
+                          scaleState.lastX = clampedX;
+                          scaleState.lastY = clampedY;
+                          Animated.parallel([
+                            Animated.spring(scaleState.baseX, {
+                              toValue: clampedX,
+                              useNativeDriver: false,
+                              friction: 7,
+                              tension: 80,
+                            }),
+                            Animated.spring(scaleState.baseY, {
+                              toValue: clampedY,
+                              useNativeDriver: false,
+                              friction: 7,
+                              tension: 80,
+                            }),
+                          ]).start();
+                        } else {
+                          scaleState.lastX = 0;
+                          scaleState.lastY = 0;
+                          scaleState.baseX.setValue(0);
+                          scaleState.baseY.setValue(0);
+                        }
+                        scaleState.panX.setValue(0);
+                        scaleState.panY.setValue(0);
+                        setLightboxScrollEnabled(
+                          scaleState.lastScale <= LIGHTBOX_MIN_SCALE
+                        );
+                      }
+                    };
+                    const onDoubleTapStateChange = (event: any) => {
+                      if (!scaleState) return;
+                      if (event.nativeEvent.state === State.ACTIVE) {
+                        const currentScale = scaleState.lastScale;
+                        const maxScale = scaleState.maxScale ?? LIGHTBOX_MAX_SCALE;
+                        let targetScale = LIGHTBOX_MIN_SCALE;
+                        if (currentScale <= LIGHTBOX_MIN_SCALE + 0.05) {
+                          targetScale = Math.min(maxScale, LIGHTBOX_DOUBLE_TAP_SCALE);
+                        } else if (currentScale < maxScale - 0.05) {
+                          targetScale = maxScale;
+                        }
+                        const tapX =
+                          typeof event.nativeEvent.x === 'number'
+                            ? event.nativeEvent.x
+                            : lightboxFrameWidth / 2;
+                        const tapY =
+                          typeof event.nativeEvent.y === 'number'
+                            ? event.nativeEvent.y
+                            : lightboxFrameHeight / 2;
+                        const focusX = tapX - lightboxFrameWidth / 2;
+                        const focusY = tapY - lightboxFrameHeight / 2;
+                        const { maxX, maxY } = getPanBounds(targetScale);
+                        let nextX = clamp(
+                          scaleState.lastX - focusX * (targetScale - currentScale),
+                          -maxX,
+                          maxX
+                        );
+                        let nextY = clamp(
+                          scaleState.lastY - focusY * (targetScale - currentScale),
+                          -maxY,
+                          maxY
+                        );
+                        if (targetScale <= LIGHTBOX_MIN_SCALE + 0.05) {
+                          nextX = 0;
+                          nextY = 0;
+                        }
+                        scaleState.lastScale = targetScale;
+                        scaleState.lastX = nextX;
+                        scaleState.lastY = nextY;
+                        scaleState.pinch.setValue(1);
+                        scaleState.panX.setValue(0);
+                        scaleState.panY.setValue(0);
+                        animateScaleState(scaleState, targetScale, nextX, nextY);
+                        setLightboxScrollEnabled(
+                          targetScale <= LIGHTBOX_MIN_SCALE
+                        );
+                        showZoomIndicator(targetScale);
+                        Vibration.vibrate(10);
                       }
                     };
                     return (
-                      <PinchGestureHandler
+                      <TapGestureHandler
                         key={photo.path}
-                        onGestureEvent={onPinchEvent as any}
-                        onHandlerStateChange={onPinchStateChange}
+                        numberOfTaps={2}
+                        onHandlerStateChange={onDoubleTapStateChange}
                       >
-                        <Animated.View
-                          style={[
-                            styles.lightboxSlide,
-                            { width: lightboxFrameWidth, transform: [{ scale }] },
-                          ]}
+                        <PinchGestureHandler
+                          onGestureEvent={onPinchEvent as any}
+                          onHandlerStateChange={onPinchStateChange}
                         >
-                          <Image
-                            source={{ uri: photo.signedUrl }}
-                            style={styles.lightboxImage}
-                          />
-                        </Animated.View>
-                      </PinchGestureHandler>
+                          <PanGestureHandler
+                            enabled={
+                              !!scaleState &&
+                              scaleState.lastScale > LIGHTBOX_MIN_SCALE
+                            }
+                            onGestureEvent={onPanEvent as any}
+                            onHandlerStateChange={onPanStateChange}
+                          >
+                            <Animated.View
+                              style={[
+                                styles.lightboxSlide,
+                                {
+                                  width: lightboxFrameWidth,
+                                  transform: [
+                                    { scale },
+                                    { translateX },
+                                    { translateY },
+                                  ],
+                                },
+                              ]}
+                            >
+                              <Image
+                                source={{ uri: photo.signedUrl }}
+                                style={styles.lightboxImage}
+                              />
+                            </Animated.View>
+                          </PanGestureHandler>
+                        </PinchGestureHandler>
+                      </TapGestureHandler>
                     );
                   })}
                 </ScrollView>
               )}
+              {lightboxZoomLabel ? (
+                <View style={styles.lightboxZoomChip}>
+                  <Ionicons
+                    name="search"
+                    size={14}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={styles.lightboxZoomText}>{lightboxZoomLabel}</Text>
+                </View>
+              ) : null}
             </View>
             {lightboxCount > 1 && (
               <View style={styles.lightboxNav}>
@@ -1002,8 +1355,17 @@ export const RoomDetailScreen: React.FC = () => {
               </View>
             )}
           </View>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
+
+      <RoomSelector
+        visible={roomSelectorVisible}
+        onClose={() => setRoomSelectorVisible(false)}
+        rooms={allRooms}
+        extrasMap={allExtras}
+        currentRoomId={roomState.id}
+        onSelectRoom={handleSelectRoom}
+      />
     </View>
   );
 };

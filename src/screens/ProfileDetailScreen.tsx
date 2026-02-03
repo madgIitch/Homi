@@ -18,16 +18,25 @@ import {
   Image,
   ImageBackground,
   Modal,
+  Switch,
   NativeSyntheticEvent,
   NativeScrollEvent,
   TextInput,
   Animated,
   useWindowDimensions,
+  Vibration,
+  Pressable,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { PinchGestureHandler, State } from 'react-native-gesture-handler';
+import {
+  GestureHandlerRootView,
+  PanGestureHandler,
+  PinchGestureHandler,
+  State,
+  TapGestureHandler,
+} from 'react-native-gesture-handler';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { BlurView } from '@react-native-community/blur';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -53,6 +62,12 @@ import type { Profile, ProfilePhoto } from '../types/profile';
 import type { Flat, Room, RoomExtras } from '../types/room';
 import { ProfileDetailScreenStyles as styles } from '../styles/screens';
 import { getUserName } from '../utils/name';
+import { RuleIcon, ServiceIcon } from '../utils/iconUtils';
+import {
+  getMessageRequestUsage,
+  incrementMessageRequestUsage,
+  type MessageRequestUsage,
+} from '../utils/messageRequests';
 
 interface ProfileDetailScreenProps {
   userId?: string;
@@ -83,115 +98,27 @@ const interestLabelById = new Map(
 
 const LIGHTBOX_MIN_SCALE = 1;
 const LIGHTBOX_MAX_SCALE = 3;
+const LIGHTBOX_DOUBLE_TAP_SCALE = 2;
+const LIGHTBOX_CLOSE_SCALE = 0.85;
+const ZOOM_INDICATOR_TIMEOUT = 2500;
+const MAX_REQUEST_CHARS = 280;
+const MESSAGE_REQUEST_TIP_KEY = '@hm_message_request_tip_seen';
 
-const SUB_RULE_TYPE_MAP = new Map<
-  string,
-  { ruleType: 'visitas' | 'fumar' | 'mascotas'; isNegative: boolean }
->([
-  ['si, con aviso', { ruleType: 'visitas', isNegative: false }],
-  ['no permitidas', { ruleType: 'visitas', isNegative: true }],
-  ['si, pero sin dormir', { ruleType: 'visitas', isNegative: false }],
-  ['sin problema', { ruleType: 'visitas', isNegative: false }],
-  ['no fumar', { ruleType: 'fumar', isNegative: true }],
-  ['solo en terraza/balcon', { ruleType: 'fumar', isNegative: false }],
-  ['permitido en zonas comunes', { ruleType: 'fumar', isNegative: false }],
-  ['no se permiten', { ruleType: 'mascotas', isNegative: true }],
-  ['solo gatos', { ruleType: 'mascotas', isNegative: false }],
-  ['solo perros', { ruleType: 'mascotas', isNegative: false }],
-  ['permitidas bajo acuerdo', { ruleType: 'mascotas', isNegative: false }],
-]);
-
-const getRuleIcon = (rule?: string | null) => {
-  const normalized = typeof rule === 'string' ? rule.toLowerCase().trim() : '';
-  const subRuleMatch = SUB_RULE_TYPE_MAP.get(normalized);
-  const ruleType = subRuleMatch?.ruleType ?? (() => {
-    if (
-      normalized.includes('ruido') ||
-      normalized.includes('silencio') ||
-      normalized.includes('horario flexible')
-    ) {
-      return 'ruido';
-    }
-    if (normalized.includes('visitas')) return 'visitas';
-    if (normalized.includes('limpieza')) return 'limpieza';
-    if (normalized.includes('fumar')) return 'fumar';
-    if (normalized.includes('mascotas') || normalized.includes('mascot')) return 'mascotas';
-    if (normalized.includes('cocina')) return 'cocina';
-    if (normalized.includes('banos')) return 'baños';
-    if (normalized.includes('basura')) return 'basura';
-    if (
-      normalized.includes('puerta') ||
-      normalized.includes('llave') ||
-      normalized.includes('seguridad')
-    ) {
-      return 'seguridad';
-    }
-    return 'otros';
-  })();
-
-  const isNegative =
-    subRuleMatch?.isNegative ??
-    ((ruleType === 'visitas' && normalized.includes('no permitidas')) ||
-      (ruleType === 'fumar' && normalized.includes('no fumar')) ||
-      (ruleType === 'mascotas' && normalized.includes('no se permiten')));
-
-  const emojiByType: Record<string, { positive: string; negative: string }> = {
-    ruido: { positive: '\u{1F4E3}', negative: '\u{1F507}' },
-    visitas: {
-      positive: '\u{1F465}',
-      negative: '\u{1F465}\u{1F6AB}',
-    },
-    limpieza: {
-      positive: '\u{1F9F9}',
-      negative: '\u{1F6AB}\u{1F9F9}',
-    },
-    fumar: { positive: '\u{1F6AC}', negative: '\u{1F6AD}' },
-    mascotas: {
-      positive: '\u{1F43E}',
-      negative: '\u{1F43E}\u{1F6AB}',
-    },
-    cocina: {
-      positive: '\u{1F373}',
-      negative: '\u{1F6AB}\u{1F373}',
-    },
-    banos: {
-      positive: '\u{1F6BF}',
-      negative: '\u{1F6AB}\u{1F6BF}',
-    },
-    basura: {
-      positive: '\u{1F5D1}\u{FE0F}',
-      negative: '\u{1F6AB}\u{1F5D1}\u{FE0F}',
-    },
-    seguridad: { positive: '\u{1F510}', negative: '\u{1F513}' },
-    otros: { positive: '\u{2728}', negative: '\u{1F6AB}\u{2728}' },
-  };
-
-  const emoji = emojiByType[ruleType] ?? emojiByType.otros;
-  return isNegative ? emoji.negative : emoji.positive;
-};
-
-const getServiceIcon = (serviceName?: string | null) => {
-  const normalized = typeof serviceName === 'string' ? serviceName.toLowerCase() : '';
-  if (normalized.includes('luz') || normalized.includes('electric')) {
-    return '\u{26A1}';
-  }
-  if (normalized.includes('agua')) return '\u{1F4A7}';
-  if (normalized.includes('gas')) return '\u{1F525}';
-  if (normalized.includes('internet') || normalized.includes('wifi')) {
-    return '\u{1F4F6}';
-  }
-  if (normalized.includes('limpieza')) return '\u{1F9F9}';
-  if (normalized.includes('calefaccion') || normalized.includes('calefacción')) {
-    return '\u{1F321}\u{FE0F}';
-  }
-  return '\u{1F527}';
-};
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+const SHARE_THEME_OPTIONS = [
+  { id: 'lavender', label: 'Lavanda' },
+  { id: 'sunset', label: 'Atardecer' },
+  { id: 'mint', label: 'Menta' },
+  { id: 'ocean', label: 'Oceano' },
+];
 
 export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   userId,
 }) => {
   const theme = useTheme();
   const { isDark, toggleTheme } = useThemeController();
+  const styleSheet = useMemo(() => styles(theme), [theme]);
   const { isPremium } = usePremium();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -276,15 +203,34 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxFrameWidth, setLightboxFrameWidth] = useState(0);
+  const [lightboxFrameHeight, setLightboxFrameHeight] = useState(0);
+  const [lightboxScrollEnabled, setLightboxScrollEnabled] = useState(true);
+  const [lightboxZoomLabel, setLightboxZoomLabel] = useState<string | null>(null);
   const [isSearchEnabled, setIsSearchEnabled] = useState(true);
   const [isTogglingSearch, setIsTogglingSearch] = useState(false);
   const [isRequestModalVisible, setIsRequestModalVisible] = useState(false);
   const [requestMessage, setRequestMessage] = useState('');
   const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const [requestUsage, setRequestUsage] = useState<MessageRequestUsage | null>(null);
+  const [showRequestTip, setShowRequestTip] = useState(false);
   const lightboxScrollRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
   const lightboxScaleStates = useRef<
-    Array<{ base: Animated.Value; pinch: Animated.Value; lastScale: number }>
+    Array<{
+      base: Animated.Value;
+      pinch: Animated.Value;
+      lastScale: number;
+      maxScale: number;
+      maxScaleResolved: boolean;
+      baseX: Animated.Value;
+      baseY: Animated.Value;
+      panX: Animated.Value;
+      panY: Animated.Value;
+      lastX: number;
+      lastY: number;
+    }>
   >([]);
+  const zoomLabelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState<'perfil' | 'piso'>('perfil');
   const [flats, setFlats] = useState<Flat[]>([]);
   const [flatRooms, setFlatRooms] = useState<Room[]>([]);
@@ -301,6 +247,21 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   const [expandedRules, setExpandedRules] = useState<Record<string, boolean>>({});
   const [activeFlatIndex, setActiveFlatIndex] = useState(0);
   const [isSharing, setIsSharing] = useState(false);
+  const [isShareConfigVisible, setIsShareConfigVisible] = useState(false);
+  const [shareSelectedPhotoIds, setShareSelectedPhotoIds] = useState<string[]>([]);
+  const [shareSelectedZoneIds, setShareSelectedZoneIds] = useState<string[]>([]);
+  const [shareTheme, setShareTheme] = useState('lavender');
+  const [shareInclude, setShareInclude] = useState({
+    photos: true,
+    bio: true,
+    budget: true,
+    zones: true,
+    interests: true,
+    availability: true,
+    housing: true,
+    age: true,
+  });
+  const activeFlat = useMemo(() => flats[activeFlatIndex] ?? null, [flats, activeFlatIndex]);
   const profileChannelRef = useRef<RealtimeChannel | null>(null);
   const photoChannelRef = useRef<RealtimeChannel | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -373,27 +334,6 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     };
   }, []);
 
-  const handleLogout = () => {
-    if (!authContext?.logout) return;
-    Alert.alert('Cerrar sesion', 'Quieres salir de tu cuenta?', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Salir',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await authContext.logout();
-          } finally {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Login' }],
-            });
-          }
-        },
-      },
-    ]);
-  };
-
   const toggleSearchEnabled = async () => {
     if (isTogglingSearch) return;
     const nextValue = !isSearchEnabled;
@@ -408,6 +348,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     } finally {
       setIsTogglingSearch(false);
     }
+  };
+
+  const handleAccountOptions = () => {
+    navigation.navigate('AccountOptions');
+  };
+
+  const handleBugReport = () => {
+    navigation.navigate('BugReport');
   };
 
   const loadProfile = useCallback(async () => {
@@ -1099,7 +1047,100 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           },
         ]
       : [];
+  const shareSelectablePhotos = carouselPhotos;
   const lightboxCount = carouselPhotos.length;
+
+  useEffect(() => {
+    return () => {
+      if (zoomLabelTimeoutRef.current) {
+        clearTimeout(zoomLabelTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const getAdaptiveMaxScale = useCallback((width: number, height: number) => {
+    const maxDimension = Math.max(width, height);
+    if (maxDimension >= 4000) return 5;
+    if (maxDimension >= 3000) return 4.5;
+    if (maxDimension >= 2500) return 4;
+    if (maxDimension >= 2000) return 3.5;
+    return LIGHTBOX_MAX_SCALE;
+  }, []);
+
+  const getPanBounds = useCallback(
+    (scale: number) => {
+      const maxX = Math.max(0, ((scale - 1) * lightboxFrameWidth) / 2);
+      const maxY = Math.max(0, ((scale - 1) * lightboxFrameHeight) / 2);
+      return { maxX, maxY };
+    },
+    [lightboxFrameWidth, lightboxFrameHeight]
+  );
+
+  const showZoomIndicator = useCallback((scaleValue: number) => {
+    const label = `${scaleValue.toFixed(1)}x`;
+    setLightboxZoomLabel(label);
+    if (zoomLabelTimeoutRef.current) {
+      clearTimeout(zoomLabelTimeoutRef.current);
+    }
+    zoomLabelTimeoutRef.current = setTimeout(() => {
+      setLightboxZoomLabel(null);
+    }, ZOOM_INDICATOR_TIMEOUT);
+  }, []);
+
+  const animateScaleState = useCallback(
+    (
+      scaleState: {
+        base: Animated.Value;
+        baseX: Animated.Value;
+        baseY: Animated.Value;
+      },
+      nextScale: number,
+      nextX: number,
+      nextY: number
+    ) => {
+      Animated.parallel([
+        Animated.spring(scaleState.base, {
+          toValue: nextScale,
+          useNativeDriver: false,
+          friction: 7,
+          tension: 80,
+        }),
+        Animated.spring(scaleState.baseX, {
+          toValue: nextX,
+          useNativeDriver: false,
+          friction: 7,
+          tension: 80,
+        }),
+        Animated.spring(scaleState.baseY, {
+          toValue: nextY,
+          useNativeDriver: false,
+          friction: 7,
+          tension: 80,
+        }),
+      ]).start();
+    },
+    []
+  );
+
+  const resetScaleState = useCallback(
+    (scaleState: (typeof lightboxScaleStates.current)[number], animate = true) => {
+      scaleState.lastScale = LIGHTBOX_MIN_SCALE;
+      scaleState.lastX = 0;
+      scaleState.lastY = 0;
+      scaleState.pinch.setValue(1);
+      scaleState.panX.setValue(0);
+      scaleState.panY.setValue(0);
+      if (animate) {
+        animateScaleState(scaleState, LIGHTBOX_MIN_SCALE, 0, 0);
+      } else {
+        scaleState.base.setValue(LIGHTBOX_MIN_SCALE);
+        scaleState.baseX.setValue(0);
+        scaleState.baseY.setValue(0);
+      }
+      setLightboxScrollEnabled(true);
+    },
+    [animateScaleState]
+  );
 
   useEffect(() => {
     if (lightboxCount === 0) {
@@ -1115,9 +1156,79 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         base: new Animated.Value(1),
         pinch: new Animated.Value(1),
         lastScale: 1,
+        maxScale: LIGHTBOX_MAX_SCALE,
+        maxScaleResolved: false,
+        baseX: new Animated.Value(0),
+        baseY: new Animated.Value(0),
+        panX: new Animated.Value(0),
+        panY: new Animated.Value(0),
+        lastX: 0,
+        lastY: 0,
       });
     }
   }, [lightboxCount, lightboxIndex]);
+
+  useEffect(() => {
+    if (!lightboxVisible) return;
+    const scaleState = lightboxScaleStates.current[lightboxIndex];
+    if (!scaleState) return;
+    setLightboxScrollEnabled(scaleState.lastScale <= LIGHTBOX_MIN_SCALE);
+  }, [lightboxIndex, lightboxVisible]);
+
+  useEffect(() => {
+    if (!lightboxVisible) {
+      setLightboxZoomLabel(null);
+    }
+  }, [lightboxVisible]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    getMessageRequestUsage(currentUserId, isPremium)
+      .then((usage) => setRequestUsage(usage))
+      .catch(() => undefined);
+  }, [currentUserId, isPremium]);
+
+  useEffect(() => {
+    if (!isRequestModalVisible || !currentUserId) return;
+    getMessageRequestUsage(currentUserId, isPremium)
+      .then((usage) => setRequestUsage(usage))
+      .catch(() => undefined);
+    const tipKey = `${MESSAGE_REQUEST_TIP_KEY}:${currentUserId}`;
+    AsyncStorage.getItem(tipKey)
+      .then((seen) => {
+        if (!seen) {
+          setShowRequestTip(true);
+        }
+      })
+      .catch(() => undefined);
+  }, [isRequestModalVisible, currentUserId, isPremium]);
+
+  useEffect(() => {
+    if (!lightboxVisible || lightboxFrameWidth <= 0 || lightboxFrameHeight <= 0) {
+      return;
+    }
+    carouselPhotos.forEach((photo, index) => {
+      const scaleState = lightboxScaleStates.current[index];
+      if (!scaleState || scaleState.maxScaleResolved) return;
+      Image.getSize(
+        photo.signedUrl,
+        (width, height) => {
+          scaleState.maxScale = getAdaptiveMaxScale(width, height);
+          scaleState.maxScaleResolved = true;
+        },
+        () => {
+          scaleState.maxScale = LIGHTBOX_MAX_SCALE;
+          scaleState.maxScaleResolved = true;
+        }
+      );
+    });
+  }, [
+    lightboxVisible,
+    lightboxFrameWidth,
+    lightboxFrameHeight,
+    carouselPhotos,
+    getAdaptiveMaxScale,
+  ]);
 
   useEffect(() => {
     if (!lightboxVisible || lightboxFrameWidth <= 0) return;
@@ -1137,18 +1248,54 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     setLightboxIndex(nextIndex);
   };
 
-  const handleShareProfile = async () => {
-    if (isSharing) return;
+  const handleShareProfile = () => {
+    if (!profile) return;
+    const defaultPhotoIds = shareSelectablePhotos
+      .slice(0, 4)
+      .map((photo) => photo.id);
+    const defaultZones = profile.preferred_zones ?? [];
+    setShareSelectedPhotoIds(defaultPhotoIds);
+    setShareSelectedZoneIds(defaultZones);
+    setShareTheme('lavender');
+    setShareInclude({
+      photos: true,
+      bio: true,
+      budget: true,
+      zones: true,
+      interests: true,
+      availability: true,
+      housing: true,
+      age: true,
+    });
+    setIsShareConfigVisible(true);
+  };
+
+  const handleConfirmShareProfile = async () => {
+    if (isSharing || !profile) return;
     try {
       setIsSharing(true);
+      const include = Object.entries(shareInclude)
+        .filter(([, value]) => value)
+        .map(([key]) => key);
+      const filteredPhotoIds = shareSelectedPhotoIds.filter((id) => id !== 'avatar');
       console.log('[ProfileDetail] Share profile', {
-        profileId: profile?.id ?? null,
-        preferredZones: profile?.preferred_zones ?? [],
+        profileId: profile.id,
+        include,
+        photoIds: filteredPhotoIds,
+        zoneIds: shareSelectedZoneIds,
+        theme: shareTheme,
       });
       const normalizedPath = await shareService.getProfileShareImageFile(
-        profile?.id
+        profile.id,
+        {
+          include,
+          photoIds: filteredPhotoIds,
+          zoneIds: shareSelectedZoneIds,
+          theme: shareTheme,
+        }
       );
       console.log('[ProfileDetail] Share image path', normalizedPath);
+      setIsShareConfigVisible(false);
       await Share.open({
         title: 'Compartir perfil',
         url: normalizedPath,
@@ -1163,6 +1310,58 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     }
   };
 
+  const handleShareFlat = async () => {
+    if (isSharing) return;
+    if (!activeFlat) {
+      Alert.alert('Aviso', 'No hay piso para compartir');
+      return;
+    }
+    try {
+      setIsSharing(true);
+      console.log('[ProfileDetail] Share flat', {
+        flatId: activeFlat.id,
+        address: activeFlat.address,
+      });
+      const normalizedPath = await shareService.getFlatShareImageFile(activeFlat.id);
+      console.log('[ProfileDetail] Share flat image path', normalizedPath);
+      await Share.open({
+        title: 'Compartir piso',
+        url: normalizedPath,
+        type: 'image/png',
+        failOnCancel: false,
+      });
+    } catch (error) {
+      console.error('Error compartiendo piso:', error);
+      Alert.alert('Error', 'No se pudo compartir el piso');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const toggleSharePhoto = (photoId: string) => {
+    if (!shareInclude.photos) return;
+    setShareSelectedPhotoIds((prev) => {
+      if (prev.includes(photoId)) {
+        return prev.filter((id) => id !== photoId);
+      }
+      if (prev.length >= 4) {
+        Alert.alert('Aviso', 'Puedes seleccionar hasta 4 fotos');
+        return prev;
+      }
+      return [...prev, photoId];
+    });
+  };
+
+  const toggleShareZone = (zoneId: string) => {
+    if (!shareInclude.zones) return;
+    setShareSelectedZoneIds((prev) => {
+      if (prev.includes(zoneId)) {
+        return prev.filter((id) => id !== zoneId);
+      }
+      return [...prev, zoneId];
+    });
+  };
+
   const handleSendRequest = async () => {
     if (!profile?.id) return;
     const trimmed = requestMessage.trim();
@@ -1170,31 +1369,57 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       Alert.alert('Error', 'Escribe un mensaje para enviar la solicitud');
       return;
     }
-
-    setIsSendingRequest(true);
-    try {
-      await profileService.updateProfile({ is_premium: isPremium });
-      const response = await chatService.sendMessageRequest(profile.id, trimmed);
-      setIsRequestModalVisible(false);
-      setRequestMessage('');
-      navigation.navigate('Chat', {
-        chatId: response.chatId,
-        matchId: response.matchId,
-        name: getUserName(profile, 'Usuario'),
-        avatarUrl: resolvedAvatarUrl ?? '',
-        profile,
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errorMessage || 'No se pudo enviar la solicitud');
-    } finally {
-      setIsSendingRequest(false);
+    if (trimmed.length > MAX_REQUEST_CHARS) {
+      Alert.alert('Error', `El mensaje no puede superar ${MAX_REQUEST_CHARS} caracteres`);
+      return;
     }
+
+    const sendRequest = async () => {
+      setIsSendingRequest(true);
+      try {
+        const response = await chatService.sendMessageRequest(profile.id, trimmed);
+        if (currentUserId) {
+          const nextUsage = await incrementMessageRequestUsage(
+            currentUserId,
+            isPremium
+          );
+          setRequestUsage(nextUsage);
+        }
+        setIsRequestModalVisible(false);
+        setRequestMessage('');
+        navigation.navigate('Chat', {
+          chatId: response.chatId,
+          matchId: response.matchId,
+          name: getUserName(profile, 'Usuario'),
+          avatarUrl: resolvedAvatarUrl ?? '',
+          profile,
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        Alert.alert('Error', errorMessage || 'No se pudo enviar la solicitud');
+      } finally {
+        setIsSendingRequest(false);
+      }
+    };
+
+    if (!isPremium) {
+      Alert.alert(
+        'Solicitud gratuita',
+        'Esta es tu solicitud de prueba. ¿Quieres enviarla ahora?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Enviar', onPress: () => sendRequest() },
+        ]
+      );
+      return;
+    }
+
+    await sendRequest();
   };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styleSheet.loadingContainer}>
         <Text>Cargando perfil...</Text>
       </View>
     );
@@ -1202,7 +1427,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 
   if (!profile) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styleSheet.loadingContainer}>
         <Text>No se encontro el perfil</Text>
       </View>
     );
@@ -1266,6 +1491,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
 
 
   const aboutText = profile.bio ?? 'Sin descripcion por ahora.';
+  const requestCharCount = requestMessage.trim().length;
+  const requestLimitText = requestUsage
+    ? isPremium
+      ? `Premium: ${requestUsage.remaining} de ${requestUsage.limit} ${requestUsage.periodLabel}`
+      : `Gratis: ${requestUsage.remaining} de ${requestUsage.limit} ${requestUsage.periodLabel}`
+    : isPremium
+    ? 'Premium: 3 solicitudes/semana'
+    : 'Gratis: 1 solicitud de prueba';
   const housingBadge =
     profile.housing_situation === 'offering'
       ? profile.is_seeking
@@ -1309,6 +1542,37 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
     profile.university ?? null,
     formatBudget() !== '-' ? formatBudget() : null,
   ].filter((item): item is string => Boolean(item));
+  const personalInfo = [showOccupation ? profile.occupation ?? null : null].filter(
+    (item): item is string => Boolean(item)
+  );
+  const academicInfo = [profile.university ?? null].filter(
+    (item): item is string => Boolean(item)
+  );
+  const economicInfo = [formatBudget() !== '-' ? formatBudget() : null].filter(
+    (item): item is string => Boolean(item)
+  );
+  const showCategoryInfo =
+    personalInfo.length + academicInfo.length + economicInfo.length > 0;
+  const categoryCards = [
+    {
+      title: 'Informacion personal',
+      icon: 'briefcase-outline',
+      items: personalInfo,
+      color: theme.colors.primary,
+    },
+    {
+      title: 'Informacion academica',
+      icon: 'school-outline',
+      items: academicInfo,
+      color: theme.colors.indigo,
+    },
+    {
+      title: 'Informacion economica',
+      icon: 'wallet-outline',
+      items: economicInfo,
+      color: theme.colors.successDark,
+    },
+  ];
   const lifestyleChips = lifestyleDetails.filter((item) => item.value);
   const interestChips = interestLabels.filter(
     (item): item is string => Boolean(item)
@@ -1352,13 +1616,13 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
   })();
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
+    <View style={[styleSheet.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
       <ImageBackground
         source={{
           uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
         }}
         blurRadius={18}
-        style={styles.background}
+        style={styleSheet.background}
       >
         <LinearGradient
           colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
@@ -1367,7 +1631,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       </ImageBackground>
       <View
           style={[
-            styles.header,
+            styleSheet.header,
             {
               paddingTop: insets.top + spacing.md,
               paddingBottom: spacing.md,
@@ -1381,9 +1645,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           reducedTransparencyFallbackColor={theme.colors.glassOverlay}
           style={StyleSheet.absoluteFillObject}
         />
-          <View style={[styles.headerFill, headerFillStyle]} />
+          <View style={[styleSheet.headerFill, headerFillStyle]} />
           <TouchableOpacity
-            style={[styles.headerIconButton, headerIconStyle]}
+            style={[styleSheet.headerIconButton, headerIconStyle]}
             onPress={() => {
               if (navigation.canGoBack()) {
                 navigation.goBack();
@@ -1392,14 +1656,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           >
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
           </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+        <Text style={[styleSheet.headerTitle, { color: theme.colors.text }]}>
           Perfil
         </Text>
         {isOwnProfile ? (
-          <View style={styles.headerActions}>
+          <View style={styleSheet.headerActions}>
             {!(activeTab === 'piso' && profile.housing_situation !== 'offering') ? (
                 <TouchableOpacity
-                  style={[styles.headerIconButton, headerIconStyle]}
+                  style={[styleSheet.headerIconButton, headerIconStyle]}
                   onPress={() =>
                     activeTab === 'piso'
                       ? navigation.navigate('RoomManagement')
@@ -1411,17 +1675,18 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               ) : null}
               <TouchableOpacity
                 style={[
-                  styles.headerIconButton,
+                  styleSheet.headerIconButton,
                   headerIconStyle,
-                  isSharing && styles.headerIconButtonDisabled,
+                  (isSharing || (activeTab === 'piso' && !activeFlat)) &&
+                    styleSheet.headerIconButtonDisabled,
                 ]}
-                onPress={handleShareProfile}
-                disabled={isSharing}
+                onPress={activeTab === 'piso' ? handleShareFlat : handleShareProfile}
+                disabled={isSharing || (activeTab === 'piso' && !activeFlat)}
               >
                 <Ionicons name="share-social-outline" size={18} color={theme.colors.text} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.headerIconButton, headerIconStyle]}
+                style={[styleSheet.headerIconButton, headerIconStyle]}
                 onPress={toggleTheme}
               >
               <Ionicons
@@ -1432,33 +1697,34 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.headerSpacer} />
+          <View style={styleSheet.headerSpacer} />
         )}
       </View>
 
       <ScrollView
-        style={styles.content}
+        ref={scrollViewRef}
+        style={styleSheet.content}
         contentContainerStyle={{
           paddingBottom: contentBottomInset,
         }}
         showsVerticalScrollIndicator={false}
       >
         {shouldShowFlatTab && (
-          <View style={styles.tabsContainer}>
+          <View style={styleSheet.tabsContainer}>
               <TouchableOpacity
                 style={[
-                  styles.tabButton,
+                  styleSheet.tabButton,
                   tabBaseStyle,
-                  activeTab === 'perfil' && styles.tabButtonActive,
+                  activeTab === 'perfil' && styleSheet.tabButtonActive,
                   activeTab === 'perfil' && tabActiveStyle,
                 ]}
                 onPress={() => setActiveTab('perfil')}
               >
                 <Text
                   style={[
-                    styles.tabText,
+                    styleSheet.tabText,
                     tabTextStyle,
-                    activeTab === 'perfil' && styles.tabTextActive,
+                    activeTab === 'perfil' && styleSheet.tabTextActive,
                     activeTab === 'perfil' && tabTextActiveStyle,
                   ]}
                 >
@@ -1467,18 +1733,18 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.tabButton,
+                  styleSheet.tabButton,
                   tabBaseStyle,
-                  activeTab === 'piso' && styles.tabButtonActive,
+                  activeTab === 'piso' && styleSheet.tabButtonActive,
                   activeTab === 'piso' && tabActiveStyle,
                 ]}
                 onPress={() => setActiveTab('piso')}
               >
                 <Text
                   style={[
-                    styles.tabText,
+                    styleSheet.tabText,
                     tabTextStyle,
-                    activeTab === 'piso' && styles.tabTextActive,
+                    activeTab === 'piso' && styleSheet.tabTextActive,
                     activeTab === 'piso' && tabTextActiveStyle,
                   ]}
                 >
@@ -1492,7 +1758,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           <>
         <View
           style={[
-            styles.identityCard,
+            styleSheet.identityCard,
             {
               backgroundColor: theme.colors.glassSurface,
               borderColor: theme.colors.glassBorderSoft,
@@ -1500,7 +1766,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           ]}
         >
           <TouchableOpacity
-            style={styles.avatarWrap}
+            style={styleSheet.avatarWrap}
             activeOpacity={0.8}
             disabled={!carouselPhotos[0]?.signedUrl}
             onPress={() => {
@@ -1512,43 +1778,62 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
             {carouselPhotos[0]?.signedUrl ? (
               <Image
                 source={{ uri: carouselPhotos[0].signedUrl }}
-                style={styles.avatarImage}
+                style={styleSheet.avatarImage}
               />
             ) : (
-              <View style={styles.avatarPlaceholder}>
+              <View style={styleSheet.avatarPlaceholder}>
                 <Ionicons name="person" size={26} color={theme.colors.textTertiary} />
               </View>
             )}
           </TouchableOpacity>
-          <Text style={styles.identityName}>{getUserName(profile, 'Usuario')}</Text>
-            <View style={styles.identityBadges}>
+          <Text style={styleSheet.identityName}>{getUserName(profile, 'Usuario')}</Text>
+            <View style={styleSheet.identityBadges}>
               {memberSinceYear ? (
-                <View style={[styles.identityBadge, badgeStyle]}>
+                <View style={[styleSheet.identityBadge, badgeStyle]}>
                   <Ionicons name="shield-checkmark" size={14} color={theme.colors.text} />
-                  <Text style={[styles.identityBadgeText, badgeTextStyle]}>
+                  <Text style={[styleSheet.identityBadgeText, badgeTextStyle]}>
                     Miembro desde {memberSinceYear}
                   </Text>
                 </View>
               ) : null}
             {housingBadge ? (
-                <View style={[styles.identityBadgeLight, badgeLightStyle]}>
-                  <Text style={[styles.identityBadgeLightText, badgeLightTextStyle]}>
+                <View style={[styleSheet.identityBadgeLight, badgeLightStyle]}>
+                  <Text style={[styleSheet.identityBadgeLightText, badgeLightTextStyle]}>
                     {housingBadge}
                   </Text>
                 </View>
               ) : null}
+            {isPremium ? (
+              <View style={[styleSheet.identityBadge, badgeStyle]}>
+                <Ionicons name="sparkles" size={14} color={theme.colors.primary} />
+                <Text style={[styleSheet.identityBadgeText, badgeTextStyle]}>
+                  Premium
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styleSheet.identityBadge, badgeStyle]}
+                onPress={() => navigation.navigate('Subscription')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="person-outline" size={14} color={theme.colors.text} />
+                <Text style={[styleSheet.identityBadgeText, badgeTextStyle]}>
+                  Gratis
+                </Text>
+              </TouchableOpacity>
+            )}
             </View>
             {isOwnProfile && (
-              <View style={styles.profileProgressBar}>
+              <View style={styleSheet.profileProgressBar}>
                 <View
                   style={[
-                    styles.profileProgressTrack,
+                    styleSheet.profileProgressTrack,
                     { backgroundColor: theme.colors.glassBorderSoft },
                   ]}
                 >
                   <View
                     style={[
-                      styles.profileProgressFill,
+                      styleSheet.profileProgressFill,
                       {
                         width: `${profileProgress.progress}%`,
                         backgroundColor: theme.colors.primary,
@@ -1559,75 +1844,93 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               </View>
             )}
             {isOwnProfile && (
-              <TouchableOpacity
-                style={styles.profileStatusRow}
-                onPress={toggleSearchEnabled}
-                disabled={isTogglingSearch}
-                activeOpacity={0.7}
-              >
-                <View style={styles.profileStatusTextRow}>
+              <View style={styleSheet.profileStatusRow}>
+                <View style={styleSheet.profileStatusTextRow}>
                   <View
                     style={[
-                      styles.statusDot,
+                      styleSheet.statusDot,
                       isSearchEnabled
-                        ? styles.statusDotActive
-                        : styles.statusDotInactive,
+                        ? styleSheet.statusDotActive
+                        : styleSheet.statusDotInactive,
                     ]}
                   />
-                  <Text style={[styles.profileStatusText, { color: theme.colors.text }]}>
+                  <Text style={[styleSheet.profileStatusText, { color: theme.colors.text }]}>
                     {isSearchEnabled ? 'Perfil activo' : 'Perfil inactivo'}
                   </Text>
+                  <TouchableOpacity
+                    style={[
+                      styleSheet.toggleContainer,
+                      isSearchEnabled ? styleSheet.toggleActive : styleSheet.toggleInactive,
+                    ]}
+                    onPress={toggleSearchEnabled}
+                    disabled={isTogglingSearch}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styleSheet.toggleThumb,
+                        isSearchEnabled ? styleSheet.thumbActive : styleSheet.thumbInactive,
+                      ]}
+                    />
+                  </TouchableOpacity>
                 </View>
-                <Text style={[styles.profileStatusSubtext, { color: theme.colors.textSecondary }]}>
+                <Text style={[styleSheet.profileStatusSubtext, { color: theme.colors.textSecondary }]}>
                   {isSearchEnabled
                     ? 'Aparecer\u00e1s en b\u00fasquedas y swipes'
                     : 'No aparecer\u00e1s en b\u00fasquedas'}
                 </Text>
-              </TouchableOpacity>
+              </View>
             )}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
+        <View style={styleSheet.section}>
+          <View style={styleSheet.sectionHeader}>
             <Ionicons name="person" size={20} color={theme.colors.text} />
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            <Text style={[styleSheet.sectionTitle, { color: theme.colors.text }]}>
               Sobre
             </Text>
           </View>
           <View
             style={[
-              styles.detailCard,
+              styleSheet.detailCard,
               {
                 backgroundColor: theme.colors.glassSurface,
                 borderColor: theme.colors.glassBorderSoft,
               },
             ]}
           >
-            <Text style={styles.aboutText}>{aboutText}</Text>
+            <Text style={styleSheet.aboutText}>{aboutText}</Text>
           </View>
         </View>
 
-        {infoChips.length > 0 && (
-          <View style={styles.section}>
+        {showCategoryInfo && (
+          <View style={styleSheet.section}>
             <Text
-              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+              style={[styleSheet.sectionMutedTitle, { color: theme.colors.textSecondary }]}
             >
               Datos clave
             </Text>
-            <View style={styles.compactChips}>
-                {infoChips.map((chip, index) => (
+            <View style={styleSheet.categoryGrid}>
+              {categoryCards
+                .filter((card) => card.items.length > 0)
+                .map((card) => (
                   <View
-                    key={`${chip}-${index}`}
-                    style={[
-                      styles.compactChip,
-                      compactChipStyle,
-                    ]}
+                    key={card.title}
+                    style={[styleSheet.categoryCard, { borderColor: card.color }]}
                   >
-                    <Text
-                      style={[styles.compactChipText, compactChipTextStyle]}
-                    >
-                      {chip}
-                    </Text>
+                    <View style={styleSheet.categoryHeader}>
+                      <Ionicons name={card.icon} size={16} color={card.color} />
+                      <Text style={[styleSheet.categoryTitle, { color: card.color }]}>
+                        {card.title}
+                      </Text>
+                    </View>
+                    <View style={styleSheet.categoryItems}>
+                      {card.items.map((item, index) => (
+                        <Text key={`${card.title}-${index}`} style={styleSheet.categoryItem}>
+                          {item}
+                        </Text>
+                      ))}
+                    </View>
                   </View>
                 ))}
             </View>
@@ -1635,18 +1938,18 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
 
         {lifestyleChips.length > 0 && (
-          <View style={styles.section}>
+          <View style={styleSheet.section}>
             <Text
-              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+              style={[styleSheet.sectionMutedTitle, { color: theme.colors.textSecondary }]}
             >
               Estilo de vida
             </Text>
-            <View style={styles.compactChips}>
+            <View style={styleSheet.compactChips}>
                 {lifestyleChips.map((chip) => (
                   <View
                     key={chip.key}
                     style={[
-                      styles.compactChip,
+                      styleSheet.compactChip,
                       compactChipStyle,
                     ]}
                   >
@@ -1654,10 +1957,10 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                     name={chip.icon}
                     size={12}
                     color={theme.colors.textSecondary}
-                    style={styles.chipIcon}
+                    style={styleSheet.chipIcon}
                   />
                     <Text
-                      style={[styles.compactChipText, compactChipTextStyle]}
+                      style={[styleSheet.compactChipText, compactChipTextStyle]}
                     >
                       {chip.label}: {chip.value}
                     </Text>
@@ -1668,23 +1971,23 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
 
         {interestChips.length > 0 && (
-          <View style={styles.section}>
+          <View style={styleSheet.section}>
             <Text
-              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+              style={[styleSheet.sectionMutedTitle, { color: theme.colors.textSecondary }]}
             >
               Intereses
             </Text>
-            <View style={styles.compactChips}>
+            <View style={styleSheet.compactChips}>
                 {interestChips.map((chip, index) => (
                   <View
                     key={`${chip}-${index}`}
                     style={[
-                      styles.compactChip,
+                      styleSheet.compactChip,
                       compactChipStyle,
                     ]}
                   >
                     <Text
-                      style={[styles.compactChipText, compactChipTextStyle]}
+                      style={[styleSheet.compactChipText, compactChipTextStyle]}
                     >
                       {chip}
                     </Text>
@@ -1695,23 +1998,23 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
 
         {preferredZoneLabels.length > 0 && (
-          <View style={styles.section}>
+          <View style={styleSheet.section}>
             <Text
-              style={[styles.sectionMutedTitle, { color: theme.colors.textSecondary }]}
+              style={[styleSheet.sectionMutedTitle, { color: theme.colors.textSecondary }]}
             >
-              Zonas de interes
+              Zonas de búsqueda
             </Text>
-            <View style={styles.compactChips}>
+            <View style={styleSheet.compactChips}>
                 {preferredZoneLabels.map((zone, index) => (
                   <View
                     key={`${zone}-${index}`}
                     style={[
-                      styles.compactChip,
+                      styleSheet.compactChip,
                       compactChipStyle,
                     ]}
                   >
                     <Text
-                      style={[styles.compactChipText, compactChipTextStyle]}
+                      style={[styleSheet.compactChipText, compactChipTextStyle]}
                     >
                       {zone}
                     </Text>
@@ -1722,28 +2025,28 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
 
         {carouselPhotos.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
+          <View style={styleSheet.section}>
+            <View style={styleSheet.sectionHeader}>
               <Ionicons name="images-outline" size={18} color={theme.colors.text} />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              <Text style={[styleSheet.sectionTitle, { color: theme.colors.text }]}>
                 Momentos
               </Text>
             </View>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.photoScroller}
+              contentContainerStyle={styleSheet.photoScroller}
             >
               {carouselPhotos.map((photo, index) => (
                 <TouchableOpacity
                   key={photo.id ?? photo.path ?? photo.signedUrl ?? `photo-${index}`}
-                  style={styles.photoTileWide}
+                  style={styleSheet.photoTileWide}
                   onPress={() => {
                     setLightboxIndex(index);
                     setLightboxVisible(true);
                   }}
                 >
-                  <Image source={{ uri: photo.signedUrl }} style={styles.photoTileImage} />
+                  <Image source={{ uri: photo.signedUrl }} style={styleSheet.photoTileImage} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1751,14 +2054,27 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
 
         {isOwnProfile && (
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={handleLogout}
-            >
-              <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.logoutButtonText}>Cerrar sesion</Text>
-            </TouchableOpacity>
+          <View style={styleSheet.section}>
+            <View style={{ gap: spacing.s12 }}>
+              <TouchableOpacity
+                style={styleSheet.manageSubscriptionButton}
+                onPress={handleAccountOptions}
+              >
+                <Ionicons name="settings-outline" size={18} color={theme.colors.text} />
+                <Text style={styleSheet.manageSubscriptionText}>
+                  Opciones de cuenta
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styleSheet.manageSubscriptionButton}
+                onPress={handleBugReport}
+              >
+                <Ionicons name="bug-outline" size={18} color={theme.colors.text} />
+                <Text style={styleSheet.manageSubscriptionText}>
+                  Reportar un problema
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -1766,25 +2082,25 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         )}
 
         {activeTab === 'piso' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
+          <View style={styleSheet.section}>
+            <View style={styleSheet.sectionHeader}>
               <Ionicons name="home" size={20} color={theme.colors.text} />
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              <Text style={[styleSheet.sectionTitle, { color: theme.colors.text }]}>
                 Piso
               </Text>
               {flats.length > 1 && (
-                <View style={styles.flatPager}>
+                <View style={styleSheet.flatPager}>
                   <TouchableOpacity
-                    style={styles.flatPagerButton}
+                    style={styleSheet.flatPagerButton}
                     onPress={handlePrevFlat}
                   >
                     <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
                   </TouchableOpacity>
-                  <Text style={styles.flatPagerText}>
+                  <Text style={styleSheet.flatPagerText}>
                     {activeFlatIndex + 1}/{flats.length}
                   </Text>
                   <TouchableOpacity
-                    style={styles.flatPagerButton}
+                    style={styleSheet.flatPagerButton}
                     onPress={handleNextFlat}
                   >
                     <Ionicons name="chevron-forward" size={18} color={theme.colors.text} />
@@ -1793,11 +2109,11 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               )}
             </View>
             {flatLoading ? (
-              <Text style={styles.mutedText}>Cargando piso...</Text>
+              <Text style={styleSheet.mutedText}>Cargando piso...</Text>
             ) : flats.length === 0 ? (
-              <Text style={styles.mutedText}>No hay piso publicado.</Text>
+              <Text style={styleSheet.mutedText}>No hay piso publicado.</Text>
             ) : (
-              <View style={styles.flatList}>
+              <View style={styleSheet.flatList}>
                 {(() => {
                   const flat = flats[activeFlatIndex];
                   if (!flat) return null;
@@ -1825,22 +2141,22 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                       <View
                         key={flat.id}
                         style={[
-                          styles.flatCard,
+                          styleSheet.flatCard,
                           flatCardStyle,
                         ]}
                       >
-                      <Text style={styles.flatTitle}>{flat.address}</Text>
-                      <Text style={styles.flatMeta}>
+                      <Text style={styleSheet.flatTitle}>{flat.address}</Text>
+                      <Text style={styleSheet.flatMeta}>
                         {flat.city}
                         {flat.district ? ` - ${flat.district}` : ''}
                       </Text>
 
-                      <View style={styles.flatInfoBlock}>
-                        <Text style={styles.flatSectionTitle}>Info del piso</Text>
-                        <View style={styles.locationRow}>
+                      <View style={styleSheet.flatInfoBlock}>
+                        <Text style={styleSheet.flatSectionTitle}>Info del piso</Text>
+                        <View style={styleSheet.locationRow}>
                           <View
                             style={[
-                              styles.locationChip,
+                              styleSheet.locationChip,
                               {
                                 backgroundColor: theme.colors.glassSurface,
                                 borderColor: theme.colors.glassBorderSoft,
@@ -1852,14 +2168,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                               size={14}
                               color={theme.colors.textStrong}
                             />
-                            <Text style={styles.locationChipText}>
+                            <Text style={styleSheet.locationChipText}>
                               {flat.district || flat.city}
                             </Text>
                           </View>
                           {typeof flat.capacity_total === 'number' ? (
                             <View
                               style={[
-                                styles.locationChip,
+                                styleSheet.locationChip,
                                 {
                                   backgroundColor: theme.colors.glassSurface,
                                   borderColor: theme.colors.glassBorderSoft,
@@ -1871,7 +2187,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                 size={14}
                                 color={theme.colors.textStrong}
                               />
-                              <Text style={styles.locationChipText}>
+                              <Text style={styleSheet.locationChipText}>
                                 {flat.capacity_total} plazas
                               </Text>
                             </View>
@@ -1879,22 +2195,22 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                         </View>
 
                         {rules.length > 0 && (
-                          <View style={styles.flatSubSection}>
-                            <Text style={styles.flatSubTitle}>Reglas</Text>
-                            <View style={styles.listContainer}>
+                          <View style={styleSheet.flatSubSection}>
+                            <Text style={styleSheet.flatSubTitle}>Reglas</Text>
+                            <View style={styleSheet.listContainer}>
                               {visibleRules.map((rule, index) => (
-                                <Text key={`${rule}-${index}`} style={styles.listItem}>
-                                  <Text style={styles.listBullet}>• </Text>
-                                  {getRuleIcon(rule)} {rule}
-                                </Text>
+                                <View key={`${rule}-${index}`} style={styleSheet.listItemRow}>
+                                  <RuleIcon rule={rule} size={16} color={theme.colors.textSecondary} />
+                                  <Text style={styleSheet.listItemText}>{rule}</Text>
+                                </View>
                               ))}
                             </View>
                             {canToggleRules && (
                               <TouchableOpacity
-                                style={styles.rulesToggle}
+                                style={styleSheet.rulesToggle}
                                 onPress={() => toggleRules(flat.id)}
                               >
-                                <Text style={styles.rulesToggleText}>
+                                <Text style={styleSheet.rulesToggleText}>
                                   {isExpanded ? 'Ver menos' : 'Ver todas'}
                                 </Text>
                               </TouchableOpacity>
@@ -1903,20 +2219,20 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                         )}
 
                         {services.length > 0 && (
-                          <View style={styles.flatSubSection}>
-                            <Text style={styles.flatSubTitle}>Servicios</Text>
-                            <View style={styles.listContainer}>
+                          <View style={styleSheet.flatSubSection}>
+                            <Text style={styleSheet.flatSubTitle}>Servicios</Text>
+                            <View style={styleSheet.listContainer}>
                               {services.map((service, index) => (
-                                <Text
+                                <View
                                   key={service.name ? `${service.name}-${index}` : `service-${index}`}
-                                  style={styles.listItem}
+                                  style={styleSheet.listItemRow}
                                 >
-                                  <Text style={styles.listBullet}>• </Text>
-                                  {getServiceIcon(service.name)} {service.name}
-                                  {service.price != null
-                                    ? ` (${service.price} EUR)`
-                                    : ''}
-                                </Text>
+                                  <ServiceIcon serviceName={service.name} size={16} color={theme.colors.textSecondary} />
+                                  <Text style={styleSheet.listItemText}>
+                                    {service.name}
+                                    {service.price != null ? ` (${service.price} EUR)` : ''}
+                                  </Text>
+                                </View>
                               ))}
                             </View>
                           </View>
@@ -1924,9 +2240,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                       </View>
 
                       {bedrooms.length > 0 && (
-                        <View style={styles.flatSection}>
-                          <Text style={styles.flatSectionTitle}>Habitaciones</Text>
-                          <View style={styles.roomList}>
+                        <View style={styleSheet.flatSection}>
+                          <Text style={styleSheet.flatSectionTitle}>Habitaciones</Text>
+                          <View style={styleSheet.roomList}>
                             {bedrooms.map((room) => {
                               const extras = flatExtras[room.id];
                               const photo = extras?.photos?.[0]?.signedUrl ?? '';
@@ -1951,7 +2267,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                 <TouchableOpacity
                                   key={room.id}
                                   style={[
-                                    styles.roomCard,
+                                    styleSheet.roomCard,
                                     {
                                       backgroundColor: theme.colors.glassSurface,
                                       borderColor: theme.colors.glassBorderSoft,
@@ -1968,12 +2284,12 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                   {photo ? (
                                     <Image
                                       source={{ uri: photo }}
-                                      style={styles.roomPhoto}
+                                      style={styleSheet.roomPhoto}
                                     />
                                   ) : (
                                     <View
                                       style={[
-                                        styles.roomPhotoPlaceholder,
+                                        styleSheet.roomPhotoPlaceholder,
                                         { backgroundColor: theme.colors.surfaceLight },
                                       ]}
                                     >
@@ -1984,46 +2300,46 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                       />
                                     </View>
                                   )}
-                                  <View style={styles.roomInfo}>
-                                    <View style={styles.roomHeader}>
-                                      <Text style={styles.roomTitle}>{room.title}</Text>
+                                  <View style={styleSheet.roomInfo}>
+                                    <View style={styleSheet.roomHeader}>
+                                      <Text style={styleSheet.roomTitle}>{room.title}</Text>
                                       {room.price_per_month != null ? (
-                                        <Text style={styles.roomPrice}>
+                                        <Text style={styleSheet.roomPrice}>
                                           {room.price_per_month} EUR/mes
                                         </Text>
                                       ) : null}
                                     </View>
                                     {typeLabel ? (
-                                      <Text style={styles.roomMeta}>
+                                      <Text style={styleSheet.roomMeta}>
                                         Tipo: {typeLabel}
                                       </Text>
                                     ) : null}
-                                    <View style={styles.roomFooter}>
+                                    <View style={styleSheet.roomFooter}>
                                       <View
                                         style={[
-                                          styles.statusBadge,
+                                          styleSheet.statusBadge,
                                           isAvailable
-                                            ? styles.statusAvailable
+                                            ? styleSheet.statusAvailable
                                             : isUnknown
-                                            ? styles.statusNeutral
-                                            : styles.statusOccupied,
+                                            ? styleSheet.statusNeutral
+                                            : styleSheet.statusOccupied,
                                         ]}
                                       >
                                         <Text
                                           style={[
-                                            styles.statusText,
+                                            styleSheet.statusText,
                                             isAvailable
-                                              ? styles.statusAvailableText
+                                              ? styleSheet.statusAvailableText
                                               : isUnknown
-                                              ? styles.statusNeutralText
-                                              : styles.statusOccupiedText,
+                                              ? styleSheet.statusNeutralText
+                                              : styleSheet.statusOccupiedText,
                                           ]}
                                         >
                                           {statusLabel}
                                         </Text>
                                       </View>
-                                      <View style={styles.roomCta}>
-                                        <Text style={styles.roomCtaText}>Ver detalle</Text>
+                                      <View style={styleSheet.roomCta}>
+                                        <Text style={styleSheet.roomCtaText}>Ver detalle</Text>
                                         <Ionicons
                                           name="chevron-forward"
                                           size={14}
@@ -2040,9 +2356,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                       )}
 
                       {commonAreas.length > 0 && (
-                        <View style={styles.flatSection}>
-                          <Text style={styles.flatSectionTitle}>Zonas comunes</Text>
-                          <View style={styles.roomList}>
+                        <View style={styleSheet.flatSection}>
+                          <Text style={styleSheet.flatSectionTitle}>Zonas comunes</Text>
+                          <View style={styleSheet.roomList}>
                             {commonAreas.map((room) => {
                               const extras = flatExtras[room.id];
                               const photo = extras?.photos?.[0]?.signedUrl ?? '';
@@ -2057,7 +2373,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                 <TouchableOpacity
                                   key={room.id}
                                   style={[
-                                    styles.roomCard,
+                                    styleSheet.roomCard,
                                     {
                                       backgroundColor: theme.colors.glassSurface,
                                       borderColor: theme.colors.glassBorderSoft,
@@ -2074,12 +2390,12 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                   {photo ? (
                                     <Image
                                       source={{ uri: photo }}
-                                      style={styles.roomPhoto}
+                                      style={styleSheet.roomPhoto}
                                     />
                                   ) : (
                                     <View
                                       style={[
-                                        styles.roomPhotoPlaceholder,
+                                        styleSheet.roomPhotoPlaceholder,
                                         { backgroundColor: theme.colors.surfaceLight },
                                       ]}
                                     >
@@ -2090,23 +2406,23 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                                       />
                                     </View>
                                   )}
-                                  <View style={styles.roomInfo}>
-                                    <View style={styles.roomHeader}>
-                                      <Text style={styles.roomTitle}>{room.title}</Text>
+                                  <View style={styleSheet.roomInfo}>
+                                    <View style={styleSheet.roomHeader}>
+                                      <Text style={styleSheet.roomTitle}>{room.title}</Text>
                                     </View>
                                     {typeLabel ? (
-                                      <Text style={styles.roomMeta}>
+                                      <Text style={styleSheet.roomMeta}>
                                         Tipo: {typeLabel}
                                       </Text>
                                     ) : null}
-                                    <View style={styles.roomFooter}>
-                                      <View style={[styles.statusBadge, styles.statusNeutral]}>
-                                        <Text style={styles.statusNeutralText}>
+                                    <View style={styleSheet.roomFooter}>
+                                      <View style={[styleSheet.statusBadge, styleSheet.statusNeutral]}>
+                                        <Text style={styleSheet.statusNeutralText}>
                                           Zona comun
                                         </Text>
                                       </View>
-                                      <View style={styles.roomCta}>
-                                        <Text style={styles.roomCtaText}>Ver detalle</Text>
+                                      <View style={styleSheet.roomCta}>
+                                        <Text style={styleSheet.roomCtaText}>Ver detalle</Text>
                                         <Ionicons
                                           name="chevron-forward"
                                           size={14}
@@ -2133,15 +2449,15 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
       {!isOwnProfile && !isFromMatch && (
         <View
           style={[
-            styles.bottomActions,
+            styleSheet.bottomActions,
             { paddingBottom: spacing.lg + bottomInset },
           ]}
         >
-          <TouchableOpacity style={styles.bottomButton}>
+          <TouchableOpacity style={styleSheet.bottomButton}>
             <Ionicons name="close" size={22} color={theme.colors.textStrong} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.bottomButton}
+            style={styleSheet.bottomButton}
             onPress={() => setIsRequestModalVisible(true)}
           >
             <Ionicons
@@ -2150,11 +2466,265 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               color={theme.colors.textStrong}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.bottomButton}>
+          <TouchableOpacity style={styleSheet.bottomButton}>
             <Ionicons name="heart" size={22} color={theme.colors.textStrong} />
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal
+        visible={isShareConfigVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsShareConfigVisible(false)}
+      >
+        <View style={styleSheet.shareConfigOverlay}>
+          <TouchableOpacity
+            style={styleSheet.shareConfigBackdrop}
+            activeOpacity={1}
+            onPress={() => setIsShareConfigVisible(false)}
+          />
+          <View
+            style={[
+              styleSheet.shareConfigCard,
+              {
+                borderColor: theme.colors.border,
+              },
+            ]}
+          >
+            <ImageBackground
+              source={{
+                uri: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+              }}
+              blurRadius={18}
+              style={StyleSheet.absoluteFillObject}
+            >
+              <LinearGradient
+                colors={[theme.colors.glassOverlay, theme.colors.glassWarmStrong]}
+                style={StyleSheet.absoluteFillObject}
+              />
+            </ImageBackground>
+            <Text style={[styleSheet.shareConfigTitle, { color: theme.colors.text }]}>
+              Compartir perfil
+            </Text>
+            <Text
+              style={[
+                styleSheet.shareConfigSubtitle,
+                { color: theme.colors.textSecondary },
+              ]}
+            >
+              Elige lo que quieres incluir en tu plantilla.
+            </Text>
+            <ScrollView
+              style={styleSheet.shareConfigScroll}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styleSheet.shareConfigSection}>
+                <Text style={[styleSheet.shareConfigSectionTitle, { color: theme.colors.text }]}>
+                  Fotos (0-4)
+                </Text>
+                {shareSelectablePhotos.length === 0 ? (
+                  <Text style={[styleSheet.shareConfigHint, { color: theme.colors.textSecondary }]}>
+                    No tienes fotos subidas.
+                  </Text>
+                ) : (
+                  <View
+                    style={[
+                      styleSheet.sharePhotoGrid,
+                      !shareInclude.photos && styleSheet.shareSectionDisabled,
+                    ]}
+                  >
+                    {shareSelectablePhotos.map((photo) => {
+                      const isSelected = shareSelectedPhotoIds.includes(photo.id);
+                      return (
+                        <TouchableOpacity
+                          key={photo.id}
+                          style={[
+                            styleSheet.sharePhotoTile,
+                            isSelected && styleSheet.sharePhotoTileSelected,
+                          ]}
+                          onPress={() => toggleSharePhoto(photo.id)}
+                          disabled={!shareInclude.photos}
+                        >
+                          <Image source={{ uri: photo.signedUrl }} style={styleSheet.sharePhotoImage} />
+                          {isSelected && (
+                            <View style={styleSheet.sharePhotoCheck}>
+                              <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+
+              <View style={styleSheet.shareConfigSection}>
+                <Text style={[styleSheet.shareConfigSectionTitle, { color: theme.colors.text }]}>
+                  Zonas
+                </Text>
+                {preferredZones.length === 0 ? (
+                  <Text style={[styleSheet.shareConfigHint, { color: theme.colors.textSecondary }]}>
+                    No has seleccionado zonas.
+                  </Text>
+                ) : (
+                  <View
+                    style={[
+                      styleSheet.shareZonesGrid,
+                      !shareInclude.zones && styleSheet.shareSectionDisabled,
+                    ]}
+                  >
+                    {preferredZones.map((zoneId, index) => {
+                      const label = preferredZoneLabels[index] ?? zoneId;
+                      const isSelected = shareSelectedZoneIds.includes(zoneId);
+                      return (
+                        <TouchableOpacity
+                          key={zoneId}
+                          style={[
+                            styleSheet.shareZoneChip,
+                            isSelected && styleSheet.shareZoneChipSelected,
+                          ]}
+                          onPress={() => toggleShareZone(zoneId)}
+                          disabled={!shareInclude.zones}
+                        >
+                          <Text
+                            style={[
+                              styleSheet.shareZoneText,
+                              isSelected && styleSheet.shareZoneTextSelected,
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+
+              <View style={styleSheet.shareConfigSection}>
+                <Text style={[styleSheet.shareConfigSectionTitle, { color: theme.colors.text }]}>
+                  Campos
+                </Text>
+                <View style={styleSheet.shareFieldGrid}>
+                  {[
+                    { key: 'photos', label: 'Fotos' },
+                    { key: 'zones', label: 'Zonas' },
+                    { key: 'bio', label: 'Bio' },
+                    { key: 'budget', label: 'Presupuesto' },
+                    { key: 'interests', label: 'Intereses' },
+                    { key: 'availability', label: 'Disponibilidad' },
+                    { key: 'housing', label: 'Situacion' },
+                    { key: 'age', label: 'Edad' },
+                  ].map((field) => (
+                    <View
+                      key={field.key}
+                      style={[
+                        styleSheet.shareFieldRow,
+                        styleSheet.shareFieldItem,
+                        styleSheet.shareFieldCard,
+                        shareInclude[field.key as keyof typeof shareInclude] &&
+                          styleSheet.shareFieldCardActive,
+                      ]}
+                    >
+                      <Text style={[styleSheet.shareFieldLabel, { color: theme.colors.text }]}>
+                        {field.label}
+                      </Text>
+                      <View
+                        style={[
+                          styleSheet.shareFieldToggleWrap,
+                          shareInclude[field.key as keyof typeof shareInclude] &&
+                            styleSheet.shareFieldToggleActive,
+                        ]}
+                      >
+                        <Switch
+                          style={styleSheet.shareFieldSwitch}
+                          value={shareInclude[field.key as keyof typeof shareInclude]}
+                          onValueChange={(value) =>
+                            setShareInclude((prev) => ({
+                              ...prev,
+                              [field.key]: value,
+                            }))
+                          }
+                          trackColor={{
+                            false: theme.colors.border,
+                            true: theme.colors.primary,
+                          }}
+                          thumbColor={
+                            shareInclude[field.key as keyof typeof shareInclude]
+                              ? theme.colors.background
+                              : theme.colors.surfaceLight
+                          }
+                          ios_backgroundColor={theme.colors.border}
+                        />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styleSheet.shareConfigSection}>
+                <Text style={[styleSheet.shareConfigSectionTitle, { color: theme.colors.text }]}>
+                  Tema
+                </Text>
+                <View style={styleSheet.shareThemeRow}>
+                  {SHARE_THEME_OPTIONS.map((option) => {
+                    const isSelected = shareTheme === option.id;
+                    return (
+                      <TouchableOpacity
+                        key={option.id}
+                        style={[
+                          styleSheet.shareThemeChip,
+                          isSelected && styleSheet.shareThemeChipSelected,
+                        ]}
+                        onPress={() => setShareTheme(option.id)}
+                      >
+                        <Text
+                          style={[
+                            styleSheet.shareThemeText,
+                            isSelected && styleSheet.shareThemeTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+            <View style={styleSheet.shareConfigActions}>
+              <TouchableOpacity
+                style={[styleSheet.shareConfigButton, styleSheet.shareConfigCancel]}
+                onPress={() => setIsShareConfigVisible(false)}
+                disabled={isSharing}
+              >
+                <Text
+                  style={[
+                    styleSheet.shareConfigButtonText,
+                    { color: isDark ? '#000000' : theme.colors.text },
+                  ]}
+                >
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styleSheet.shareConfigButton,
+                  styleSheet.shareConfigConfirm,
+                  isSharing && styleSheet.shareConfigButtonDisabled,
+                ]}
+                onPress={handleConfirmShareProfile}
+                disabled={isSharing}
+              >
+                <Text style={styleSheet.shareConfigConfirmText}>
+                  {isSharing ? 'Preparando...' : 'Compartir'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={isRequestModalVisible}
@@ -2165,9 +2735,9 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           setRequestMessage('');
         }}
       >
-        <View style={styles.requestModalOverlay}>
+        <View style={styleSheet.requestModalOverlay}>
           <TouchableOpacity
-            style={styles.requestModalBackdrop}
+            style={styleSheet.requestModalBackdrop}
             activeOpacity={1}
             onPress={() => {
               setIsRequestModalVisible(false);
@@ -2176,23 +2746,96 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
           />
           <View
             style={[
-              styles.requestModalCard,
+              styleSheet.requestModalCard,
               {
                 backgroundColor: theme.colors.background,
                 borderColor: theme.colors.border,
               },
             ]}
           >
-            <Text style={[styles.requestModalTitle, { color: theme.colors.text }]}>
+            <Text style={[styleSheet.requestModalTitle, { color: theme.colors.text }]}>
               Enviar mensaje
             </Text>
+            {showRequestTip ? (
+              <View style={styleSheet.requestTipCard}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={16}
+                  color={theme.colors.primary}
+                />
+                <Text style={styleSheet.requestTipText}>
+                  Puedes enviar una solicitud sin match. Si la aceptan, se abre el chat.
+                </Text>
+                <Pressable
+                  style={styleSheet.requestTipButton}
+                  onPress={async () => {
+                    setShowRequestTip(false);
+                    if (currentUserId) {
+                      await AsyncStorage.setItem(
+                        `${MESSAGE_REQUEST_TIP_KEY}:${currentUserId}`,
+                        '1'
+                      );
+                    }
+                  }}
+                >
+                  <Text style={styleSheet.requestTipButtonText}>Entendido</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <View style={styleSheet.requestPreviewRow}>
+              <View style={styleSheet.requestAvatarWrap}>
+                {resolvedAvatarUrl ? (
+                  <Image
+                    source={{ uri: resolvedAvatarUrl }}
+                    style={styleSheet.requestAvatar}
+                  />
+                ) : (
+                  <View style={styleSheet.requestAvatarPlaceholder}>
+                    <Ionicons name="person" size={16} color={theme.colors.textTertiary} />
+                  </View>
+                )}
+              </View>
+              <View style={styleSheet.requestPreviewInfo}>
+                <Text style={[styleSheet.requestPreviewName, { color: theme.colors.text }]}>
+                  {getUserName(profile, 'Usuario')}
+                </Text>
+                <Text
+                  style={[
+                    styleSheet.requestPreviewMeta,
+                    { color: theme.colors.textSecondary },
+                  ]}
+                >
+                  {profile.age ? `${profile.age} años` : 'Perfil verificado'}
+                </Text>
+              </View>
+            </View>
+            <View style={styleSheet.requestLimitRow}>
+              <View style={styleSheet.requestLimitChip}>
+                <Ionicons
+                  name={isPremium ? 'sparkles' : 'lock-open-outline'}
+                  size={14}
+                  color={isPremium ? theme.colors.primary : theme.colors.textSecondary}
+                />
+                <Text style={styleSheet.requestLimitText}>
+                  {requestLimitText}
+                </Text>
+              </View>
+              {!isPremium && (
+                <TouchableOpacity
+                  style={styleSheet.requestUpgradeButton}
+                  onPress={() => navigation.navigate('Subscription')}
+                >
+                  <Text style={styleSheet.requestUpgradeText}>Hazte Premium</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <Text
               style={[
-                styles.requestModalSubtitle,
+                styleSheet.requestModalSubtitle,
                 { color: theme.colors.textSecondary },
               ]}
             >
-              Tu solicitud se enviara a esta persona.
+              Tu solicitud quedara pendiente hasta que te respondan.
             </Text>
             <TextInput
               value={requestMessage}
@@ -2201,7 +2844,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               placeholderTextColor={theme.colors.textSecondary}
               multiline
               style={[
-                styles.requestModalInput,
+                styleSheet.requestModalInput,
                 {
                   color: theme.colors.text,
                   borderColor: theme.colors.border,
@@ -2209,9 +2852,17 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                 },
               ]}
             />
-            <View style={styles.requestModalActions}>
+            <View style={styleSheet.requestCounterRow}>
+              <Text style={styleSheet.requestHintText}>
+                Se sincero y menciona algo que compartan.
+              </Text>
+              <Text style={styleSheet.requestCounterText}>
+                {requestCharCount}/{MAX_REQUEST_CHARS}
+              </Text>
+            </View>
+            <View style={styleSheet.requestModalActions}>
               <TouchableOpacity
-                style={[styles.requestModalButton, styles.requestModalCancel]}
+                style={[styleSheet.requestModalButton, styleSheet.requestModalCancel]}
                 onPress={() => {
                   setIsRequestModalVisible(false);
                   setRequestMessage('');
@@ -2220,7 +2871,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               >
                 <Text
                   style={[
-                    styles.requestModalButtonText,
+                    styleSheet.requestModalButtonText,
                     { color: theme.colors.text },
                   ]}
                 >
@@ -2229,14 +2880,14 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.requestModalButton,
-                  styles.requestModalSend,
-                  isSendingRequest && styles.requestModalButtonDisabled,
+                  styleSheet.requestModalButton,
+                  styleSheet.requestModalSend,
+                  isSendingRequest && styleSheet.requestModalButtonDisabled,
                 ]}
                 onPress={handleSendRequest}
                 disabled={isSendingRequest}
               >
-                <Text style={styles.requestModalSendText}>
+                <Text style={styleSheet.requestModalSendText}>
                   {isSendingRequest ? 'Enviando...' : 'Enviar'}
                 </Text>
               </TouchableOpacity>
@@ -2251,33 +2902,37 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
         animationType="fade"
         onRequestClose={() => setLightboxVisible(false)}
       >
-        <View style={styles.lightboxOverlay}>
+        <GestureHandlerRootView style={styleSheet.lightboxOverlay}>
           <LinearGradient
             colors={[theme.colors.overlayLight, theme.colors.overlayDark]}
             style={StyleSheet.absoluteFillObject}
           />
           <TouchableOpacity
-            style={styles.lightboxBackdrop}
+            style={styleSheet.lightboxBackdrop}
             activeOpacity={1}
             onPress={() => setLightboxVisible(false)}
           />
-          <View style={styles.lightboxContent}>
-            <View style={styles.lightboxTopBar}>
-              <Text style={styles.lightboxTitle}>Momentos</Text>
+          <View style={styleSheet.lightboxContent}>
+            <View style={styleSheet.lightboxTopBar}>
+              <Text style={styleSheet.lightboxTitle}>Momentos</Text>
               <TouchableOpacity
-                style={styles.lightboxClose}
+                style={styleSheet.lightboxClose}
                 onPress={() => setLightboxVisible(false)}
               >
                 <Ionicons name="close" size={18} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <View style={styles.lightboxDivider} />
+            <View style={styleSheet.lightboxDivider} />
             <View
-              style={styles.lightboxImageFrame}
+              style={styleSheet.lightboxImageFrame}
               onLayout={(event) => {
                 const nextWidth = event.nativeEvent.layout.width;
+                const nextHeight = event.nativeEvent.layout.height;
                 if (nextWidth !== lightboxFrameWidth) {
                   setLightboxFrameWidth(nextWidth);
+                }
+                if (nextHeight !== lightboxFrameHeight) {
+                  setLightboxFrameHeight(nextHeight);
                 }
               }}
             >
@@ -2287,6 +2942,7 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                   pagingEnabled
                   showsHorizontalScrollIndicator={false}
                   ref={lightboxScrollRef}
+                  scrollEnabled={lightboxScrollEnabled}
                   onMomentumScrollEnd={handleLightboxScrollEnd}
                 >
                   {carouselPhotos.map((photo, index) => {
@@ -2294,53 +2950,226 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                     const scale = scaleState
                       ? Animated.multiply(scaleState.base, scaleState.pinch)
                       : 1;
+                    const translateX = scaleState
+                      ? Animated.add(scaleState.baseX, scaleState.panX)
+                      : 0;
+                    const translateY = scaleState
+                      ? Animated.add(scaleState.baseY, scaleState.panY)
+                      : 0;
                     const onPinchEvent =
                       scaleState &&
                       Animated.event(
                         [{ nativeEvent: { scale: scaleState.pinch } }],
-                        { useNativeDriver: true }
+                        { useNativeDriver: false }
                       );
                     const onPinchStateChange = (event: any) => {
                       if (!scaleState) return;
+                      const maxScale = scaleState.maxScale ?? LIGHTBOX_MAX_SCALE;
+                      if (event.nativeEvent.state === State.ACTIVE) {
+                        setLightboxScrollEnabled(false);
+                      }
                       if (event.nativeEvent.oldState === State.ACTIVE) {
-                        const nextScale =
+                        const rawScale =
                           scaleState.lastScale * event.nativeEvent.scale;
-                        const clampedScale = Math.min(
-                          LIGHTBOX_MAX_SCALE,
-                          Math.max(LIGHTBOX_MIN_SCALE, nextScale)
+                        if (rawScale < LIGHTBOX_CLOSE_SCALE) {
+                          Vibration.vibrate(10);
+                          resetScaleState(scaleState, false);
+                          setLightboxVisible(false);
+                          return;
+                        }
+                        const clampedScale = clamp(
+                          rawScale,
+                          LIGHTBOX_MIN_SCALE,
+                          maxScale
                         );
+                        if (clampedScale !== rawScale) {
+                          Vibration.vibrate(8);
+                        }
                         scaleState.lastScale = clampedScale;
-                        scaleState.base.setValue(clampedScale);
                         scaleState.pinch.setValue(1);
+                        const { maxX, maxY } = getPanBounds(clampedScale);
+                        const nextX = clamp(scaleState.lastX, -maxX, maxX);
+                        const nextY = clamp(scaleState.lastY, -maxY, maxY);
+                        scaleState.lastX = nextX;
+                        scaleState.lastY = nextY;
+                        animateScaleState(scaleState, clampedScale, nextX, nextY);
+                        setLightboxScrollEnabled(
+                          clampedScale <= LIGHTBOX_MIN_SCALE
+                        );
+                        showZoomIndicator(clampedScale);
+                      }
+                    };
+                    const onPanEvent =
+                      scaleState &&
+                      Animated.event(
+                        [
+                          {
+                            nativeEvent: {
+                              translationX: scaleState.panX,
+                              translationY: scaleState.panY,
+                            },
+                          },
+                        ],
+                        { useNativeDriver: false }
+                      );
+                    const onPanStateChange = (event: any) => {
+                      if (!scaleState) return;
+                      const isZoomed =
+                        scaleState.lastScale > LIGHTBOX_MIN_SCALE;
+                      if (event.nativeEvent.state === State.ACTIVE && isZoomed) {
+                        setLightboxScrollEnabled(false);
+                      }
+                      if (event.nativeEvent.oldState === State.ACTIVE) {
+                        if (isZoomed) {
+                          const nextX =
+                            scaleState.lastX + event.nativeEvent.translationX;
+                          const nextY =
+                            scaleState.lastY + event.nativeEvent.translationY;
+                          const { maxX, maxY } = getPanBounds(
+                            scaleState.lastScale
+                          );
+                          const clampedX = clamp(nextX, -maxX, maxX);
+                          const clampedY = clamp(nextY, -maxY, maxY);
+                          if (clampedX !== nextX || clampedY !== nextY) {
+                            Vibration.vibrate(6);
+                          }
+                          scaleState.lastX = clampedX;
+                          scaleState.lastY = clampedY;
+                          Animated.parallel([
+                            Animated.spring(scaleState.baseX, {
+                              toValue: clampedX,
+                              useNativeDriver: false,
+                              friction: 7,
+                              tension: 80,
+                            }),
+                            Animated.spring(scaleState.baseY, {
+                              toValue: clampedY,
+                              useNativeDriver: false,
+                              friction: 7,
+                              tension: 80,
+                            }),
+                          ]).start();
+                        } else {
+                          scaleState.lastX = 0;
+                          scaleState.lastY = 0;
+                          scaleState.baseX.setValue(0);
+                          scaleState.baseY.setValue(0);
+                        }
+                        scaleState.panX.setValue(0);
+                        scaleState.panY.setValue(0);
+                        setLightboxScrollEnabled(
+                          scaleState.lastScale <= LIGHTBOX_MIN_SCALE
+                        );
+                      }
+                    };
+                    const onDoubleTapStateChange = (event: any) => {
+                      if (!scaleState) return;
+                      if (event.nativeEvent.state === State.ACTIVE) {
+                        const currentScale = scaleState.lastScale;
+                        const maxScale = scaleState.maxScale ?? LIGHTBOX_MAX_SCALE;
+                        let targetScale = LIGHTBOX_MIN_SCALE;
+                        if (currentScale <= LIGHTBOX_MIN_SCALE + 0.05) {
+                          targetScale = Math.min(maxScale, LIGHTBOX_DOUBLE_TAP_SCALE);
+                        } else if (currentScale < maxScale - 0.05) {
+                          targetScale = maxScale;
+                        }
+                        const tapX =
+                          typeof event.nativeEvent.x === 'number'
+                            ? event.nativeEvent.x
+                            : lightboxFrameWidth / 2;
+                        const tapY =
+                          typeof event.nativeEvent.y === 'number'
+                            ? event.nativeEvent.y
+                            : lightboxFrameHeight / 2;
+                        const focusX = tapX - lightboxFrameWidth / 2;
+                        const focusY = tapY - lightboxFrameHeight / 2;
+                        const { maxX, maxY } = getPanBounds(targetScale);
+                        let nextX = clamp(
+                          scaleState.lastX - focusX * (targetScale - currentScale),
+                          -maxX,
+                          maxX
+                        );
+                        let nextY = clamp(
+                          scaleState.lastY - focusY * (targetScale - currentScale),
+                          -maxY,
+                          maxY
+                        );
+                        if (targetScale <= LIGHTBOX_MIN_SCALE + 0.05) {
+                          nextX = 0;
+                          nextY = 0;
+                        }
+                        scaleState.lastScale = targetScale;
+                        scaleState.lastX = nextX;
+                        scaleState.lastY = nextY;
+                        scaleState.pinch.setValue(1);
+                        scaleState.panX.setValue(0);
+                        scaleState.panY.setValue(0);
+                        animateScaleState(scaleState, targetScale, nextX, nextY);
+                        setLightboxScrollEnabled(
+                          targetScale <= LIGHTBOX_MIN_SCALE
+                        );
+                        showZoomIndicator(targetScale);
+                        Vibration.vibrate(10);
                       }
                     };
                     return (
-                      <PinchGestureHandler
+                      <TapGestureHandler
                         key={photo.id ?? photo.path ?? photo.signedUrl ?? `photo-${index}`}
-                        onGestureEvent={onPinchEvent as any}
-                        onHandlerStateChange={onPinchStateChange}
+                        numberOfTaps={2}
+                        onHandlerStateChange={onDoubleTapStateChange}
                       >
-                        <Animated.View
-                          style={[
-                            styles.lightboxSlide,
-                            { width: lightboxFrameWidth, transform: [{ scale }] },
-                          ]}
+                        <PinchGestureHandler
+                          onGestureEvent={onPinchEvent as any}
+                          onHandlerStateChange={onPinchStateChange}
                         >
-                          <Image
-                            source={{ uri: photo.signedUrl }}
-                            style={styles.lightboxImage}
-                          />
-                        </Animated.View>
-                      </PinchGestureHandler>
+                          <PanGestureHandler
+                            enabled={
+                              !!scaleState &&
+                              scaleState.lastScale > LIGHTBOX_MIN_SCALE
+                            }
+                            onGestureEvent={onPanEvent as any}
+                            onHandlerStateChange={onPanStateChange}
+                          >
+                            <Animated.View
+                              style={[
+                                styleSheet.lightboxSlide,
+                                {
+                                  width: lightboxFrameWidth,
+                                  transform: [
+                                    { scale },
+                                    { translateX },
+                                    { translateY },
+                                  ],
+                                },
+                              ]}
+                            >
+                              <Image
+                                source={{ uri: photo.signedUrl }}
+                                style={styleSheet.lightboxImage}
+                              />
+                            </Animated.View>
+                          </PanGestureHandler>
+                        </PinchGestureHandler>
+                      </TapGestureHandler>
                     );
                   })}
                 </ScrollView>
               )}
+              {lightboxZoomLabel ? (
+                <View style={styleSheet.lightboxZoomChip}>
+                  <Ionicons
+                    name="search"
+                    size={14}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={styleSheet.lightboxZoomText}>{lightboxZoomLabel}</Text>
+                </View>
+              ) : null}
             </View>
             {lightboxCount > 1 && (
-              <View style={styles.lightboxNav}>
+              <View style={styleSheet.lightboxNav}>
                 <TouchableOpacity
-                  style={styles.lightboxNavButton}
+                  style={styleSheet.lightboxNavButton}
                   onPress={handleLightboxPrev}
                 >
                   <Ionicons
@@ -2349,18 +3178,18 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
                     color={theme.colors.textSecondary}
                   />
                 </TouchableOpacity>
-                <View style={styles.lightboxCounterChip}>
+                <View style={styleSheet.lightboxCounterChip}>
                   <Ionicons
                     name="image-outline"
                     size={14}
                     color={theme.colors.textSecondary}
                   />
-                  <Text style={styles.lightboxCounter}>
+                  <Text style={styleSheet.lightboxCounter}>
                     {lightboxIndex + 1}/{lightboxCount}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.lightboxNavButton}
+                  style={styleSheet.lightboxNavButton}
                   onPress={handleLightboxNext}
                 >
                   <Ionicons
@@ -2372,11 +3201,8 @@ export const ProfileDetailScreen: React.FC<ProfileDetailScreenProps> = ({
               </View>
             )}
           </View>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
     </View>
   );
 };
-
-
-

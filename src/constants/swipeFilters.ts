@@ -117,8 +117,8 @@ export const ESTILO_VIDA_GROUPS = [
     id: 'schedule',
     label: 'Horario',
     options: [
-      { id: 'schedule_manana', label: 'Madrugador' },
-      { id: 'schedule_noche', label: 'Nocturno' },
+      { id: 'schedule_madrugador', label: 'Madrugador' },
+      { id: 'schedule_nocturno', label: 'Nocturno' },
       { id: 'schedule_flexible', label: 'Flexible' },
     ],
   },
@@ -126,7 +126,7 @@ export const ESTILO_VIDA_GROUPS = [
     id: 'cleaning',
     label: 'Orden y limpieza',
     options: [
-      { id: 'cleaning_muy_limpio', label: 'Muy ordenado' },
+      { id: 'cleaning_muy_ordenado', label: 'Muy ordenado' },
       { id: 'cleaning_normal', label: 'Normal' },
       { id: 'cleaning_relajado', label: 'Relajado' },
     ],

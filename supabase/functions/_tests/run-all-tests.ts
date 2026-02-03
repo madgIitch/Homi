@@ -83,6 +83,8 @@ async function main() {
     './supabase/functions/_tests/auth-register-phase3.test.ts',
     './supabase/functions/_tests/rooms.test.ts',
     './supabase/functions/_tests/chats.test.ts',
+    './supabase/functions/_tests/stripe-checkout.test.ts',
+    './supabase/functions/_tests/stripe-webhook.test.ts',
   ];
 
   const results: TestFileSummary[] = [];

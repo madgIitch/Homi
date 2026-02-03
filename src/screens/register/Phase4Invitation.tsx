@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, Alert, TouchableOpacity } from 'react-native';
 import { Button } from '../../components/Button';
-import { useTheme } from '../../theme/ThemeContext';
+import { useTheme, useThemeController } from '../../theme/ThemeContext';
 import { Phase4InvitationStyles } from '../../styles/screens';
 
 interface Phase4InvitationProps {
@@ -18,9 +18,13 @@ export const Phase4Invitation: React.FC<Phase4InvitationProps> = ({
   loading,
 }) => {
   const theme = useTheme();
+  const { isDark } = useThemeController();
   const styles = useMemo(() => Phase4InvitationStyles(theme), [theme]);
   const [hasInvite, setHasInvite] = useState<boolean | null>(null);
   const [inviteCode, setInviteCode] = useState('');
+  const titleColor = isDark ? theme.colors.textLight : theme.colors.text;
+  const subtitleColor = isDark ? theme.colors.textTertiary : theme.colors.textSecondary;
+  const helperColor = isDark ? theme.colors.textTertiary : theme.colors.textSecondary;
 
   const handleNext = () => {
     if (hasInvite === null) {
@@ -42,13 +46,13 @@ export const Phase4Invitation: React.FC<Phase4InvitationProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>
+        <Text style={[styles.title, { color: titleColor }]}>
           Invitacion al piso
         </Text>
-        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+        <Text style={[styles.subtitle, { color: subtitleColor }]}>
           Paso 4 de 5
         </Text>
-        <Text style={[styles.helper, { color: theme.colors.textSecondary }]}>
+        <Text style={[styles.helper, { color: helperColor }]}>
           Si ya vives en un piso, puedes unirte con un codigo de invitacion.
         </Text>
         <View style={styles.stepper}>
@@ -73,8 +77,8 @@ export const Phase4Invitation: React.FC<Phase4InvitationProps> = ({
                 style={[
                   styles.segmentButton,
                   isActive && {
-                    backgroundColor: theme.colors.primaryTint,
-                    borderColor: theme.colors.primaryMuted,
+                    backgroundColor: theme.colors.chipSelectedBackground,
+                    borderColor: theme.colors.chipSelectedBorder,
                   },
                 ]}
                 onPress={() => setHasInvite(option.id)}
@@ -83,7 +87,7 @@ export const Phase4Invitation: React.FC<Phase4InvitationProps> = ({
                   style={[
                     styles.segmentButtonText,
                     { color: theme.colors.text },
-                    isActive && { color: theme.colors.primary },
+                    isActive && { color: theme.colors.chipSelectedText },
                   ]}
                 >
                   {option.label}

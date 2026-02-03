@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';  
 import { View, Text, Alert, TouchableOpacity } from 'react-native';  
 import { Button } from '../../components/Button';  
-import { useTheme } from '../../theme/ThemeContext';  
+import { useTheme, useThemeController } from '../../theme/ThemeContext';  
 import type { Gender } from '../../types/gender';
 import { Phase3GenderStyles } from '../../styles/screens';
   
@@ -18,8 +18,22 @@ export const Phase3Gender: React.FC<Phase3GenderProps> = ({
   loading,  
 }) => {  
   const theme = useTheme();
+  const { isDark } = useThemeController();
   const styles = useMemo(() => Phase3GenderStyles(theme), [theme]);  
   const [gender, setGender] = useState<Gender | null>(null);
+  const subtitleColor = isDark ? theme.colors.textTertiary : theme.colors.textSecondary;
+  const helperColor = isDark ? theme.colors.textTertiary : theme.colors.textSecondary;
+  const baseChipStyle = isDark
+    ? { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderLight }
+    : null;
+  const activeChipStyle = isDark
+    ? { backgroundColor: theme.colors.primaryDark, borderColor: theme.colors.primary }
+    : {
+        backgroundColor: theme.colors.chipSelectedBackground,
+        borderColor: theme.colors.chipSelectedBorder,
+      };
+  const baseChipTextColor = isDark ? theme.colors.textStrong : theme.colors.text;
+  const activeChipTextColor = isDark ? theme.colors.textStrong : theme.colors.chipSelectedText;
   
   const handleNext = () => {  
     if (!gender) {  
@@ -32,13 +46,18 @@ export const Phase3Gender: React.FC<Phase3GenderProps> = ({
   return (  
     <View style={styles.container}>  
       <View style={styles.card}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>  
+        <Text
+          style={[
+            styles.title,
+            { color: isDark ? theme.colors.textTertiary : theme.colors.text },
+          ]}
+        >
           Tu género  
         </Text>  
-        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
+        <Text style={[styles.subtitle, { color: subtitleColor }]}>  
           Paso 3 de 5  
         </Text>  
-        <Text style={[styles.helper, { color: theme.colors.textSecondary }]}>
+        <Text style={[styles.helper, { color: helperColor }]}>
           Esto nos ayuda a mostrarte pisos y compas adecuados.
         </Text>
         <View style={styles.stepper}>
@@ -64,18 +83,16 @@ export const Phase3Gender: React.FC<Phase3GenderProps> = ({
                 key={option.id}
                 style={[
                   styles.segmentButton,
-                  isActive && {
-                    backgroundColor: theme.colors.primaryTint,
-                    borderColor: theme.colors.primaryMuted,
-                  },
+                  baseChipStyle,
+                  isActive && activeChipStyle,
                 ]}
                 onPress={() => setGender(option.id)}
               >
                 <Text
                   style={[
                     styles.segmentButtonText,
-                    { color: theme.colors.text },
-                    isActive && { color: theme.colors.primary },
+                    { color: baseChipTextColor },
+                    isActive && { color: activeChipTextColor },
                   ]}
                 >
                   {option.label}

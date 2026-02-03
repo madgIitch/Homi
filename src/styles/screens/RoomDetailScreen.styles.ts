@@ -34,6 +34,14 @@ export const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
+    flexShrink: 1,
+  },
+  headerTitlePressable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs,
+    flex: 1,
+    justifyContent: 'center',
   },
   headerSpacer: {
     width: sizes.s22,
@@ -60,6 +68,14 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.glassSurface,
     borderWidth: 1,
     borderColor: colors.glassBorderSoft,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  headerActionDisabled: {
+    opacity: 0.6,
   },
   content: {
     flex: 1,
@@ -171,6 +187,18 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     lineHeight: 18,
+  },
+  ruleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s6,
+    paddingVertical: spacing.xxs,
+  },
+  serviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s6,
+    paddingVertical: spacing.xxs,
   },
   inviteRow: {
     marginTop: spacing.s12,
@@ -350,6 +378,25 @@ export const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  lightboxZoomChip: {
+    position: 'absolute',
+    top: spacing.s12,
+    right: spacing.s12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    backgroundColor: colors.glassSurface,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+  },
+  lightboxZoomText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textStrong,
   },
   lightboxNav: {
     flexDirection: 'row',

@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
-  ActivityIndicator,
   Image,
   ImageBackground,
   Alert,
@@ -15,13 +14,12 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from '@react-native-community/blur';
 import { useTheme } from '../theme/ThemeContext';
 import {
   BUDGET_MAX,
@@ -48,76 +46,37 @@ import { swipeLimitService } from '../services/swipeLimitService';
 import { locationService } from '../services/locationService';
 import { API_CONFIG } from '../config/api';
 import { getUserName } from '../utils/name';
+import {
+  getMessageRequestUsage,
+  incrementMessageRequestUsage,
+  type MessageRequestUsage,
+} from '../utils/messageRequests';
 import type { Gender } from '../types/gender';
-import type { HousingSituation, Profile } from '../types/profile';
+import type { HousingSituation, RoomRecommendation } from '../types/profile';
 import type { SwipeFilters } from '../types/swipeFilters';
 import { SwipeScreenStyles } from '../styles/screens';
-
-type SwipeProfile = {
-  id: string;
-  name: string;
-  age?: number;
-  photoUrl?: string | null;
-  housing: 'seeking' | 'offering' | null;
-  zone?: string;
-  budgetMin?: number;
-  budgetMax?: number;
-  desiredRoommatesMin?: number | null;
-  desiredRoommatesMax?: number | null;
-  bio: string;
-  lifestyle: string[];
-  interests: string[];
-  preferredZones: string[];
-  gender?: Gender | null;
-  profile: Profile;
-};
+import { SwipeCard, type SwipeBadge, type SwipeProfile } from '../components/SwipeCard';
 
 const SWIPE_LIMIT = 20;
+const MAX_REQUEST_CHARS = 280;
+const MESSAGE_REQUEST_TIP_KEY = '@hm_message_request_tip_seen';
 let isSwiping = false;
 
-type GlassProps = {
-  style?: object;
-  children: React.ReactNode;
+const calculateAge = (birthDate: string | null | undefined): number | undefined => {
+  if (!birthDate) return undefined;
+
+  const birth = new Date(birthDate);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+
+  return age;
 };
 
-const GlassPanel: React.FC<GlassProps & { glassFillStyle: object; styles: any; theme: any }> = ({ style, children, glassFillStyle, styles, theme }) => (
-  <View style={[styles.glassPanel, style]}>
-    <BlurView
-      blurType="light"
-      blurAmount={16}
-      reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <View style={[styles.glassFill, glassFillStyle]} />
-    {children}
-  </View>
-);
-
-const GlassChip: React.FC<GlassProps & { glassFillStyle: object; styles: any; theme: any }> = ({ style, children, glassFillStyle, styles, theme }) => (
-  <View style={[styles.glassChip, style]}>
-    <BlurView
-      blurType="light"
-      blurAmount={14}
-      reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <View style={[styles.glassFill, glassFillStyle]} />
-    {children}
-  </View>
-);
-
-const GlassButton: React.FC<GlassProps & { glassFillStyle: object; styles: any; theme: any }> = ({ style, children, glassFillStyle, styles, theme }) => (
-  <View style={[styles.glassButton, style]}>
-    <BlurView
-      blurType="light"
-      blurAmount={16}
-      reducedTransparencyFallbackColor={theme.colors.glassUltraLight}
-      style={StyleSheet.absoluteFillObject}
-    />
-    <View style={[styles.glassFill, glassFillStyle]} />
-    {children}
-  </View>
-);
 
 const ActionButton = ({
   icon,
@@ -195,10 +154,16 @@ export const SwipeScreen: React.FC = () => {
   const [isRequestModalVisible, setIsRequestModalVisible] = useState(false);
   const [requestMessage, setRequestMessage] = useState('');
   const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const [requestUsage, setRequestUsage] = useState<MessageRequestUsage | null>(null);
+  const [showRequestTip, setShowRequestTip] = useState(false);
+  const [currentProfileForRequest, setCurrentProfileForRequest] = useState<SwipeProfile | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLimitModalVisible, setIsLimitModalVisible] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [_profileHousing, setProfileHousing] = useState<HousingSituation | null>(
     null
   );
+  const [profileIsSeeking, setProfileIsSeeking] = useState(false);
   const [isSearchEnabled, setIsSearchEnabled] = useState(true);
   const [photoIndexByProfile, setPhotoIndexByProfile] = useState<
     Record<string, number>
@@ -214,12 +179,16 @@ export const SwipeScreen: React.FC = () => {
   >({});
   const [zoneNameById, setZoneNameById] = useState<Record<string, string>>({});
   const [profileFiltersApplied, setProfileFiltersApplied] = useState(false);
+  const [allProvincesBlocked, setAllProvincesBlocked] = useState(false);
+  const [blockedProvinces, setBlockedProvinces] = useState<string[]>([]);
 
   const position = useRef(new Animated.ValueXY()).current;
   const currentProfileRef = useRef<SwipeProfile | null>(null);
   const canSwipeRef = useRef(false);
   const swipeThresholdRef = useRef(0);
   const skipResetRef = useRef(false);
+  const reloadInFlightRef = useRef(false);
+  const reloadPendingRef = useRef(false);
   const screenWidth = windowWidth;
   const layoutPct = {
     tabBarTop: 0.87,
@@ -250,11 +219,7 @@ export const SwipeScreen: React.FC = () => {
   );
   const cardHeight = Math.max(
     360,
-    Math.round(Math.min(deckHeight * 0.96, windowHeight - 260))
-  );
-  const glassFillStyle = useMemo(
-    () => ({ backgroundColor: theme.colors.glassLight }),
-    [theme.colors.glassLight]
+    Math.round(Math.min(deckHeight * 1, windowHeight - 240))
   );
 
   const safeAreaStyle = useMemo(
@@ -296,9 +261,20 @@ export const SwipeScreen: React.FC = () => {
     extrapolate: 'clamp',
   });
 
+  const effectiveFilters = useMemo(() => {
+    if (
+      _profileHousing === 'offering' &&
+      !profileIsSeeking &&
+      filters.housingSituation === 'offering'
+    ) {
+      return { ...filters, housingSituation: 'seeking' as const };
+    }
+    return filters;
+  }, [filters, _profileHousing, profileIsSeeking]);
+
   const currentProfile = profiles[currentIndex];
   const canSwipe = isSearchEnabled && (isPremium || swipesUsed < SWIPE_LIMIT);
-  const activeFilterCount = getActiveFilterCount(filters);
+  const activeFilterCount = getActiveFilterCount(effectiveFilters);
   const hasActiveFilters = activeFilterCount > 0;
   const lifestyleIdByLabel = useMemo(
     () => new Map(ESTILO_VIDA_OPTIONS.map((option) => [option.label, option.id])),
@@ -307,6 +283,27 @@ export const SwipeScreen: React.FC = () => {
   currentProfileRef.current = currentProfile ?? null;
   canSwipeRef.current = canSwipe;
   swipeThresholdRef.current = swipeThreshold;
+
+  const requestCharCount = requestMessage.trim().length;
+  const requestLimitText = requestUsage
+    ? isPremium
+      ? `Premium: ${requestUsage.remaining} de ${requestUsage.limit} ${requestUsage.periodLabel}`
+      : `Gratis: ${requestUsage.remaining} de ${requestUsage.limit} ${requestUsage.periodLabel}`
+    : isPremium
+    ? 'Cargando...'
+    : 'Gratis: 1 solicitud de prueba';
+
+  useEffect(() => {
+    if (isPremium) {
+      if (isLimitModalVisible) {
+        setIsLimitModalVisible(false);
+      }
+      return;
+    }
+    if (swipesUsed >= SWIPE_LIMIT && !isLimitModalVisible) {
+      setIsLimitModalVisible(true);
+    }
+  }, [isPremium, isLimitModalVisible, swipesUsed]);
 
   const getAuthHeaders = async (): Promise<Record<string, string>> => {
     const token = await AsyncStorage.getItem('authToken');
@@ -360,6 +357,9 @@ export const SwipeScreen: React.FC = () => {
   };
 
   const incrementSwipeCount = async () => {
+    if (isPremium) {
+      return;
+    }
     try {
       const { count } = await swipeLimitService.incrementDailyCount();
       setSwipesUsed(count);
@@ -369,8 +369,10 @@ export const SwipeScreen: React.FC = () => {
     }
   };
 
-  const advanceCard = () => {
-    incrementSwipeCount().catch(() => undefined);
+  const advanceCard = (shouldCount: boolean) => {
+    if (shouldCount) {
+      incrementSwipeCount().catch(() => undefined);
+    }
     position.setValue({ x: 0, y: 0 });
   };
 
@@ -391,7 +393,7 @@ export const SwipeScreen: React.FC = () => {
       duration: 240,
       useNativeDriver: true,
     }).start(() => {
-      advanceCard();
+      advanceCard(direction === 'right');
       skipResetRef.current = true;
       setExcludedProfileIds((prev) =>
         prev.includes(swipedId) ? prev : [...prev, swipedId]
@@ -401,33 +403,60 @@ export const SwipeScreen: React.FC = () => {
   };
 
   const handleSendRequest = async () => {
-    const profile = currentProfile;
+    const profile = currentProfileForRequest || currentProfile;
     if (!profile) return;
     const trimmed = requestMessage.trim();
     if (!trimmed) {
       Alert.alert('Error', 'Escribe un mensaje para enviar la solicitud');
       return;
     }
-
-    setIsSendingRequest(true);
-    try {
-      await profileService.updateProfile({ is_premium: isPremium });
-      const response = await chatService.sendMessageRequest(profile.id, trimmed);
-      setIsRequestModalVisible(false);
-      setRequestMessage('');
-      navigation.navigate('Chat', {
-        chatId: response.chatId,
-        matchId: response.matchId,
-        name: profile.name,
-        avatarUrl: profile.photoUrl ?? '',
-        profile: profile.profile,
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      Alert.alert('Error', errorMessage || 'No se pudo enviar la solicitud');
-    } finally {
-      setIsSendingRequest(false);
+    if (trimmed.length > MAX_REQUEST_CHARS) {
+      Alert.alert('Error', `El mensaje no puede superar ${MAX_REQUEST_CHARS} caracteres`);
+      return;
     }
+
+    const sendRequest = async () => {
+      setIsSendingRequest(true);
+      try {
+        const response = await chatService.sendMessageRequest(profile.id, trimmed);
+        if (currentUserId) {
+          const nextUsage = await incrementMessageRequestUsage(
+            currentUserId,
+            isPremium
+          );
+          setRequestUsage(nextUsage);
+        }
+        setIsRequestModalVisible(false);
+        setRequestMessage('');
+        setCurrentProfileForRequest(null);
+        navigation.navigate('Chat', {
+          chatId: response.chatId,
+          matchId: response.matchId,
+          name: profile.name,
+          avatarUrl: profile.photoUrl ?? '',
+          profile: profile.profile,
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        Alert.alert('Error', errorMessage || 'No se pudo enviar la solicitud');
+      } finally {
+        setIsSendingRequest(false);
+      }
+    };
+
+    if (!isPremium) {
+      Alert.alert(
+        'Solicitud gratuita',
+        'Esta es tu solicitud de prueba. ¿Quieres enviarla ahora?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Enviar', onPress: () => sendRequest() },
+        ]
+      );
+      return;
+    }
+
+    await sendRequest();
   };
 
   const panResponder = useRef(
@@ -504,11 +533,56 @@ export const SwipeScreen: React.FC = () => {
     return zoneNameById[zoneId] ?? zoneId;
   };
 
-  const getSituationLabel = (profile: SwipeProfile) => {
-    if (profile.housing === 'offering') {
-      return profile.profile?.is_seeking ? 'Ofrezco y busco' : 'Ofrezco piso';
+  const formatProvinceLabel = (
+    provinceName?: string | null,
+    provinceCode?: string | null
+  ) => {
+    if (provinceName) return provinceName;
+    if (provinceCode) return `Provincia ${provinceCode}`;
+    return null;
+  };
+
+  const formatLocationLabel = (profile: SwipeProfile) => {
+    const level = profile.locationDisplayLevel;
+    if (!level) return null;
+
+    const zoneName =
+      profile.locationZoneName ??
+      getZoneLabel(profile.locationZoneId) ??
+      getZoneLabel(profile.zone);
+    const cityName = profile.locationCityName ?? null;
+    const provinceLabel = formatProvinceLabel(
+      profile.locationProvinceName ?? null,
+      profile.locationProvinceCode ?? null
+    );
+
+    switch (level) {
+      case 'zone-city':
+        if (zoneName && cityName) return `${zoneName} - ${cityName}`;
+        if (cityName) return cityName;
+        if (zoneName) return zoneName;
+        return provinceLabel;
+      case 'city-province':
+        if (cityName && provinceLabel) return `${cityName}, ${provinceLabel}`;
+        if (cityName) return cityName;
+        return provinceLabel;
+      case 'province':
+        return provinceLabel;
+      default:
+        return null;
     }
-    if (profile.housing === 'seeking') return 'Busco piso';
+  };
+
+  const getSituationLabel = (profile: SwipeProfile) => {
+    const locationLabel = formatLocationLabel(profile);
+    if (profile.housing === 'offering') {
+      const base = profile.profile?.is_seeking ? 'Tengo y busco piso' : 'Tengo piso';
+      return locationLabel ? `${base} en ${locationLabel}` : base;
+    }
+    if (profile.housing === 'seeking') {
+      const base = 'Busco piso';
+      return locationLabel ? `${base} en ${locationLabel}` : base;
+    }
     return null;
   };
 
@@ -530,50 +604,50 @@ export const SwipeScreen: React.FC = () => {
     }
   };
 
-  const getBadges = (profile: SwipeProfile) => {
-    const badges = [];
+  const getBadges = (profile: SwipeProfile): SwipeBadge[] => {
+    const badges: SwipeBadge[] = [];
 
-    // 1. Presupuesto (siempre importante)
-    badges.push(`💰 ${formatBudget(profile)}`);
+    const occupationValue = profile.occupation?.trim().toLowerCase() ?? '';
+    const occupationChip = occupationValue.startsWith('universidad')
+      ? { icon: 'school-outline', label: 'Estudiante' }
+      : occupationValue.startsWith('trabajo')
+      ? { icon: 'briefcase-outline', label: 'Trabajador' }
+      : occupationValue.startsWith('mixto')
+      ? { icon: 'briefcase-outline', label: 'Mixto' }
+      : null;
 
-    // 2. Zona principal
-    const primaryZone =
-      getZoneLabel(profile.zone) ??
-      getZoneLabel(profile.preferredZones?.[0] ?? null);
-    if (primaryZone) {
-      badges.push(`📍 ${primaryZone}`);
-    }
 
-    // 3. Genero
+    // 1. Genero
     const genderLabel = getGenderLabel(profile.gender ?? null);
     if (genderLabel) {
-      badges.push(`👤 ${genderLabel}`);
+      badges.push({ icon: 'person-outline', label: genderLabel });
     }
 
-    // 4. Número de compañeros deseados
+    // 2. Ocupacion
+    if (occupationChip) {
+      badges.push(occupationChip);
+    }
+
+    // 3. Número de compañeros deseados
     if (profile.desiredRoommatesMin != null || profile.desiredRoommatesMax != null) {
       const min = profile.desiredRoommatesMin ?? 1;
       const max = profile.desiredRoommatesMax ?? 5;
       const roommatesText = min === max
         ? `${min} ${min === 1 ? 'compañero' : 'compañeros'}`
         : `${min}-${max} compañeros`;
-      badges.push(`👥 ${roommatesText}`);
+      badges.push({ icon: 'people-outline', label: roommatesText });
     }
 
-    // 5. Interés principal (personalidad)
-    if (profile.interests?.[0]) {
-      badges.push(`🎯 ${profile.interests[0]}`);
-    }
-
-    // 6. Estilo de vida principal
-    if (profile.lifestyle?.[0]) {
-      badges.push(`🌟 ${profile.lifestyle[0]}`);
-    }
-
-    return badges.slice(0, 4); // Mostrar máximo 4 chips
+    return badges.slice(0, 3); // Mostrar m?ximo 3 chips
   };
 
-  const mapProfileToSwipe = (profile: Profile): SwipeProfile | null => {
+  const getBudgetBadge = (profile: SwipeProfile) =>
+    formatBudget(profile);
+
+  const mapProfileToSwipe = (
+    recommendation: RoomRecommendation
+  ): SwipeProfile | null => {
+    const profile = recommendation.profile;
     const avatar = profile.avatar_url;
     const photoUrl = avatar
       ? avatar.startsWith('http')
@@ -589,7 +663,7 @@ export const SwipeScreen: React.FC = () => {
     return {
       id: profile.id,
       name: profileName,
-      age: profile.age ?? undefined,
+      age: profile.age ?? calculateAge(profile.birth_date),
       photoUrl,
       housing: profile.housing_situation ?? null,
       zone: profile.preferred_zones?.[0],
@@ -597,6 +671,7 @@ export const SwipeScreen: React.FC = () => {
       budgetMax: profile.budget_max ?? undefined,
       desiredRoommatesMin: profile.desired_roommates_min ?? null,
       desiredRoommatesMax: profile.desired_roommates_max ?? null,
+      occupation: profile.occupation ?? null,
       bio: profile.bio ?? 'Sin descripcion por ahora.',
       interests: profile.interests ?? [],
       preferredZones: profile.preferred_zones ?? [],
@@ -606,6 +681,13 @@ export const SwipeScreen: React.FC = () => {
             (item): item is string => Boolean(item)
           )
         : [],
+      locationDisplayLevel: recommendation.location_display_level ?? null,
+      locationZoneId: recommendation.location_zone_id ?? null,
+      locationZoneName: recommendation.location_zone_name ?? null,
+      locationCityId: recommendation.location_city_id ?? null,
+      locationCityName: recommendation.location_city_name ?? null,
+      locationProvinceCode: recommendation.location_province_code ?? null,
+      locationProvinceName: recommendation.location_province_name ?? null,
       profile,
     };
   };
@@ -623,6 +705,35 @@ export const SwipeScreen: React.FC = () => {
 
     loadSwipeCount().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const loadCurrentUserId = async () => {
+      try {
+        const profile = await profileService.getProfile();
+        if (profile?.id) {
+          setCurrentUserId(profile.id);
+        }
+      } catch (error) {
+        console.error('[SwipeScreen] Error loading current user ID:', error);
+      }
+    };
+    loadCurrentUserId();
+  }, []);
+
+  useEffect(() => {
+    if (!isRequestModalVisible || !currentUserId) return;
+    getMessageRequestUsage(currentUserId, isPremium)
+      .then((usage) => setRequestUsage(usage))
+      .catch(() => undefined);
+    const tipKey = `${MESSAGE_REQUEST_TIP_KEY}:${currentUserId}`;
+    AsyncStorage.getItem(tipKey)
+      .then((seen) => {
+        if (!seen) {
+          setShowRequestTip(true);
+        }
+      })
+      .catch(() => undefined);
+  }, [isRequestModalVisible, currentUserId, isPremium]);
 
   useEffect(() => {
     let isMounted = true;
@@ -689,6 +800,7 @@ export const SwipeScreen: React.FC = () => {
         }
         setProfileHousing(profile.housing_situation ?? null);
         setIsSearchEnabled(profile.is_searchable ?? true);
+        setProfileIsSeeking(profile.is_seeking ?? false);
         if (activeFilterCount > 0) {
           setProfileFiltersApplied(true);
           return;
@@ -726,64 +838,120 @@ export const SwipeScreen: React.FC = () => {
     setFilters,
   ]);
 
-  useEffect(() => {
-    const loadProfiles = async () => {
-      if (!isSearchEnabled) {
-        setLoadingProfiles(false);
-        setProfileError(null);
+  const reloadRecommendations = useCallback(async () => {
+    if (reloadInFlightRef.current) {
+      reloadPendingRef.current = true;
+      return;
+    }
+    reloadInFlightRef.current = true;
+
+    if (!isSearchEnabled) {
+      setLoadingProfiles(false);
+      setProfileError(null);
+      setAllProfiles([]);
+      setAllProvincesBlocked(false);
+      setBlockedProvinces([]);
+      setExcludedProfileIds([]);
+      reloadInFlightRef.current = false;
+      if (reloadPendingRef.current) {
+        reloadPendingRef.current = false;
+        reloadRecommendations().catch(() => undefined);
+      }
+      return;
+    }
+    setLoadingProfiles(true);
+    setProfileError(null);
+    setAllProvincesBlocked(false);
+    setBlockedProvinces([]);
+    try {
+      const recommendationsResponse = await profileService.getProfileRecommendations(
+        activeFilterCount > 0 ? effectiveFilters : undefined
+      );
+      console.log(
+        '[SwipeScreen] recommendations response:',
+        recommendationsResponse
+      );
+
+      // Check if all provinces are blocked
+      if (recommendationsResponse.all_provinces_blocked === true) {
+        console.log(
+          '[SwipeScreen] all_provinces_blocked:',
+          recommendationsResponse.all_provinces_blocked
+        );
+        console.log('[SwipeScreen] setting allProvincesBlocked: true');
+        setAllProvincesBlocked(true);
+        setBlockedProvinces(recommendationsResponse.blocked_provinces ?? []);
         setAllProfiles([]);
+        setExcludedProfileIds([]);
         return;
       }
-      setLoadingProfiles(true);
-      setProfileError(null);
-      try {
-        const [recommendations, existingMatches, rejections] = await Promise.all([
-          profileService.getProfileRecommendations(
-            activeFilterCount > 0 ? filters : undefined
-          ),
-          chatService.getMatches(),
-          swipeRejectionService.getRejections(),
-        ]);
-        const excluded = new Set<string>();
-        existingMatches.forEach((match) => {
-          if (!match.status || !match.profileId) return;
-          const isOutgoingPending = match.status === 'pending' && match.isOutgoing;
-          const isResolvedStatus = [
-            'accepted',
-            'rejected',
-            'room_offer',
-            'room_assigned',
-            'room_declined',
-            'unmatched',
-          ].includes(match.status);
-          if (isResolvedStatus || isOutgoingPending) {
-            excluded.add(match.profileId);
-          }
-        });
-        rejections.forEach((rejection) => {
-          if (rejection.rejectedProfileId) {
-            excluded.add(rejection.rejectedProfileId);
-          }
-        });
-        const mapped = recommendations
-          .map((rec) => mapProfileToSwipe(rec.profile))
-          .filter((profile): profile is SwipeProfile => Boolean(profile));
-        const filtered = mapped.filter((profile) => !excluded.has(profile.id));
-        setAllProfiles(filtered);
-        setExcludedProfileIds(Array.from(excluded));
-      } catch (error) {
-        console.error('Error cargando recomendaciones:', error);
-        setAllProfiles([]);
-        setProfileError('No se pudieron cargar perfiles reales.');
-      } finally {
-        setLoadingProfiles(false);
-      }
-    };
 
-    if (profileFiltersApplied) {
-      loadProfiles().catch(() => undefined);
+      // Check if some provinces are blocked
+      const blocked = recommendationsResponse.blocked_provinces ?? [];
+      console.log('[SwipeScreen] blocked_provinces from response:', blocked);
+      if (blocked.length > 0) {
+        setBlockedProvinces(blocked);
+      }
+
+      const [existingMatches, rejections] = await Promise.all([
+        chatService.getMatches(),
+        swipeRejectionService.getRejections(),
+      ]);
+
+      const recommendations = recommendationsResponse.recommendations ?? [];
+      const excluded = new Set<string>();
+      existingMatches.forEach((match) => {
+        if (!match.status || !match.profileId) return;
+        const isOutgoingPending = match.status === 'pending' && match.isOutgoing;
+        const isResolvedStatus = [
+          'accepted',
+          'rejected',
+          'room_offer',
+          'room_assigned',
+          'room_declined',
+          'unmatched',
+        ].includes(match.status);
+        if (isResolvedStatus || isOutgoingPending) {
+          excluded.add(match.profileId);
+        }
+      });
+      rejections.forEach((rejection) => {
+        if (rejection.rejectedProfileId) {
+          excluded.add(rejection.rejectedProfileId);
+        }
+      });
+      const mapped = recommendations
+        .map((rec) => mapProfileToSwipe(rec))
+        .filter((profile): profile is SwipeProfile => Boolean(profile));
+      const filtered = mapped.filter((profile) => !excluded.has(profile.id));
+      setAllProfiles(filtered);
+      setExcludedProfileIds(Array.from(excluded));
+    } catch (error) {
+      console.error('Error cargando recomendaciones:', error);
+      setAllProfiles([]);
+      setProfileError('No se pudieron cargar perfiles reales.');
+    } finally {
+      setLoadingProfiles(false);
+      reloadInFlightRef.current = false;
+      if (reloadPendingRef.current) {
+        reloadPendingRef.current = false;
+        reloadRecommendations().catch(() => undefined);
+      }
     }
-  }, [activeFilterCount, filters, isSearchEnabled, profileFiltersApplied]);
+  }, [activeFilterCount, effectiveFilters, isSearchEnabled]);
+
+  useEffect(() => {
+    if (profileFiltersApplied) {
+      reloadRecommendations().catch(() => undefined);
+    }
+  }, [profileFiltersApplied, reloadRecommendations]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!profileFiltersApplied) return;
+      reloadRecommendations().catch(() => undefined);
+    }, [profileFiltersApplied, reloadRecommendations])
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -830,7 +998,7 @@ export const SwipeScreen: React.FC = () => {
   }, [allProfiles, zoneNameById]);
 
   useEffect(() => {
-    const next = applyFilters(allProfiles, filters, excludedProfileIds);
+    const next = applyFilters(allProfiles, effectiveFilters, excludedProfileIds);
     setProfiles(next);
     if (skipResetRef.current) {
       skipResetRef.current = false;
@@ -840,7 +1008,7 @@ export const SwipeScreen: React.FC = () => {
       setCurrentIndex(0);
       position.setValue({ x: 0, y: 0 });
     }
-  }, [allProfiles, filters, excludedProfileIds, position]);
+  }, [allProfiles, effectiveFilters, excludedProfileIds, position]);
 
   useEffect(() => {
     const loadPhotosForProfile = async () => {
@@ -985,155 +1153,32 @@ export const SwipeScreen: React.FC = () => {
     if (index < currentIndex) return null;
     const isTop = index === currentIndex;
     const isNext = index === currentIndex + 1;
-    const stackOffset = isNext ? 3 : 0;
-    const stackScale = isNext ? 0.992 : 1;
-    const chips = getBadges(profile).slice(0, 3);
-    const situationLabel = getSituationLabel(profile);
-    const roomPreview = roomPreviewByProfileId[profile.id];
-    const showRoomPreview =
-      profile.housing === 'offering' && roomPreview && roomPreview.count > 0;
-    const profilePhotos = getProfilePhotos(profile);
-    const hasPhotos = profilePhotos.length > 0;
-
-    const cardStackStyle = {
-      zIndex: isTop ? 2 : isNext ? 1 : 0,
-    };
-    const animatedStyle = isTop
-      ? {
-          ...cardStackStyle,
-          transform: [
-            { translateX: position.x },
-            { translateY: position.y },
-            { rotate },
-          ],
-        }
-      : {
-          ...cardStackStyle,
-          transform: [{ translateY: stackOffset }, { scale: stackScale }],
-        };
 
     return (
-      <Animated.View
+      <SwipeCard
         key={profile.id}
-        style={[styles.cardWrap, cardLayoutStyle, animatedStyle]}
-        {...(isTop ? panResponder.panHandlers : {})}
-      >
-        <View style={styles.cardShell}>
-          {hasPhotos ? (
-            <ImageBackground
-              source={{ uri: profilePhotos[getPhotoIndex(profile)] }}
-              style={styles.cardImage}
-              imageStyle={styles.cardImageRadius}
-            >
-              {situationLabel ? (
-                <View style={styles.imageBadge}>
-                  <Text style={styles.imageBadgeText}>{situationLabel}</Text>
-                </View>
-              ) : null}
-              {profilePhotos.length > 1 && (
-                <View style={styles.photoIndicators}>
-                  {profilePhotos.map((_, photoIndex) => (
-                    <View
-                      key={`${profile.id}-dot-${photoIndex}`}
-                      style={[
-                        styles.photoDot,
-                        photoIndex === getPhotoIndex(profile) &&
-                          styles.photoDotActive,
-                      ]}
-                    />
-                  ))}
-                </View>
-              )}
-              <View style={styles.photoTapOverlay}>
-                <TouchableOpacity
-                  style={styles.photoTapZone}
-                  onPress={() => goToPrevPhoto(profile)}
-                  activeOpacity={0.9}
-                />
-                <TouchableOpacity
-                  style={styles.photoTapZone}
-                  onPress={() => goToNextPhoto(profile)}
-                  activeOpacity={0.9}
-                />
-              </View>
-            </ImageBackground>
-          ) : (
-            <View style={styles.cardImagePlaceholder}>
-              <ActivityIndicator size="small" color={theme.colors.textLight} />
-              <Text style={styles.cardImagePlaceholderText}>
-                Cargando fotos...
-              </Text>
-            </View>
-          )}
-          <GlassPanel style={styles.cardInfo} glassFillStyle={glassFillStyle} styles={styles} theme={theme}>
-              <View style={styles.nameRow}>
-                <Text style={styles.profileName}>
-                  {profile.age ? `${profile.name}, ${profile.age}` : profile.name}
-                </Text>
-              </View>
-              <View style={styles.tagRow}>
-                {chips.map((chip) => (
-                  <GlassChip style={styles.tag} key={chip} glassFillStyle={glassFillStyle} styles={styles} theme={theme}>
-                    <Text style={styles.tagText}>{chip}</Text>
-                  </GlassChip>
-                ))}
-              </View>
-              {showRoomPreview ? (
-                <View style={styles.roomPreviewRow}>
-                  {roomPreview.photoUrl ? (
-                    <Image
-                      source={{ uri: roomPreview.photoUrl }}
-                      style={styles.roomPreviewThumb}
-                    />
-                  ) : (
-                    <View style={styles.roomPreviewPlaceholder}>
-                      <Ionicons
-                        name="home-outline"
-                        size={16}
-                        color={theme.colors.textTertiary}
-                      />
-                    </View>
-                  )}
-                  <View style={styles.roomPreviewInfo}>
-                    <Text style={styles.roomPreviewTitle}>Habitaciones disponibles</Text>
-                    <Text style={styles.roomPreviewMeta} numberOfLines={1}>
-                      {roomPreview.title ?? 'Habitacion disponible'}
-                      {roomPreview.price != null ? ` · ${roomPreview.price} EUR/mes` : ''}
-                    </Text>
-                  </View>
-                  {roomPreview.count > 1 ? (
-                    <View style={styles.roomPreviewCount}>
-                      <Text style={styles.roomPreviewCountText}>
-                        +{roomPreview.count - 1}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-              <Text style={styles.profileBio} numberOfLines={3}>
-                {profile.bio}
-              </Text>
-            <Pressable
-              style={styles.profileButton}
-              onPress={() =>
-                navigation.navigate('ProfileDetail', {
-                  profile: profile.profile,
-                  userId: profile.id,
-                })
-              }
-            >
-              <GlassButton style={styles.profileButtonGlass} glassFillStyle={glassFillStyle} styles={styles} theme={theme}>
-                <Text style={styles.profileButtonText}>Ver perfil completo</Text>
-                <Ionicons
-                  name="chevron-forward"
-                  size={16}
-                  color={theme.colors.textStrong}
-                />
-              </GlassButton>
-            </Pressable>
-          </GlassPanel>
-        </View>
-      </Animated.View>
+        profile={profile}
+        isTop={isTop}
+        isNext={isNext}
+        position={position}
+        rotate={rotate}
+        cardLayoutStyle={cardLayoutStyle}
+        panResponderHandlers={panResponder.panHandlers}
+        profilePhotos={getProfilePhotos(profile)}
+        photoIndex={getPhotoIndex(profile)}
+        roomPreview={roomPreviewByProfileId[profile.id]}
+        badges={getBadges(profile)}
+        situationLabel={getSituationLabel(profile)}
+        budgetLabel={getBudgetBadge(profile)}
+        onGoToPrevPhoto={() => goToPrevPhoto(profile)}
+        onGoToNextPhoto={() => goToNextPhoto(profile)}
+        onViewProfile={() =>
+          navigation.navigate('ProfileDetail', {
+            profile: profile.profile,
+            userId: profile.id,
+          })
+        }
+      />
     );
   };
 
@@ -1167,9 +1212,9 @@ export const SwipeScreen: React.FC = () => {
                 ]}
               >
                 <Ionicons
-                  name={isPremium ? 'star' : 'flash'}
+                  name={isPremium ? 'sparkles' : 'flash'}
                   size={14}
-                  color={isPremium ? '#FFD700' : theme.colors.textStrong}
+                  color={isPremium ? theme.colors.primary : theme.colors.textStrong}
                 />
                 <Text
                   style={[
@@ -1193,6 +1238,19 @@ export const SwipeScreen: React.FC = () => {
           </View>
         </View>
 
+      {false && blockedProvinces.length > 0 && !allProvincesBlocked ? (
+          <View style={styles.blockedProvinceBanner}>
+            <Ionicons
+              name="information-circle-outline"
+              size={20}
+              color={theme.colors.warning}
+            />
+            <Text style={styles.blockedProvinceText}>
+              Algunas de tus zonas aún no tienen suficientes usuarios. Te avisaremos cuando estén disponibles.
+            </Text>
+          </View>
+        ) : null}
+
         <View style={[styles.deckStage, deckHeightStyle]}>
           {loadingProfiles ? (
             <View style={styles.emptyState}>
@@ -1210,6 +1268,21 @@ export const SwipeScreen: React.FC = () => {
               <Text style={styles.emptyTitle}>Perfil oculto</Text>
               <Text style={styles.emptySubtitle}>
                 Activa la visibilidad desde tu perfil para volver a buscar y aparecer en swipes.
+              </Text>
+            </View>
+          ) : allProvincesBlocked ? (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="lock-closed-outline"
+                size={36}
+                color={theme.colors.textLight}
+              />
+              <Text style={styles.emptyTitle}>Zona no disponible aún</Text>
+              <Text style={styles.emptySubtitle}>
+                Todavía no hay suficientes usuarios en tu zona. Te avisaremos cuando hayan más personas interesadas.
+              </Text>
+              <Text style={[styles.emptySubtitle, { marginTop: 12, fontStyle: 'italic' }]}>
+                ¡Gracias por ser de los primeros! 🚀
               </Text>
             </View>
           ) : currentProfile ? (
@@ -1243,7 +1316,7 @@ export const SwipeScreen: React.FC = () => {
               )}
             </View>
           )}
-          {!canSwipe && currentProfile && (
+          {!canSwipe && currentProfile && !isLimitModalVisible && (
             <View style={styles.limitOverlay}>
               <Text style={styles.limitText}>Limite diario alcanzado</Text>
             </View>
@@ -1285,12 +1358,92 @@ export const SwipeScreen: React.FC = () => {
       </View>
 
       <Modal
+        visible={isLimitModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsLimitModalVisible(false)}
+      >
+        <View style={styles.limitModalOverlay}>
+          <View style={styles.limitModalCard}>
+            <LinearGradient
+              colors={['rgba(255, 255, 255, 0.45)', 'rgba(255, 255, 255, 0.1)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={styles.limitModalGlowTop} />
+            <View style={styles.limitModalGlowRight} />
+            <View style={styles.limitModalGlowLeft} />
+            <View style={styles.limitModalGlowBottom} />
+            <View style={styles.limitModalHighlight} />
+            <View style={styles.limitModalShine} />
+
+            <View style={styles.limitModalOrbPrimary} />
+            <View style={styles.limitModalOrbSecondary} />
+            <View style={styles.limitModalOrbAccent} />
+
+            <View style={styles.limitModalIconWrap}>
+              <Ionicons
+                name="heart-dislike"
+                size={28}
+                color={theme.colors.primaryDark}
+              />
+            </View>
+
+            <View style={styles.limitModalContent}>
+              <Text style={styles.limitModalTitle}>No te quedan likes!</Text>
+              <Text style={styles.limitModalSubtitle}>
+                Actualiza a Premium y consigue las siguientes ventajas:
+              </Text>
+              <View style={styles.limitModalList}>
+                <Text style={styles.limitModalListItem}>• Swipes ilimitados</Text>
+                <Text style={styles.limitModalListItem}>
+                  • 10 mensajes directos a la semana
+                </Text>
+                <Text style={styles.limitModalListItem}>• Filtros personalizados</Text>
+                <Text style={styles.limitModalListItem}>• Visibilidad priorizada</Text>
+              </View>
+              <View style={styles.limitModalChips}>
+                <View style={styles.limitModalChip}>
+                  <Text style={styles.limitModalChipText}>2,99€/mes</Text>
+                </View>
+                <View style={styles.limitModalChip}>
+                  <Text style={styles.limitModalChipText}>19,99€/año</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.limitModalActions}>
+              <TouchableOpacity
+                style={[styles.limitModalButton, styles.limitModalButtonPrimary]}
+                onPress={() => {
+                  setIsLimitModalVisible(false);
+                  navigation.navigate('Subscription');
+                }}
+              >
+                <Text style={styles.limitModalButtonTextPrimary}>
+                  Actualizar a Premium
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.limitModalButton, styles.limitModalButtonGhost]}
+                onPress={() => setIsLimitModalVisible(false)}
+              >
+                <Text style={styles.limitModalButtonTextGhost}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={isRequestModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => {
           setIsRequestModalVisible(false);
           setRequestMessage('');
+          setCurrentProfileForRequest(null);
         }}
       >
         <View style={styles.requestModalOverlay}>
@@ -1300,6 +1453,7 @@ export const SwipeScreen: React.FC = () => {
             onPress={() => {
               setIsRequestModalVisible(false);
               setRequestMessage('');
+              setCurrentProfileForRequest(null);
             }}
           />
           <View
@@ -1314,13 +1468,89 @@ export const SwipeScreen: React.FC = () => {
             <Text style={[styles.requestModalTitle, { color: theme.colors.text }]}>
               Enviar mensaje
             </Text>
+            {showRequestTip ? (
+              <View style={styles.requestTipCard}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={16}
+                  color={theme.colors.primary}
+                />
+                <Text style={styles.requestTipText}>
+                  Puedes enviar una solicitud sin match. Si la aceptan, se abre el chat.
+                </Text>
+                <Pressable
+                  style={styles.requestTipButton}
+                  onPress={async () => {
+                    setShowRequestTip(false);
+                    if (currentUserId) {
+                      await AsyncStorage.setItem(
+                        `${MESSAGE_REQUEST_TIP_KEY}:${currentUserId}`,
+                        '1'
+                      );
+                    }
+                  }}
+                >
+                  <Text style={styles.requestTipButtonText}>Entendido</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <View style={styles.requestPreviewRow}>
+              <View style={styles.requestAvatarWrap}>
+                {(() => {
+                  const photoUrl = currentProfileForRequest?.photoUrl || currentProfile?.photoUrl;
+                  return photoUrl ? (
+                    <Image
+                      source={{ uri: photoUrl }}
+                      style={styles.requestAvatar}
+                    />
+                  ) : (
+                    <View style={styles.requestAvatarPlaceholder}>
+                      <Ionicons name="person" size={16} color={theme.colors.textTertiary} />
+                    </View>
+                  );
+                })()}
+              </View>
+              <View style={styles.requestPreviewInfo}>
+                <Text style={[styles.requestPreviewName, { color: theme.colors.text }]}>
+                  {(currentProfileForRequest?.name || currentProfile?.name) ?? 'Usuario'}
+                </Text>
+                <Text
+                  style={[
+                    styles.requestPreviewMeta,
+                    { color: theme.colors.textSecondary },
+                  ]}
+                >
+                  {(currentProfileForRequest?.age || currentProfile?.age) ? `${currentProfileForRequest?.age || currentProfile?.age} años` : 'Perfil verificado'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.requestLimitRow}>
+              <View style={styles.requestLimitChip}>
+                <Ionicons
+                  name={isPremium ? 'sparkles' : 'lock-open-outline'}
+                  size={14}
+                  color={isPremium ? theme.colors.primary : theme.colors.textSecondary}
+                />
+                <Text style={styles.requestLimitText}>
+                  {requestLimitText}
+                </Text>
+              </View>
+              {!isPremium && (
+                <TouchableOpacity
+                  style={styles.requestUpgradeButton}
+                  onPress={() => navigation.navigate('Subscription')}
+                >
+                  <Text style={styles.requestUpgradeText}>Hazte Premium</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <Text
               style={[
                 styles.requestModalSubtitle,
                 { color: theme.colors.textSecondary },
               ]}
             >
-              Tu solicitud se enviara a esta persona.
+              Tu solicitud quedara pendiente hasta que te respondan.
             </Text>
             <TextInput
               value={requestMessage}
@@ -1337,12 +1567,21 @@ export const SwipeScreen: React.FC = () => {
                 },
               ]}
             />
+            <View style={styles.requestCounterRow}>
+              <Text style={styles.requestHintText}>
+                Se sincero y menciona algo que compartan.
+              </Text>
+              <Text style={styles.requestCounterText}>
+                {requestCharCount}/{MAX_REQUEST_CHARS}
+              </Text>
+            </View>
             <View style={styles.requestModalActions}>
               <TouchableOpacity
                 style={[styles.requestModalButton, styles.requestModalCancel]}
                 onPress={() => {
                   setIsRequestModalVisible(false);
                   setRequestMessage('');
+                  setCurrentProfileForRequest(null);
                 }}
                 disabled={isSendingRequest}
               >

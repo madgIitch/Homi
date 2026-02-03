@@ -19,6 +19,12 @@ export const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.lg,
   },
+  stepScroll: {
+    flex: 1,
+  },
+  stepContainer: {
+    flex: 1,
+  },
   roleStepContent: {
     position: 'relative',
   },
@@ -45,6 +51,10 @@ export const styles = StyleSheet.create({
   skipTextButtonLabel: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  fixedFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
   },
   stepProgress: {
     fontSize: 12,
@@ -135,13 +145,45 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
+  lifestyleGroup: {
+    gap: spacing.xs,
+  },
+  lifestyleGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  lifestyleChipContainer: {
+    marginBottom: 0,
+  },
+  lifestyleChip: {
+    borderRadius: borderRadius.s18,
+    backgroundColor: colors.glassSurface,
+    borderColor: colors.glassBorderSoft,
+  },
+  lifestyleChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    flexWrap: 'wrap',
+    flexShrink: 1,
+    minWidth: 0,
+  },
   roleGrid: {
     flexDirection: 'row',
     gap: spacing.s12,
+    width: '100%',
+    maxWidth: 320,
+    alignSelf: 'center',
   },
   roleCenter: {
     flexGrow: 1,
     gap: spacing.s12,
+  },
+  roleContinueButton: {
+    width: '100%',
+    maxWidth: 320,
+    alignSelf: 'center',
   },
   roleCenterFloating: {
     position: 'absolute',
@@ -198,6 +240,9 @@ export const styles = StyleSheet.create({
   },
   roleCardTintActive: {
     backgroundColor: colors.glassOverlay,
+  },
+  roleCardTintPressed: {
+    backgroundColor: colors.glassOverlayStrong,
   },
   roleCardText: {
     fontSize: 14,
@@ -302,5 +347,21 @@ export const styles = StyleSheet.create({
   helperText: {
     fontSize: 12,
     textAlign: 'center',
+  },
+  finishIllustrationWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.md,
+    flexShrink: 1,
+  },
+  finishContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+  },
+  finishIllustration: {
+    width: '100%',
+    maxWidth: 320,
+    aspectRatio: 4 / 3,
+    maxHeight: 160,
   },
 });

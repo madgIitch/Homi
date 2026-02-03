@@ -1,3 +1,20 @@
+# HomiMatch
+
+HomiMatch es una app movil para encontrar companeros de piso. Permite crear perfil, descubrir personas y pisos, hacer match y chatear para coordinar una convivencia.
+
+## Tecnologias
+
+- React Native (CLI) + React
+- TypeScript
+- React Navigation
+- Supabase (Auth, Postgres, Storage, Edge Functions)
+- Firebase Cloud Messaging + Notifee (notificaciones push)
+- Google Sign-In
+- AsyncStorage
+- Herramientas: ESLint, Prettier, Jest
+
+---
+
 This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
 # Getting Started

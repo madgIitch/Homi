@@ -5,6 +5,7 @@ export { styles as FiltersScreenStyles } from './FiltersScreen.styles';
 export { styles as FlatExpensesScreenStyles } from './FlatExpensesScreen.styles';
 export { styles as FlatSettlementScreenStyles } from './FlatSettlementScreen.styles';
 export { styles as ForgotPasswordScreenStyles } from './ForgotPasswordScreen.styles';
+export { styles as GroupMembersScreenStyles } from './GroupMembersScreen.styles';
 export { styles as LoginScreenStyles } from './LoginScreen.styles';
 export { styles as MatchesScreenStyles } from './MatchesScreen.styles';
 export { styles as OnboardingScreenStyles } from './OnboardingScreen.styles';

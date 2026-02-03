@@ -32,6 +32,13 @@ const READABLE_MATCH_STATUSES = [
 
 const BLOCKED_MATCH_STATUSES = ['rejected', 'unmatched'];
 const WEEKLY_LIMIT = 3;
+const PREMIUM_STATUSES = new Set(['active', 'trialing']);
+
+const isActivePeriod = (value?: string | null) => {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
+};
 
 const getWeekStart = (date: Date) => {
   const utcDate = new Date(
@@ -67,14 +74,84 @@ const handler = withAuth(
       return new Response('ok', { headers: corsHeaders });
     }
 
-    if (req.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     try {
+      if (req.method === 'GET') {
+        const { data: senderProfile, error: senderError } = await supabaseClient
+          .from('profiles')
+          .select('id, is_premium')
+          .eq('id', userId)
+          .single();
+
+        if (senderError || !senderProfile) {
+          return new Response(JSON.stringify({ error: 'Perfil no encontrado' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { data: userRow } = await supabaseClient
+          .from('users')
+          .select('is_premium, subscription_status, subscription_current_period_end')
+          .eq('id', userId)
+          .maybeSingle();
+
+        const isPremium =
+          userRow?.is_premium === true ||
+          (userRow?.subscription_status &&
+            PREMIUM_STATUSES.has(userRow.subscription_status) &&
+            isActivePeriod(userRow.subscription_current_period_end)) ||
+          senderProfile.is_premium === true;
+
+        const currentWeekStart = getWeekStart(new Date());
+        const { data: limitRow } = await supabaseClient
+          .from('message_request_limits')
+          .select('weekly_count, week_start, used_trial')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        let weeklyCount = limitRow?.weekly_count ?? 0;
+        const storedWeek = limitRow?.week_start ?? null;
+        const usedTrial = limitRow?.used_trial === true;
+
+        if (storedWeek !== currentWeekStart) {
+          weeklyCount = 0;
+        }
+
+        const limit = isPremium ? WEEKLY_LIMIT : 1;
+        const used = isPremium ? weeklyCount : usedTrial ? 1 : 0;
+        const remaining = Math.max(0, limit - used);
+
+        const response: ApiResponse<{
+          is_premium: boolean;
+          used: number;
+          limit: number;
+          remaining: number;
+          week_start: string;
+          used_trial: boolean;
+        }> = {
+          data: {
+            is_premium: isPremium,
+            used,
+            limit,
+            remaining,
+            week_start: currentWeekStart,
+            used_trial: usedTrial,
+          },
+        };
+
+        return new Response(JSON.stringify(response), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (req.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+          status: 405,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const body = (await req.json()) as RequestBody;
       const validationError = validateRequest(body);
       if (validationError) {
@@ -114,7 +191,18 @@ const handler = withAuth(
         });
       }
 
-      const isPremium = senderProfile.is_premium === true;
+      const { data: userRow } = await supabaseClient
+        .from('users')
+        .select('is_premium, subscription_status, subscription_current_period_end')
+        .eq('id', userId)
+        .maybeSingle();
+
+      const isPremium =
+        userRow?.is_premium === true ||
+        (userRow?.subscription_status &&
+          PREMIUM_STATUSES.has(userRow.subscription_status) &&
+          isActivePeriod(userRow.subscription_current_period_end)) ||
+        senderProfile.is_premium === true;
       const currentWeekStart = getWeekStart(new Date());
       const { data: limitRow } = await supabaseClient
         .from('message_request_limits')

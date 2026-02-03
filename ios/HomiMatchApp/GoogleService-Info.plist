@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>786671462069-lj0vpdavgd7qgn4t6vmdd89alotvs5jm.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyB0udFDRwQeIlYvS3y6IprXKkTcbovC23M</string>
+	<key>GCM_SENDER_ID</key>
+	<string>786671462069</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.homimatchapp</string>
+	<key>PROJECT_ID</key>
+	<string>airy-semiotics-456019-p0</string>
+	<key>STORAGE_BUCKET</key>
+	<string>airy-semiotics-456019-p0.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:786671462069:ios:7b1b082799b544818ec0fc</string>
+</dict>
+</plist>

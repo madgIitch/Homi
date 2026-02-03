@@ -1,29 +1,82 @@
 // src/services/profileService.ts
 
-import { Profile, ProfileCreateRequest } from '../types/profile';
+import type { Profile, ProfileCreateRequest, RoomRecommendation } from '../types/profile';
+import type { SwipeFilters } from '../types/swipeFilters';
 import { API_CONFIG } from '../config/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from './authService';
+
+const devLog = (...args: unknown[]) => {
+  if (__DEV__) {
+    console.log(...args);
+  }
+};
+
+const SWIPE_FILTERS_KEY = 'swipeFilters';
+
+const toFiniteNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const withBudgetFallback = async (
+  updates: Partial<ProfileCreateRequest>
+): Promise<Partial<ProfileCreateRequest>> => {
+  const nextUpdates = { ...updates };
+  const normalizedMin = toFiniteNumber(nextUpdates.budget_min);
+  const normalizedMax = toFiniteNumber(nextUpdates.budget_max);
+
+  if (normalizedMin !== undefined) {
+    nextUpdates.budget_min = normalizedMin;
+  }
+  if (normalizedMax !== undefined) {
+    nextUpdates.budget_max = normalizedMax;
+  }
+
+  const needsMin = nextUpdates.budget_min === undefined;
+  const needsMax = nextUpdates.budget_max === undefined;
+  if (!needsMin && !needsMax) return nextUpdates;
+
+  try {
+    const stored = await AsyncStorage.getItem(SWIPE_FILTERS_KEY);
+    if (!stored) return nextUpdates;
+    const parsed = JSON.parse(stored) as Partial<SwipeFilters>;
+    if (needsMin && typeof parsed?.budgetMin === 'number') {
+      nextUpdates.budget_min = parsed.budgetMin;
+    }
+    if (needsMax && typeof parsed?.budgetMax === 'number') {
+      nextUpdates.budget_max = parsed.budgetMax;
+    }
+  } catch (error) {
+    devLog('[ProfileService.updateProfile] Budget fallback failed:', error);
+  }
+
+  return nextUpdates;
+};
 
 interface ProfileResponse {
   data: Profile;
 }
 
-interface ProfileRecommendation {
-  profile: Profile;
-  compatibility_score: number;
-  match_reasons: string[];
-}
+type ProfileRecommendation = RoomRecommendation;
 
 interface ProfileRecommendationsResponse {
   recommendations: ProfileRecommendation[];
+  blocked_provinces?: string[];
+  all_provinces_blocked?: boolean;
 }
 
 class ProfileService {
   private async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem('authToken');
-    console.log('[ProfileService.getAuthHeaders] Token exists:', !!token);
-    console.log(
+    devLog('[ProfileService.getAuthHeaders] Token exists:', !!token);
+    devLog(
       '[ProfileService.getAuthHeaders] Token first 20 chars:',
       token?.substring(0, 20)
     );
@@ -35,7 +88,7 @@ class ProfileService {
   }
 
   async getProfile(): Promise<Profile | null> {
-    console.log('[ProfileService.getProfile] Fetching profile...');
+    devLog('[ProfileService.getProfile] Fetching profile...');
     let headers = await this.getAuthHeaders();
 
     let response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
@@ -43,16 +96,16 @@ class ProfileService {
       headers,
     });
 
-    console.log('[ProfileService.getProfile] Initial response:', {
+    devLog('[ProfileService.getProfile] Initial response:', {
       status: response.status,
       ok: response.ok,
     });
 
     // Si el token expiró (401), intenta refresh
     if (response.status === 401) {
-      console.log('[ProfileService.getProfile] 401 received. Attempting token refresh...');
+      devLog('[ProfileService.getProfile] 401 received. Attempting token refresh...');
       const newToken = await authService.refreshToken();
-      console.log(
+      devLog(
         '[ProfileService.getProfile] Refresh result:',
         newToken ? 'success' : 'failed'
       );
@@ -63,7 +116,7 @@ class ProfileService {
           method: 'GET',
           headers,
         });
-        console.log('[ProfileService.getProfile] Retried response:', {
+        devLog('[ProfileService.getProfile] Retried response:', {
           status: response.status,
           ok: response.ok,
         });
@@ -72,7 +125,7 @@ class ProfileService {
 
     if (!response.ok) {
       if (response.status === 404) {
-        console.log('[ProfileService.getProfile] Perfil no encontrado (404)');
+        devLog('[ProfileService.getProfile] Perfil no encontrado (404)');
         return null;
       }
       console.error(
@@ -83,11 +136,13 @@ class ProfileService {
     }
 
     const data: ProfileResponse = await response.json();
-    console.log('[ProfileService.getProfile] Perfil cargado correctamente');
+    devLog('[ProfileService.getProfile] Perfil cargado correctamente');
     return data.data;
   }
 
-  async getProfileRecommendations(filters?: unknown): Promise<ProfileRecommendation[]> {
+  async getProfileRecommendations(
+    filters?: unknown
+  ): Promise<ProfileRecommendationsResponse> {
     let headers = await this.getAuthHeaders();
 
     const tryFetch = async (url: string) =>
@@ -98,13 +153,13 @@ class ProfileService {
       });
 
     const recommendationsUrl = `${API_CONFIG.FUNCTIONS_URL}/profiles-recommendations`;
-    console.log(
+    devLog(
       '[ProfileService.getProfileRecommendations] url:',
       recommendationsUrl
     );
 
     let response = await tryFetch(recommendationsUrl);
-    console.log(
+    devLog(
       '[ProfileService.getProfileRecommendations] response:',
       response.status,
       response.ok
@@ -115,7 +170,7 @@ class ProfileService {
       if (newToken) {
         headers = await this.getAuthHeaders();
         response = await tryFetch(recommendationsUrl);
-        console.log(
+        devLog(
           '[ProfileService.getProfileRecommendations] retry:',
           response.status,
           response.ok
@@ -126,7 +181,7 @@ class ProfileService {
     if (!response.ok) {
       try {
         const error = await response.json();
-        console.log(
+        devLog(
           '[ProfileService.getProfileRecommendations] primary error body:',
           error
         );
@@ -135,7 +190,7 @@ class ProfileService {
       }
 
       if (response.status === 404) {
-        console.log(
+        devLog(
           '[ProfileService.getProfileRecommendations] not found:',
           recommendationsUrl
         );
@@ -147,7 +202,7 @@ class ProfileService {
       try {
         const error = await response.json();
         errorDetail = error?.error || errorDetail;
-        console.log(
+        devLog(
           '[ProfileService.getProfileRecommendations] final error body:',
           error
         );
@@ -158,15 +213,15 @@ class ProfileService {
     }
 
     const data: ProfileRecommendationsResponse = await response.json();
-    console.log(
+    devLog(
       '[ProfileService.getProfileRecommendations] ok count:',
       data.recommendations?.length ?? 0
     );
-    return data.recommendations ?? [];
+    return data;
   }
 
   async createProfile(profileData: ProfileCreateRequest): Promise<Profile> {
-    console.log('[ProfileService.createProfile] Creating profile...');
+    devLog('[ProfileService.createProfile] Creating profile...');
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
@@ -175,7 +230,7 @@ class ProfileService {
       body: JSON.stringify(profileData),
     });
 
-    console.log('[ProfileService.createProfile] Response:', {
+    devLog('[ProfileService.createProfile] Response:', {
       status: response.status,
       ok: response.ok,
     });
@@ -194,16 +249,17 @@ class ProfileService {
   }
 
   async updateProfile(updates: Partial<ProfileCreateRequest>): Promise<Profile> {
-    console.log('[ProfileService.updateProfile] Updating profile...');
+    devLog('[ProfileService.updateProfile] Updating profile...');
     const headers = await this.getAuthHeaders();
+    const payload = await withBudgetFallback(updates);
 
     const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify(updates),
+      body: JSON.stringify(payload),
     });
 
-    console.log('[ProfileService.updateProfile] Response:', {
+    devLog('[ProfileService.updateProfile] Response:', {
       status: response.status,
       ok: response.ok,
     });
@@ -220,7 +276,7 @@ class ProfileService {
   }
 
   async deleteProfile(): Promise<void> {
-    console.log('[ProfileService.deleteProfile] Deleting profile...');
+    devLog('[ProfileService.deleteProfile] Deleting profile...');
     const headers = await this.getAuthHeaders();
 
     const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/profiles`, {
@@ -228,7 +284,7 @@ class ProfileService {
       headers,
     });
 
-    console.log('[ProfileService.deleteProfile] Response:', {
+    devLog('[ProfileService.deleteProfile] Response:', {
       status: response.status,
       ok: response.ok,
     });
@@ -250,6 +306,33 @@ class ProfileService {
     } else {
       return this.createProfile(profileData);
     }
+  }
+
+  async completeOnboarding(): Promise<Profile> {
+    devLog('[ProfileService.completeOnboarding] Completing onboarding...');
+    const headers = await this.getAuthHeaders();
+
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/profiles?action=complete-onboarding`,
+      {
+        method: 'POST',
+        headers,
+      }
+    );
+
+    devLog('[ProfileService.completeOnboarding] Response:', {
+      status: response.status,
+      ok: response.ok,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('[ProfileService.completeOnboarding] Error:', error);
+      throw new Error(error.error || 'Error al completar el onboarding');
+    }
+
+    const data: ProfileResponse = await response.json();
+    return data.data;
   }
 }
 

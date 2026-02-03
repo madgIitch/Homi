@@ -264,5 +264,24 @@ export const styles = (theme: Theme) => {
     fontSize: 14,
     color: colors.textSecondary,
   },
+  inputContainer: {
+    gap: spacing.xs,
+  },
+  recommendationText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  recommendationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  badgeText: {
+    fontSize: 12,
+    color: colors.primary,
+    marginLeft: 4,
+  },
   });
 };

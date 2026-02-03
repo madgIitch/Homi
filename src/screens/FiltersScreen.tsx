@@ -5,9 +5,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -19,12 +17,13 @@ import { BlurView } from '@react-native-community/blur';
 import LinearGradient from 'react-native-linear-gradient';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Button } from '../components/Button';
-import { ChipGroup } from '../components/ChipGroup';
+import { BudgetRangeSlider } from '../components/BudgetRangeSlider';
 import { FormSection } from '../components/FormSection';
+import { LocationSelector } from '../components/LocationSelector';
+import { RoommatesRangeSlider } from '../components/RoommatesRangeSlider';
 import {
   BUDGET_MAX,
   BUDGET_MIN,
-  BUDGET_STEP,
   DEFAULT_BUDGET_MAX,
   DEFAULT_BUDGET_MIN,
   DEFAULT_ROOMMATES_MAX,
@@ -37,18 +36,18 @@ import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import { usePremium } from '../context/PremiumContext';
 import type { HousingFilter, SwipeFilters } from '../types/swipeFilters';
 import type { GenderFilter } from '../types/gender';
-import type { HousingSituation, ProfileCreateRequest } from '../types/profile';
+import type { ProfileCreateRequest, AppearanceMode } from '../types/profile';
 import { profileService } from '../services/profileService';
 import { locationService } from '../services/locationService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FiltersScreenStyles } from '../styles/screens';
+import { getAppearanceMode } from '../utils/appearanceMode';
 
 type FiltersScreenStylesType = ReturnType<typeof FiltersScreenStyles>;
 
 const HOUSING_OPTIONS: { id: HousingFilter; label: string }[] = [
-  { id: 'any', label: 'Indiferente' },
-  { id: 'seeking', label: 'Busco piso' },
-  { id: 'offering', label: 'Busco compañeros' },
+  { id: 'any', label: 'Ambos' },
+  { id: 'seeking', label: 'Buscando piso' },
+  { id: 'offering', label: 'Con piso' },
 ];
 
 const GENDER_OPTIONS: { id: GenderFilter; label: string }[] = [
@@ -62,22 +61,14 @@ const AGE_MAX = 65;
 const AGE_STEP = 1;
 const DEFAULT_AGE_MIN = 18;
 const DEFAULT_AGE_MAX = 45;
-const ROOMMATES_STEP = 1;
-const RECENT_PLACES_KEY = 'recent_places_by_city';
 
 type LocationOption = { id: string; label: string };
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
-const snapToStep = (value: number) =>
-  Math.round(value / BUDGET_STEP) * BUDGET_STEP;
-
 const snapToAgeStep = (value: number) =>
   Math.round(value / AGE_STEP) * AGE_STEP;
-
-const snapToRoommatesStep = (value: number) =>
-  Math.round(value / ROOMMATES_STEP) * ROOMMATES_STEP;
 
 export const FiltersScreen: React.FC = () => {
   const navigation = useNavigation<StackNavigationProp<any>>();
@@ -85,12 +76,10 @@ export const FiltersScreen: React.FC = () => {
   const styles = useMemo(() => FiltersScreenStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
   const { filters, setFilters } = useSwipeFilters();
-  const { isPremium, setPremium } = usePremium();
+  const { isPremium } = usePremium();
   const [draft, setDraft] = useState<SwipeFilters>(filters);
-  const [profileHousing, setProfileHousing] = useState<HousingSituation | null>(
-    null
-  );
-  const [ownerIsSeeking, setOwnerIsSeeking] = useState(false);
+  const [appearanceMode, setAppearanceMode] =
+    useState<AppearanceMode>('seeker-only');
   const [isDraggingBudget, setIsDraggingBudget] = useState(false);
   const [isDraggingAge, setIsDraggingAge] = useState(false);
   const [isDraggingRoommates, setIsDraggingRoommates] = useState(false);
@@ -102,27 +91,11 @@ export const FiltersScreen: React.FC = () => {
   const [roommatesMax, setRoommatesMax] = useState(
     draft.roommatesMax ?? DEFAULT_ROOMMATES_MAX
   );
-  const [cityQuery, setCityQuery] = useState('');
-  const [cities, setCities] = useState<LocationOption[]>([]);
-  const [isLoadingCities, setIsLoadingCities] = useState(false);
   const [selectedCities, setSelectedCities] = useState<LocationOption[]>([]);
-  const [activeCityId, setActiveCityId] = useState<string | null>(null);
-  const [placeQuery, setPlaceQuery] = useState('');
-  const [places, setPlaces] = useState<LocationOption[]>([]);
-  const [topPlaces, setTopPlaces] = useState<LocationOption[]>([]);
-  const [recentPlaces, setRecentPlaces] = useState<LocationOption[]>([]);
-  const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+  const [selectedZoneOptions, setSelectedZoneOptions] = useState<LocationOption[]>([]);
   const [zoneCityById, setZoneCityById] = useState<Record<string, string>>({});
-  const cityOptions = useMemo(() => {
-    const options = [...cities];
-    selectedCities.forEach((city) => {
-      if (!options.some((item) => item.id === city.id)) {
-        options.unshift(city);
-      }
-    });
-    return options;
-  }, [cities, selectedCities]);
-  const isOwner = profileHousing === 'offering';
+  const [isLifestyleCollapsed, setIsLifestyleCollapsed] = useState(true);
+  const isOwner = appearanceMode !== 'seeker-only';
 
   useEffect(() => {
     setDraft(filters);
@@ -134,20 +107,31 @@ export const FiltersScreen: React.FC = () => {
 
   useEffect(() => {
     if (!isOwner) return;
+    const nextHousing = appearanceMode === 'both' ? 'any' : 'seeking';
     setDraft((prev) => ({
       ...prev,
-      housingSituation: ownerIsSeeking ? 'any' : 'seeking',
+      housingSituation: nextHousing,
     }));
-  }, [isOwner, ownerIsSeeking]);
+  }, [appearanceMode, isOwner]);
 
   useEffect(() => {
     let isMounted = true;
     const loadProfile = async () => {
       try {
         const profile = await profileService.getProfile();
-        if (isMounted) {
-          setProfileHousing(profile?.housing_situation ?? null);
-          setOwnerIsSeeking(profile?.is_seeking === true);
+        if (isMounted && profile) {
+          setAppearanceMode(
+            getAppearanceMode(profile.housing_situation, profile.is_seeking)
+          );
+
+          // Load preferred_zones from profile if filters don't have zones yet
+          const savedZones = profile.preferred_zones ?? [];
+          if (savedZones.length > 0 && draft.zones.length === 0) {
+            setDraft((prev) => ({
+              ...prev,
+              zones: savedZones,
+            }));
+          }
         }
       } catch (error) {
         console.error('[FiltersScreen] Error cargando perfil:', error);
@@ -160,246 +144,81 @@ export const FiltersScreen: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [draft.zones.length]);
 
+  // Cargar ciudades y zonas seleccionadas desde draft al montar
   useEffect(() => {
     let isActive = true;
-    const query = cityQuery.trim();
-
-    if (query.length < 2) {
-      setCities([]);
-      setIsLoadingCities(false);
-      return;
-    }
-
-    setIsLoadingCities(true);
-    const handle = setTimeout(async () => {
-      try {
-        const data = await locationService.getCities({ query });
-        if (!isActive) return;
-        setCities(
-          data.map((city) => ({
-            id: city.id,
-            label: city.name,
-          }))
-        );
-      } catch (error) {
-        console.error('[FiltersScreen] Error cargando ciudades:', error);
-        if (isActive) setCities([]);
-      } finally {
-        if (isActive) setIsLoadingCities(false);
-      }
-    }, 300);
-
-    return () => {
-      isActive = false;
-      clearTimeout(handle);
-    };
-  }, [cityQuery]);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadRecentPlaces = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(RECENT_PLACES_KEY);
-        const parsed = stored ? JSON.parse(stored) : {};
-        const items = parsed?.[activeCityId ?? ''] ?? [];
-        if (isActive) setRecentPlaces(items);
-      } catch (error) {
-        console.warn('[FiltersScreen] Error cargando recientes:', error);
-        if (isActive) setRecentPlaces([]);
-      }
-    };
-
-    if (activeCityId) {
-      loadRecentPlaces().catch((error) => {
-        console.warn('[FiltersScreen] Error cargando recientes:', error);
-      });
-    } else {
-      setRecentPlaces([]);
-    }
-
-    return () => {
-      isActive = false;
-    };
-  }, [activeCityId]);
-
-
-  useEffect(() => {
-    let isActive = true;
-    const loadSelectedCities = async () => {
-      if (!draft.cities || draft.cities.length === 0) {
+    const loadInitialLocations = async () => {
+      if (draft.cities.length === 0) {
         setSelectedCities([]);
-        setActiveCityId(null);
         return;
       }
 
       try {
+        // Cargar ciudades
         const citiesData = await Promise.all(
           draft.cities.map((id) => locationService.getCityById(id))
         );
         if (!isActive) return;
-        const resolved = citiesData
+        const resolvedCities = citiesData
           .filter((item): item is NonNullable<typeof item> => Boolean(item))
           .map((item) => ({ id: item.id, label: item.name }));
-        setSelectedCities(resolved);
-        if (!activeCityId || !draft.cities.includes(activeCityId)) {
-          setActiveCityId(draft.cities[0] ?? null);
+        setSelectedCities(resolvedCities);
+
+        // Cargar zonas y sus ciudades
+        if (draft.zones.length > 0) {
+          const missing = draft.zones.filter((zoneId) => !zoneCityById[zoneId]);
+          if (missing.length > 0) {
+            const entries = await Promise.all(
+              missing.map(async (zoneId) => {
+                const place = await locationService.getPlaceById(zoneId);
+                return place
+                  ? { zoneId, cityId: place.city_id, label: place.name }
+                  : null;
+              })
+            );
+            if (!isActive) return;
+
+            const nextZoneCityMap = { ...zoneCityById };
+            const nextZoneOptions: LocationOption[] = [];
+            entries.forEach((entry) => {
+              if (entry) {
+                nextZoneCityMap[entry.zoneId] = entry.cityId;
+                nextZoneOptions.push({ id: entry.zoneId, label: entry.label });
+              }
+            });
+            setZoneCityById(nextZoneCityMap);
+            setSelectedZoneOptions(nextZoneOptions);
+          }
         }
       } catch (error) {
-        console.warn('[FiltersScreen] Error cargando ciudades:', error);
+        console.warn('[FiltersScreen] Error loading initial locations:', error);
       }
     };
 
-    loadSelectedCities().catch((error) => {
-      console.warn('[FiltersScreen] Error cargando ciudades:', error);
-    });
+    loadInitialLocations();
     return () => {
       isActive = false;
     };
-  }, [activeCityId, draft.cities]);
+  }, []); // Solo al montar
 
   useEffect(() => {
-    let isActive = true;
-    const loadZoneCities = async () => {
-      const missing = draft.zones.filter((zoneId) => !zoneCityById[zoneId]);
-      if (missing.length === 0) return;
-      try {
-        const entries = await Promise.all(
-          missing.map(async (zoneId) => {
-            const place = await locationService.getPlaceById(zoneId);
-            return place?.city_id ? [zoneId, place.city_id] : null;
-          })
-        );
-        if (!isActive) return;
-        const next: Record<string, string> = {};
-        entries.forEach((entry) => {
-          if (!entry) return;
-          const [zoneId, cityId] = entry;
-          next[zoneId] = cityId;
-        });
-        if (Object.keys(next).length > 0) {
-          setZoneCityById((prev) => ({ ...prev, ...next }));
-        }
-      } catch (error) {
-        console.warn('[FiltersScreen] Error cargando zonas:', error);
-      }
-    };
-
-    loadZoneCities().catch((error) => {
-      console.warn('[FiltersScreen] Error cargando zonas:', error);
-    });
-    return () => {
-      isActive = false;
-    };
-  }, [draft.zones, zoneCityById]);
-
-  const handleToggleZone = async (id: string, label: string, cityId: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      zones: prev.zones.includes(id)
-        ? prev.zones.filter((zona) => zona !== id)
-        : [...prev.zones, id],
-    }));
-
-    if (!cityId) return;
-
-    setZoneCityById((prev) => ({
-      ...prev,
-      [id]: cityId,
-    }));
-
-    try {
-      const stored = await AsyncStorage.getItem(RECENT_PLACES_KEY);
-      const parsed = stored ? JSON.parse(stored) : {};
-      const current = parsed[cityId] ?? [];
-      const next = [
-        { id, label },
-        ...current.filter((item: LocationOption) => item.id !== id),
-      ].slice(0, 8);
-      const nextAll = { ...parsed, [cityId]: next };
-      await AsyncStorage.setItem(RECENT_PLACES_KEY, JSON.stringify(nextAll));
-      setRecentPlaces(next);
-    } catch (error) {
-      console.warn('[FiltersScreen] Error guardando recientes:', error);
-    }
-  };
-
-  useEffect(() => {
-    let isActive = true;
-    const query = placeQuery.trim();
-
-    if (!activeCityId) {
-      setPlaces([]);
-      setTopPlaces([]);
-      setIsLoadingPlaces(false);
+    if (!isOwner) return;
+    if (appearanceMode === 'owner-only' && draft.housingSituation !== 'seeking') {
+      setDraft((prev) => ({
+        ...prev,
+        housingSituation: 'seeking',
+      }));
       return;
     }
-
-    setIsLoadingPlaces(true);
-    const handle = setTimeout(async () => {
-      try {
-        if (query.length >= 2) {
-          const data = await locationService.getPlaces(activeCityId, {
-            query,
-            limit: 50,
-          });
-          if (!isActive) return;
-          setPlaces(
-            data.map((place) => ({
-              id: place.id,
-              label: place.name,
-            }))
-          );
-        } else {
-          const data = await locationService.getPlaces(activeCityId, {
-            top: true,
-            limit: 20,
-          });
-          if (!isActive) return;
-          setTopPlaces(
-            data.map((place) => ({
-              id: place.id,
-              label: place.name,
-            }))
-          );
-          setPlaces([]);
-        }
-      } catch (error) {
-        console.error('[FiltersScreen] Error cargando zonas:', error);
-        if (isActive) {
-          setPlaces([]);
-          setTopPlaces([]);
-        }
-      } finally {
-        if (isActive) setIsLoadingPlaces(false);
-      }
-    }, 300);
-
-    return () => {
-      isActive = false;
-      clearTimeout(handle);
-    };
-  }, [placeQuery, activeCityId]);
-
-  useEffect(() => {
-    if (profileHousing === 'offering' && draft.housingSituation === 'offering') {
+    if (appearanceMode === 'both' && draft.housingSituation === 'offering') {
       setDraft((prev) => ({
         ...prev,
         housingSituation: 'any',
       }));
     }
-  }, [draft.housingSituation, profileHousing]);
-
-  useEffect(() => {
-    if (isOwner && ownerIsSeeking === false && draft.housingSituation === 'any') {
-      setDraft((prev) => ({
-        ...prev,
-        housingSituation: 'seeking',
-      }));
-    }
-  }, [draft.housingSituation, isOwner, ownerIsSeeking]);
+  }, [appearanceMode, draft.housingSituation, isOwner]);
 
   const handleApply = async () => {
     let budgetMin = clamp(draft.budgetMin, BUDGET_MIN, BUDGET_MAX);
@@ -436,17 +255,13 @@ export const FiltersScreen: React.FC = () => {
       ageMax: finalAgeMax,
     });
 
-    const shouldSyncPreferredZones =
-      profileHousing === 'seeking' || ownerIsSeeking;
+    const shouldSyncPreferredZones = appearanceMode !== 'owner-only';
     if (shouldSyncPreferredZones || isOwner) {
       const profileUpdates: Partial<ProfileCreateRequest> = {};
       if (shouldSyncPreferredZones) {
         profileUpdates.preferred_zones = draft.zones;
         profileUpdates.desired_roommates_min = finalRoommatesMin;
         profileUpdates.desired_roommates_max = finalRoommatesMax;
-      }
-      if (isOwner) {
-        profileUpdates.is_seeking = ownerIsSeeking;
       }
       if (Object.keys(profileUpdates).length > 0) {
         try {
@@ -485,7 +300,7 @@ export const FiltersScreen: React.FC = () => {
 
   const handleResetDraft = () => {
     const defaultHousing =
-      isOwner && ownerIsSeeking ? 'any' : isOwner ? 'seeking' : 'any';
+      isOwner && appearanceMode === 'both' ? 'any' : isOwner ? 'seeking' : 'any';
     setDraft({
       housingSituation: defaultHousing,
       gender: 'any',
@@ -502,14 +317,21 @@ export const FiltersScreen: React.FC = () => {
       ageMax: DEFAULT_AGE_MAX,
     });
     setSelectedCities([]);
-    setActiveCityId(null);
+    setSelectedZoneOptions([]);
     setZoneCityById({});
-    setRecentPlaces([]);
     setAgeMin(DEFAULT_AGE_MIN);
     setAgeMax(DEFAULT_AGE_MAX);
     setRoommatesMin(DEFAULT_ROOMMATES_MIN);
     setRoommatesMax(DEFAULT_ROOMMATES_MAX);
   };
+
+  const availableHousingOptions = useMemo(() => {
+    if (!isOwner) return HOUSING_OPTIONS;
+    if (appearanceMode === 'owner-only') {
+      return HOUSING_OPTIONS.filter((option) => option.id === 'seeking');
+    }
+    return HOUSING_OPTIONS;
+  }, [appearanceMode, isOwner]);
 
   const housingLabel = useMemo(
     () =>
@@ -551,7 +373,7 @@ export const FiltersScreen: React.FC = () => {
       'Este filtro solo esta disponible para usuarios Premium. ?Quieres hacerte Premium?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Hacerme Premium', onPress: () => setPremium(true) },
+        { text: 'Hacerme Premium', onPress: () => navigation.navigate('Subscription') },
       ]
     );
   };
@@ -618,9 +440,9 @@ export const FiltersScreen: React.FC = () => {
         >
           <View style={styles.premiumBannerContent}>
             <Ionicons
-              name={isPremium ? 'star' : 'star-outline'}
+              name={isPremium ? 'sparkles' : 'sparkles-outline'}
               size={20}
-              color={isPremium ? '#FFD700' : '#6B7280'}
+              color={isPremium ? theme.colors.primary : '#6B7280'}
             />
             <Text
               style={[
@@ -635,166 +457,38 @@ export const FiltersScreen: React.FC = () => {
           </View>
           <TouchableOpacity
             style={[styles.premiumButton, isPremium && styles.premiumButtonActive]}
-            onPress={() => setPremium(!isPremium)}
+            onPress={() => navigation.navigate('Subscription')}
           >
             <Text style={styles.premiumButtonText}>
-              {isPremium ? 'Dejar Premium' : 'Ser Premium'}
+              {isPremium ? 'Gestionar Premium' : 'Ser Premium'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        <FormSection title="Ciudad" iconName="location-outline">
-          <TextInput
-            value={cityQuery}
-            onChangeText={setCityQuery}
-            placeholder="Buscar ciudad"
-            placeholderTextColor={theme.colors.textSecondary}
-            selectionColor={theme.colors.primary}
-            style={styles.searchInput}
-          />
-          {cityQuery.trim().length < 2 ? (
-            <Text style={styles.searchHint}>Escribe al menos 2 letras</Text>
-          ) : null}
-          {isLoadingCities ? (
-            <Text style={styles.searchHint}>Cargando ciudades...</Text>
-          ) : null}
-          <ChipGroup
-            label="Selecciona ciudad"
-            options={cityOptions}
-            selectedIds={draft.cities}
-            onSelect={(id) => {
-              const isSelected = draft.cities.includes(id);
-              const nextCities = isSelected
-                ? draft.cities.filter((cityId) => cityId !== id)
-                : [...draft.cities, id];
-              const nextZones = isSelected
-                ? draft.zones.filter((zoneId) => zoneCityById[zoneId] !== id)
-                : draft.zones;
-              setDraft((prev) => ({
-                ...prev,
-                cities: nextCities,
-                zones: nextZones,
-              }));
-              const selected = cityOptions.find((item) => item.id === id) || null;
-              if (selected) {
-                setSelectedCities((prev) => {
-                  if (prev.some((item) => item.id === selected.id)) return prev;
-                  return [...prev, selected];
-                });
-              } else {
-                setSelectedCities((prev) => prev.filter((item) => item.id !== id));
-              }
-              if (!isSelected) {
-                setActiveCityId(id);
-              } else if (activeCityId === id) {
-                setActiveCityId(nextCities[0] ?? null);
-              }
-              setCityQuery('');
-              setPlaceQuery('');
-              setPlaces([]);
-              setTopPlaces([]);
-            }}
-            multiline
-          />
-        </FormSection>
-
-        {draft.cities.length > 0 ? (
-          <FormSection title="Zonas" iconName="map-outline">
-            <Text style={styles.inlineLabel}>Ciudad para buscar zonas</Text>
-            <ChipGroup
-              options={selectedCities}
-              selectedIds={activeCityId ? [activeCityId] : []}
-              onSelect={(id) => {
-                setActiveCityId((prev) => (prev === id ? prev : id));
-                setPlaceQuery('');
-                setPlaces([]);
-                setTopPlaces([]);
-              }}
-              multiline
-            />
-              <TextInput
-                value={placeQuery}
-                onChangeText={setPlaceQuery}
-                placeholder="Buscar zona"
-                placeholderTextColor={theme.colors.textSecondary}
-                selectionColor={theme.colors.primary}
-                style={styles.searchInput}
-              />
-            {placeQuery.trim().length < 2 ? (
-              <>
-                {isLoadingPlaces ? (
-                  <Text style={styles.searchHint}>Cargando zonas...</Text>
-                ) : null}
-                {recentPlaces.length > 0 ? (
-                  <>
-                    <Text style={styles.inlineLabel}>Recientes</Text>
-                    <ChipGroup
-                      options={recentPlaces}
-                      selectedIds={draft.zones}
-                      onSelect={(id) => {
-                        const label =
-                          recentPlaces.find((item) => item.id === id)?.label ?? '';
-                        if (activeCityId) {
-                          handleToggleZone(id, label, activeCityId).catch(
-                            (error) => {
-                              console.warn(
-                                '[FiltersScreen] Error toggling zona:',
-                                error
-                              );
-                            }
-                          );
-                        }
-                      }}
-                      multiline
-                    />
-                  </>
-                ) : null}
-                <Text style={styles.inlineLabel}>Sugerencias</Text>
-                <ChipGroup
-                  options={topPlaces}
-                  selectedIds={draft.zones}
-                  onSelect={(id) => {
-                    const label =
-                      topPlaces.find((item) => item.id === id)?.label ?? '';
-                    if (activeCityId) {
-                      handleToggleZone(id, label, activeCityId).catch((error) => {
-                        console.warn(
-                          '[FiltersScreen] Error toggling zona:',
-                          error
-                        );
-                      });
-                    }
-                  }}
-                  multiline
-                />
-              </>
-            ) : (
-              <>
-                {isLoadingPlaces ? (
-                  <Text style={styles.searchHint}>Cargando resultados...</Text>
-                ) : null}
-                <ChipGroup
-                  label="Resultados"
-                  options={places}
-                  selectedIds={draft.zones}
-                  onSelect={(id) => {
-                    const label =
-                      places.find((item) => item.id === id)?.label ?? '';
-                    if (activeCityId) {
-                      handleToggleZone(id, label, activeCityId).catch((error) => {
-                        console.warn(
-                          '[FiltersScreen] Error toggling zona:',
-                          error
-                        );
-                      });
-                    }
-                  }}
-                  multiline
-                />
-              </>
-            )}
-          </FormSection>
-        ) : null}
+        <LocationSelector
+          selectedCities={selectedCities}
+          onCitiesChange={(cities) => {
+            setSelectedCities(cities);
+            setDraft((prev) => ({
+              ...prev,
+              cities: cities.map((c) => c.id),
+            }));
+          }}
+          selectedZones={draft.zones}
+          onZonesChange={(zones) => {
+            setDraft((prev) => ({
+              ...prev,
+              zones,
+            }));
+          }}
+          zoneCityById={zoneCityById}
+          onZoneCityMapChange={setZoneCityById}
+          selectedZoneOptions={selectedZoneOptions}
+          onSelectedZoneOptionsChange={setSelectedZoneOptions}
+          showCities
+          showZones
+          recentZonesStorageKey="@filtersScreen_recentZones"
+        />
 
         <TouchableOpacity
           activeOpacity={isPremium ? 1 : 0.7}
@@ -807,10 +501,10 @@ export const FiltersScreen: React.FC = () => {
                 <Text style={styles.lockText}>Premium</Text>
               </View>
             )}
-            <FormSection title="Situacion vivienda" iconName="home-outline">
-              <Text style={styles.label}>Actual: {housingLabel}</Text>
+            <FormSection title="Mostrar personas que" iconName="home-outline">
+              <Text style={styles.label}>Ver perfiles: {housingLabel}</Text>
               <View style={styles.segmentRow} pointerEvents={isPremium ? 'auto' : 'none'}>
-                {HOUSING_OPTIONS.map((option) => {
+                {availableHousingOptions.map((option) => {
                   const isActive = draft.housingSituation === option.id;
                   return (
                     <TouchableOpacity
@@ -825,12 +519,6 @@ export const FiltersScreen: React.FC = () => {
                           ...prev,
                           housingSituation: option.id,
                         }));
-                        if (
-                          isOwner &&
-                          (option.id === 'any' || option.id === 'seeking')
-                        ) {
-                          setOwnerIsSeeking(option.id === 'any');
-                        }
                       }}
                       disabled={!isPremium}
                     >
@@ -849,38 +537,6 @@ export const FiltersScreen: React.FC = () => {
             </FormSection>
           </View>
         </TouchableOpacity>
-        {isOwner ? (
-          <FormSection title="Busqueda del owner" iconName="home-outline">
-            <View style={styles.toggleRow}>
-              <View style={styles.toggleCopy}>
-                <Text style={styles.toggleLabel}>Tambien busco piso</Text>
-                <Text style={styles.toggleHint}>
-                  Activa esto si también quieres aparecer a otros dueños de pisos.
-                </Text>
-              </View>
-              <Switch
-                value={ownerIsSeeking}
-                onValueChange={(value) => {
-                  setOwnerIsSeeking(value);
-                  setDraft((prev) => ({
-                    ...prev,
-                    housingSituation: value ? 'any' : 'seeking',
-                  }));
-                }}
-                trackColor={{
-                  false: theme.colors.glassBorderSoft,
-                  true: theme.colors.primaryMuted,
-                }}
-                thumbColor={
-                  ownerIsSeeking
-                    ? theme.colors.primary
-                    : theme.colors.textTertiary
-                }
-                ios_backgroundColor={theme.colors.glassBorderSoft}
-              />
-            </View>
-          </FormSection>
-        ) : null}
 
         <TouchableOpacity
           activeOpacity={isPremium ? 1 : 0.7}
@@ -980,7 +636,7 @@ export const FiltersScreen: React.FC = () => {
                 <Text style={styles.budgetValue}>Max: {draft.budgetMax} EUR</Text>
               </View>
               <View pointerEvents={isPremium ? 'auto' : 'none'}>
-                <BudgetRange
+                <BudgetRangeSlider
                   styles={styles}
                   minValue={draft.budgetMin}
                   maxValue={draft.budgetMax}
@@ -991,6 +647,12 @@ export const FiltersScreen: React.FC = () => {
                   onChangeMax={(value) =>
                     setDraft((prev) => ({ ...prev, budgetMax: value }))
                   }
+                  showTicks
+                  labels={[
+                    `${BUDGET_MIN}`,
+                    `${Math.round((BUDGET_MIN + BUDGET_MAX) / 2)}`,
+                    `${BUDGET_MAX}+`,
+                  ]}
                 />
               </View>
             </FormSection>
@@ -1015,13 +677,19 @@ export const FiltersScreen: React.FC = () => {
                   <Text style={styles.budgetValue}>Max: {roommatesMax}</Text>
                 </View>
                 <View pointerEvents={isPremium ? 'auto' : 'none'}>
-                  <RoommatesRange
+                  <RoommatesRangeSlider
                     styles={styles}
                     minValue={roommatesMin}
                     maxValue={roommatesMax}
                     onDragStateChange={setIsDraggingRoommates}
                     onChangeMin={setRoommatesMin}
                     onChangeMax={setRoommatesMax}
+                    showTicks
+                    labels={[
+                      `${ROOMMATES_MIN}`,
+                      `${Math.round((ROOMMATES_MIN + ROOMMATES_MAX) / 2)}`,
+                      `${ROOMMATES_MAX}+`,
+                    ]}
                   />
                 </View>
               </FormSection>
@@ -1030,61 +698,78 @@ export const FiltersScreen: React.FC = () => {
         ) : null}
 
         {showLifestyleFilters ? (
-          <FormSection title="Estilo de vida" iconName="sparkles-outline">
-            {ESTILO_VIDA_GROUPS.map((group) => (
-              <View key={group.id}>
-                <Text style={styles.inlineLabel}>{group.label}</Text>
-                <View style={styles.checkGrid}>
-                  {group.options.map((option) => {
-                    const isActive = draft.lifestyle.includes(option.id);
-                    return (
-                      <Pressable
-                        key={option.id}
-                        style={({ pressed }) => [
-                          styles.checkItem,
-                          isActive && styles.checkItemActive,
-                          pressed && styles.checkItemPressed,
-                        ]}
-                        onPress={() =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            lifestyle: prev.lifestyle.includes(option.id)
-                              ? prev.lifestyle.filter((chip) => chip !== option.id)
-                              : [...prev.lifestyle, option.id],
-                          }))
-                        }
-                      >
-                        <View
-                          style={[
-                            styles.checkBox,
-                            {
-                              borderColor: isActive
-                                ? theme.colors.primaryMuted
-                                : theme.colors.glassBorderSoft,
-                              backgroundColor: isActive
-                                ? theme.colors.primaryTint
-                                : theme.colors.glassSurface,
-                            },
-                          ]}
-                        >
-                          {isActive ? (
-                            <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                          ) : null}
-                        </View>
-                        <Text
-                          style={[
-                            styles.checkLabel,
-                            isActive && styles.checkLabelActive,
-                          ]}
-                        >
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
+          <FormSection
+            title="Estilo de vida"
+            iconName="sparkles-outline"
+            headerRight={
+              <Ionicons
+                name={isLifestyleCollapsed ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={theme.colors.textSecondary}
+              />
+            }
+            onHeaderPress={() => setIsLifestyleCollapsed((prev) => !prev)}
+          >
+            {!isLifestyleCollapsed
+              ? ESTILO_VIDA_GROUPS.map((group) => (
+                  <View key={group.id}>
+                    <Text style={styles.inlineLabel}>{group.label}</Text>
+                    <View style={styles.checkGrid}>
+                      {group.options.map((option) => {
+                        const isActive = draft.lifestyle.includes(option.id);
+                        return (
+                          <Pressable
+                            key={option.id}
+                            style={({ pressed }) => [
+                              styles.checkItem,
+                              isActive && styles.checkItemActive,
+                              pressed && styles.checkItemPressed,
+                            ]}
+                            onPress={() =>
+                              setDraft((prev) => ({
+                                ...prev,
+                                lifestyle: prev.lifestyle.includes(option.id)
+                                  ? prev.lifestyle.filter((chip) => chip !== option.id)
+                                  : [...prev.lifestyle, option.id],
+                              }))
+                            }
+                          >
+                            <View
+                              style={[
+                                styles.checkBox,
+                                {
+                                  borderColor: isActive
+                                    ? theme.colors.primaryMuted
+                                    : theme.colors.glassBorderSoft,
+                                  backgroundColor: isActive
+                                    ? theme.colors.primaryTint
+                                    : theme.colors.glassSurface,
+                                },
+                              ]}
+                            >
+                              {isActive ? (
+                                <Ionicons
+                                  name="checkmark"
+                                  size={14}
+                                  color="#FFFFFF"
+                                />
+                              ) : null}
+                            </View>
+                            <Text
+                              style={[
+                                styles.checkLabel,
+                                isActive && styles.checkLabelActive,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))
+              : null}
           </FormSection>
         ) : null}
       </ScrollView>
@@ -1097,234 +782,6 @@ export const FiltersScreen: React.FC = () => {
           size="large"
           style={styles.applyButton}
         />
-      </View>
-    </View>
-  );
-};
-
-const BudgetRange: React.FC<{
-  styles: FiltersScreenStylesType;
-  minValue: number;
-  maxValue: number;
-  onDragStateChange: (isDragging: boolean) => void;
-  onChangeMin: (value: number) => void;
-  onChangeMax: (value: number) => void;
-}> = ({ styles, minValue, maxValue, onDragStateChange, onChangeMin, onChangeMax }) => {
-  const [trackWidth, setTrackWidth] = useState(0);
-  const minStartRef = React.useRef(0);
-  const maxStartRef = React.useRef(0);
-  const minValueRef = React.useRef(minValue);
-  const maxValueRef = React.useRef(maxValue);
-  const startTouchRef = React.useRef(0);
-
-  useEffect(() => {
-    minValueRef.current = minValue;
-    maxValueRef.current = maxValue;
-  }, [minValue, maxValue]);
-
-  const valueToX = (value: number) => {
-    if (!trackWidth) return 0;
-    return ((value - BUDGET_MIN) / (BUDGET_MAX - BUDGET_MIN)) * trackWidth;
-  };
-
-  const xToValue = (x: number) => {
-    if (!trackWidth) return BUDGET_MIN;
-    const raw = BUDGET_MIN + (x / trackWidth) * (BUDGET_MAX - BUDGET_MIN);
-    return clamp(snapToStep(raw), BUDGET_MIN, BUDGET_MAX);
-  };
-
-  const activeThumbRef = React.useRef<'min' | 'max' | null>(null);
-
-  const minX = valueToX(minValue);
-  const maxX = valueToX(maxValue);
-  const ticks = Math.floor((BUDGET_MAX - BUDGET_MIN) / BUDGET_STEP);
-
-  return (
-    <View
-      style={styles.sliderContainer}
-      onLayout={(event) => {
-        const width = event.nativeEvent.layout.width;
-        console.log('[BudgetRange] layout width', width);
-        setTrackWidth(width);
-      }}
-      pointerEvents="box-only"
-      onStartShouldSetResponder={() => true}
-      onMoveShouldSetResponder={() => true}
-      onResponderGrant={(event) => {
-        if (!trackWidth) {
-          console.log('[BudgetRange] grant blocked, trackWidth=0');
-          return;
-        }
-        onDragStateChange(true);
-        const touchX = event.nativeEvent.locationX;
-        console.log('[BudgetRange] grant', {
-          trackWidth,
-          touchX,
-          minValue: minValueRef.current,
-          maxValue: maxValueRef.current,
-        });
-        startTouchRef.current = touchX;
-        const minPos = valueToX(minValueRef.current);
-        const maxPos = valueToX(maxValueRef.current);
-        activeThumbRef.current =
-          Math.abs(touchX - minPos) <= Math.abs(touchX - maxPos) ? 'min' : 'max';
-        console.log('[BudgetRange] activeThumb', activeThumbRef.current, {
-          minPos,
-          maxPos,
-        });
-        minStartRef.current = minPos;
-        maxStartRef.current = maxPos;
-      }}
-      onResponderMove={(event) => {
-        if (!trackWidth || !activeThumbRef.current) return;
-        const nextX = clamp(event.nativeEvent.locationX, 0, trackWidth);
-        if (activeThumbRef.current === 'min') {
-          const bounded = clamp(nextX, 0, valueToX(maxValueRef.current));
-          onChangeMin(xToValue(bounded));
-        } else {
-          const bounded = clamp(nextX, valueToX(minValueRef.current), trackWidth);
-          onChangeMax(xToValue(bounded));
-        }
-      }}
-      onResponderRelease={() => {
-        activeThumbRef.current = null;
-        onDragStateChange(false);
-      }}
-      onResponderTerminate={() => {
-        activeThumbRef.current = null;
-        onDragStateChange(false);
-      }}
-    >
-      <View style={styles.sliderTrack} />
-      <View
-        style={[
-          styles.sliderTrackActive,
-          { left: minX, width: Math.max(0, maxX - minX) },
-        ]}
-      />
-      <View
-        style={[styles.sliderThumb, { left: minX - 10 }]}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      />
-      <View
-        style={[styles.sliderThumb, { left: maxX - 10 }]}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      />
-      <View style={styles.sliderTicks}>
-        {Array.from({ length: ticks + 1 }).map((_, index) => (
-          <View key={`tick-${index}`} style={styles.sliderTick} />
-        ))}
-      </View>
-      <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>0</Text>
-        <Text style={styles.sliderLabel}>600</Text>
-        <Text style={styles.sliderLabel}>1200+</Text>
-      </View>
-    </View>
-  );
-};
-
-const RoommatesRange: React.FC<{
-  styles: FiltersScreenStylesType;
-  minValue: number;
-  maxValue: number;
-  onDragStateChange: (isDragging: boolean) => void;
-  onChangeMin: (value: number) => void;
-  onChangeMax: (value: number) => void;
-}> = ({ styles, minValue, maxValue, onDragStateChange, onChangeMin, onChangeMax }) => {
-  const [trackWidth, setTrackWidth] = useState(0);
-  const minValueRef = React.useRef(minValue);
-  const maxValueRef = React.useRef(maxValue);
-
-  useEffect(() => {
-    minValueRef.current = minValue;
-    maxValueRef.current = maxValue;
-  }, [minValue, maxValue]);
-
-  const valueToX = (value: number) => {
-    if (!trackWidth) return 0;
-    return ((value - ROOMMATES_MIN) / (ROOMMATES_MAX - ROOMMATES_MIN)) * trackWidth;
-  };
-
-  const xToValue = (x: number) => {
-    if (!trackWidth) return ROOMMATES_MIN;
-    const raw =
-      ROOMMATES_MIN + (x / trackWidth) * (ROOMMATES_MAX - ROOMMATES_MIN);
-    return clamp(snapToRoommatesStep(raw), ROOMMATES_MIN, ROOMMATES_MAX);
-  };
-
-  const activeThumbRef = React.useRef<'min' | 'max' | null>(null);
-
-  const minX = valueToX(minValue);
-  const maxX = valueToX(maxValue);
-
-  return (
-    <View
-      style={styles.sliderContainer}
-      onLayout={(event) => {
-        const width = event.nativeEvent.layout.width;
-        setTrackWidth(width);
-      }}
-      pointerEvents="box-only"
-      onStartShouldSetResponder={() => true}
-      onMoveShouldSetResponder={() => true}
-      onResponderGrant={(event) => {
-        if (!trackWidth) return;
-        onDragStateChange(true);
-        const touchX = event.nativeEvent.locationX;
-        const minPos = valueToX(minValueRef.current);
-        const maxPos = valueToX(maxValueRef.current);
-        activeThumbRef.current =
-          Math.abs(touchX - minPos) <= Math.abs(touchX - maxPos) ? 'min' : 'max';
-      }}
-      onResponderMove={(event) => {
-        if (!trackWidth || !activeThumbRef.current) return;
-        const nextX = clamp(event.nativeEvent.locationX, 0, trackWidth);
-        if (activeThumbRef.current === 'min') {
-          const bounded = clamp(nextX, 0, valueToX(maxValueRef.current));
-          onChangeMin(xToValue(bounded));
-        } else {
-          const bounded = clamp(nextX, valueToX(minValueRef.current), trackWidth);
-          onChangeMax(xToValue(bounded));
-        }
-      }}
-      onResponderRelease={() => {
-        activeThumbRef.current = null;
-        onDragStateChange(false);
-      }}
-      onResponderTerminate={() => {
-        activeThumbRef.current = null;
-        onDragStateChange(false);
-      }}
-    >
-      <View style={styles.sliderTrack} />
-      <View
-        style={[
-          styles.sliderTrackActive,
-          { left: minX, width: Math.max(0, maxX - minX) },
-        ]}
-      />
-      <View
-        style={[styles.sliderThumb, { left: minX - 10 }]}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      />
-      <View
-        style={[styles.sliderThumb, { left: maxX - 10 }]}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      />
-      <View style={styles.sliderTicks}>
-        {Array.from({ length: ROOMMATES_MAX - ROOMMATES_MIN + 1 }).map(
-          (_, index) => (
-            <View key={`tick-roommates-${index}`} style={styles.sliderTick} />
-          )
-        )}
-      </View>
-      <View style={styles.sliderLabels}>
-        <Text style={styles.sliderLabel}>{ROOMMATES_MIN}</Text>
-        <Text style={styles.sliderLabel}>
-          {Math.round((ROOMMATES_MIN + ROOMMATES_MAX) / 2)}
-        </Text>
-        <Text style={styles.sliderLabel}>{ROOMMATES_MAX}+</Text>
       </View>
     </View>
   );

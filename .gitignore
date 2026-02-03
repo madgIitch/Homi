@@ -80,3 +80,9 @@ data/geojson/spain-cities-areas.geojson
 data/geojson/spain-places.geojson
 data/geojson/spain-places.osm.pbf
 supabase/migrations
+
+.env.*
+android/app/google-services.json
+.env
+supabase/functions/_tests/stripe-checkout.test.ts
+supabase/functions/_tests/stripe-webhook.test.ts

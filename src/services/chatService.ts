@@ -71,6 +71,15 @@ type MessageRequestResponse = {
   status: string;
 };
 
+type MessageRequestLimitsResponse = {
+  is_premium: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+  week_start: string;
+  used_trial: boolean;
+};
+
 const FALLBACK_AVATAR =
   'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80';
 
@@ -450,6 +459,24 @@ class ChatService {
       chatId: payload.data.chat_id,
       status: payload.data.status as Match['status'],
     };
+  }
+
+  async getMessageRequestLimits(): Promise<MessageRequestLimitsResponse> {
+    const response = await this.fetchWithAuth(MESSAGE_REQUESTS_ENDPOINT, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al obtener limites de solicitudes');
+    }
+
+    const payload = (await response.json()) as ApiResponse<MessageRequestLimitsResponse>;
+    if (!payload.data) {
+      throw new Error('Respuesta invalida al obtener limites');
+    }
+
+    return payload.data;
   }
 
   async markMessagesAsRead(chatId: string): Promise<void> {

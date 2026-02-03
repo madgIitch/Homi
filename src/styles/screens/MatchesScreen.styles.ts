@@ -34,9 +34,14 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing.s20,
     paddingBottom: spacing.s16,
   },
+  pendingSection: {
+    paddingHorizontal: spacing.s20,
+    paddingBottom: spacing.md,
+  },
   matchesSectionEmpty: {
     paddingHorizontal: spacing.s20,
     paddingBottom: spacing.s6,
+    paddingTop: spacing.s10,
   },
   sectionTitle: {
     fontSize: 12,
@@ -80,6 +85,98 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textMuted,
+  },
+  pendingRequestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.glassSurface,
+    borderRadius: semanticRadii.card,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+  },
+  pendingAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: spacing.md,
+  },
+  pendingInfo: {
+    flex: 1,
+  },
+  pendingName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  pendingMessage: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  pendingExpandButton: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+  },
+  pendingExpandText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  pendingPreviewRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  pendingMetaChip: {
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.surfaceLight,
+  },
+  pendingMetaText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  pendingProfileButton: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.s12,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+  },
+  pendingProfileText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  pendingActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  acceptButton: {
+    backgroundColor: colors.success,
+  },
+  rejectButton: {
+    backgroundColor: colors.error,
   },
   chatList: {
     paddingHorizontal: spacing.s20,

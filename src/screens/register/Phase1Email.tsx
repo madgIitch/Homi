@@ -13,6 +13,8 @@ interface Phase1EmailProps {
   onGoogleSignIn: () => void;  
   onGoToLogin: () => void;  
   onInputFocus?: (event: any) => void;
+  serverError?: string | null;
+  onClearServerError?: () => void;
   loading: boolean;  
 }  
   
@@ -21,6 +23,8 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
   onGoogleSignIn,  
   onGoToLogin,  
   onInputFocus,
+  serverError,
+  onClearServerError,
   loading,  
 }) => {  
   const theme = useTheme();
@@ -28,10 +32,12 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
   const [email, setEmail] = useState('');  
   const [password, setPassword] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [checkingEmail, setCheckingEmail] = useState(false);
 
   // Regex para validar email
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const MIN_PASSWORD_LENGTH = 8;
 
   const validateEmail = (emailValue: string): boolean => {
     if (!emailValue) {
@@ -70,9 +76,18 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
       return;
     }
     if (!password) {  
+      setPasswordError('Por favor ingresa una contraseña');  
       console.log('⛔ Phase1Email: Validation failed - empty password');  
       return;  
     }  
+    if (password.length < MIN_PASSWORD_LENGTH) {  
+      setPasswordError(  
+        `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`  
+      );  
+      console.log('⛔ Phase1Email: Validation failed - short password');  
+      return;  
+    }  
+    setPasswordError(null);  
 
     // Verificar si el email ya existe en la base de datos
     setCheckingEmail(true);
@@ -115,11 +130,20 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
     if (emailError) {
       setEmailError(null);
     }
+    if (serverError && onClearServerError) {
+      onClearServerError();
+    }
   };  
   
   const handlePasswordChange = (text: string) => {  
     console.log('ÐY"? Phase1Email: Password changed:', text ? '***' : 'empty');  
     setPassword(text);  
+    if (passwordError) {  
+      setPasswordError(null);  
+    }  
+    if (serverError && onClearServerError) {
+      onClearServerError();
+    }
   };  
   
   const handleGoogleSignIn = () => {  
@@ -155,7 +179,8 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
           style={[  
             styles.input,  
             {  
-              borderColor: emailError ? theme.colors.error : theme.colors.border,  
+              borderColor:
+                emailError || serverError ? theme.colors.error : theme.colors.border,  
               backgroundColor: theme.colors.surface,  
               color: theme.colors.text,  
             },  
@@ -168,9 +193,9 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
           keyboardType="email-address"  
           autoCapitalize="none"  
         />
-        {emailError && (
+        {(emailError || serverError) && (
           <Text style={[styles.errorText, { color: theme.colors.error }]}>
-            {emailError}
+            {emailError || serverError}
           </Text>
         )}  
   
@@ -178,7 +203,7 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
           style={[  
             styles.input,  
             {  
-              borderColor: theme.colors.border,  
+              borderColor: passwordError ? theme.colors.error : theme.colors.border,  
               backgroundColor: theme.colors.surface,  
               color: theme.colors.text,  
             },  
@@ -190,6 +215,11 @@ export const Phase1Email: React.FC<Phase1EmailProps> = ({
           onFocus={onInputFocus}
           secureTextEntry  
         />  
+        {passwordError && (
+          <Text style={[styles.errorText, { color: theme.colors.error }]}>
+            {passwordError}
+          </Text>
+        )}
   
         <View style={styles.authButtons}>
           <GoogleSignInButton onPress={handleGoogleSignIn} loading={loading} />  

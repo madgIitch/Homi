@@ -1,0 +1,32 @@
+[functions.auth-login]
+verify_jwt = false
+
+[functions.auth-check-email]
+verify_jwt = false
+
+[functions.auth-register-phase1]
+verify_jwt = false
+
+[functions.auth-register-phase2]
+verify_jwt = false
+
+[functions.auth-register-phase3]
+verify_jwt = false
+
+[functions.interests]
+verify_jwt = false
+
+[functions.locations]
+verify_jwt = false
+
+[functions.profile-share-image]
+verify_jwt = false
+
+[functions.flat-share-image]
+verify_jwt = false
+
+[functions.room-share-image]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false

@@ -1,6 +1,6 @@
 // src/components/FormSection.tsx
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Pressable, View, Text, StyleSheet } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { BlurView } from '@react-native-community/blur';
@@ -12,6 +12,8 @@ interface FormSectionProps {
   required?: boolean;
   requiredLabel?: string;
   variant?: 'glass' | 'flat';
+  headerRight?: React.ReactNode;
+  onHeaderPress?: () => void;
   children: React.ReactNode;
 }
 
@@ -22,6 +24,8 @@ export const FormSection: React.FC<FormSectionProps> = ({
   required = false,
   requiredLabel,
   variant = 'glass',
+  headerRight,
+  onHeaderPress,
   children,
 }) => {
   const theme = useTheme();
@@ -58,38 +62,87 @@ export const FormSection: React.FC<FormSectionProps> = ({
         )}
         {showHeader && (
           <View style={styles.header}>
-            <View style={styles.titleRow}>
-              {iconName && (
-                <Ionicons
-                  name={iconName}
-                  size={18}
-                  color={theme.colors.text}
-                  style={styles.headerIcon}
-                />
-              )}
-              {title && (
-                <Text
-                  style={[
-                    theme.typography.sectionTitle,
-                    { color: theme.colors.text },
-                  ]}
-                >
-                  {title}
-                </Text>
-              )}
-              {required && <Text style={styles.requiredStar}> *</Text>}
-              {requiredLabel && (
-                <Text
-                  style={[
-                    theme.typography.caption,
-                    styles.requiredLabel,
-                    { color: theme.colors.textSecondary },
-                  ]}
-                >
-                  {requiredLabel}
-                </Text>
-              )}
-            </View>
+            {onHeaderPress ? (
+              <Pressable
+                style={styles.headerRow}
+                onPress={onHeaderPress}
+                hitSlop={8}
+              >
+                <View style={styles.titleRow}>
+                  {iconName && (
+                    <Ionicons
+                      name={iconName}
+                      size={18}
+                      color={theme.colors.text}
+                      style={styles.headerIcon}
+                    />
+                  )}
+                  {title && (
+                    <Text
+                      style={[
+                        theme.typography.sectionTitle,
+                        { color: theme.colors.text },
+                      ]}
+                    >
+                      {title}
+                    </Text>
+                  )}
+                  {required && <Text style={styles.requiredStar}> *</Text>}
+                  {requiredLabel && (
+                    <Text
+                      style={[
+                        theme.typography.caption,
+                        styles.requiredLabel,
+                        { color: theme.colors.textSecondary },
+                      ]}
+                    >
+                      {requiredLabel}
+                    </Text>
+                  )}
+                </View>
+                {headerRight ? (
+                  <View style={styles.headerRight}>{headerRight}</View>
+                ) : null}
+              </Pressable>
+            ) : (
+              <View style={styles.headerRow}>
+                <View style={styles.titleRow}>
+                  {iconName && (
+                    <Ionicons
+                      name={iconName}
+                      size={18}
+                      color={theme.colors.text}
+                      style={styles.headerIcon}
+                    />
+                  )}
+                  {title && (
+                    <Text
+                      style={[
+                        theme.typography.sectionTitle,
+                        { color: theme.colors.text },
+                      ]}
+                    >
+                      {title}
+                    </Text>
+                  )}
+                  {required && <Text style={styles.requiredStar}> *</Text>}
+                  {requiredLabel && (
+                    <Text
+                      style={[
+                        theme.typography.caption,
+                        styles.requiredLabel,
+                        { color: theme.colors.textSecondary },
+                      ]}
+                    >
+                      {requiredLabel}
+                    </Text>
+                  )}
+                </View>
+                {headerRight ? (
+                  <View style={styles.headerRight}>{headerRight}</View>
+                ) : null}
+              </View>
+            )}
             {subtitle && (
               <Text
                 style={[
@@ -126,10 +179,18 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 16,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+  },
+  headerRight: {
+    marginLeft: 8,
   },
   headerIcon: {
     marginRight: 8,

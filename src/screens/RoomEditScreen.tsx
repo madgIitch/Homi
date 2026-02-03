@@ -14,7 +14,7 @@ import {
   findNodeHandle,
   StyleSheet,
 } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import ImageCropPicker from 'react-native-image-crop-picker';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -421,28 +421,43 @@ export const RoomEditScreen: React.FC = () => {
   }, [isCreateMode, defaultTitle, title]);
 
   const handleAddPhoto = async () => {
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      selectionLimit: 1,
-    });
+    try {
+      const image = await ImageCropPicker.openPicker({
+        mediaType: 'photo',
+        cropping: true,
+        width: 1200,
+        height: 900,
+        compressImageQuality: 0.8,
+        cropperToolbarTitle: 'Recorta la foto',
+        cropperStatusBarColor: theme.colors.surfaceMutedAlt,
+        cropperToolbarColor: theme.colors.surfaceMutedAlt,
+        cropperToolbarWidgetColor: theme.colors.text,
+        cropperActiveWidgetColor: theme.colors.primary,
+        freeStyleCropEnabled: true,
+      });
 
-    if (result.didCancel || !result.assets || result.assets.length === 0) {
-      return;
+      if (!image?.path) return;
+
+      const uri = image.path.startsWith('file://')
+        ? image.path
+        : `file://${image.path}`;
+
+      setPhotos((prev) => [
+        ...prev,
+        {
+          uri,
+          isLocal: true,
+          fileName: image.filename || `room-photo-${Date.now()}.jpg`,
+          mimeType: image.mime || 'image/jpeg',
+        },
+      ]);
+    } catch (error) {
+      if ((error as any)?.code === 'E_PICKER_CANCELLED') {
+        return;
+      }
+      console.error('Error seleccionando foto:', error);
+      Alert.alert('Error', 'No se pudo seleccionar la foto');
     }
-
-    const asset = result.assets[0];
-    if (!asset.uri) return;
-
-    setPhotos((prev) => [
-      ...prev,
-      {
-        uri: asset.uri as string,
-        isLocal: true,
-        fileName: asset.fileName,
-        mimeType: asset.type,
-      },
-    ]);
   };
 
   const handleRemovePhoto = (uri: string) => {
@@ -919,13 +934,21 @@ export const RoomEditScreen: React.FC = () => {
               required
             />
           )}
-          <Input
-            label="Metros cuadrados"
-            value={size}
-            onChangeText={setSize}
-            onFocus={handleInputFocus}
-            keyboardType="numeric"
-          />
+          <View style={styles.inputContainer}>
+            <Input
+              label="Metros cuadrados"
+              value={size}
+              onChangeText={setSize}
+              onFocus={handleInputFocus}
+              keyboardType="numeric"
+              placeholder="Opcional pero recomendado"
+            />
+            {roomCategory !== 'area_comun' && (
+              <Text style={styles.recommendationText}>
+                Nota: La mayoria de usuarios prefieren habitaciones con esta informacion.
+              </Text>
+            )}
+          </View>
         </FormSection>
 
       </ScrollView>

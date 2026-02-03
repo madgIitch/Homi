@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -20,9 +20,12 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../theme/ThemeContext';
 import { spacing } from '../theme';
 import { chatService } from '../services/chatService';
+import { matchService } from '../services/matchService';
 import { supabaseClient } from '../services/authService';
 import { profilePhotoService } from '../services/profilePhotoService';
+import { AuthContext } from '../context/AuthContext';
 import type { Chat, Match } from '../types/chat';
+import type { Profile } from '../types/profile';
 import { MatchesScreenStyles as styles } from '../styles/screens';
 
 export const MatchesScreen: React.FC = () => {
@@ -30,14 +33,39 @@ export const MatchesScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const [matches, setMatches] = useState<Match[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<Match[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [matchPhotoByProfile, setMatchPhotoByProfile] = useState<
     Record<string, string>
   >({});
+  const [pendingMessagesByMatchId, setPendingMessagesByMatchId] = useState<
+    Record<string, string>
+  >({});
+  const [pendingProfilesByMatchId, setPendingProfilesByMatchId] = useState<
+    Record<string, Profile>
+  >({});
+  const [expandedPendingIds, setExpandedPendingIds] = useState<
+    Record<string, boolean>
+  >({});
   const channelRef = useRef<RealtimeChannel | null>(null);
   const matchesChannelRef = useRef<RealtimeChannel | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const authContext = useContext(AuthContext);
+  const currentUserId = authContext?.user?.id ?? '';
+
+  const calculateAge = (birthDate?: string | null) => {
+    if (!birthDate) return null;
+    const birth = new Date(birthDate);
+    if (Number.isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  };
 
   const loadData = React.useCallback(async () => {
     try {
@@ -46,21 +74,34 @@ export const MatchesScreen: React.FC = () => {
         chatService.getMatches(),
         chatService.getChats(),
       ]);
-      setMatches(
-        nextMatches.filter((match) =>
+      const pending =
+        currentUserId.length > 0
+          ? nextMatches.filter(
+              (match) =>
+                match.status === 'pending' && match.userBId === currentUserId
+            )
+          : [];
+      const active = nextMatches.filter((match) => {
+        const status = match.status ?? 'pending';
+        const isPendingIncoming =
+          status === 'pending' && match.userBId === currentUserId;
+        return (
           ['accepted', 'room_offer', 'room_assigned', 'room_declined', 'unmatched'].includes(
-            match.status ?? 'pending'
-          )
-        )
-      );
+            status
+          ) && !isPendingIncoming
+        );
+      });
+      setMatches(active);
+      setPendingRequests(pending);
       setChats(nextChats);
     } catch (error) {
       console.error('Error cargando matches/chats:', error);
       setMatches([]);
+      setPendingRequests([]);
       setChats([]);
       setErrorMessage('No se pudo cargar la informacion.');
     }
-  }, []);
+  }, [currentUserId]);
 
   useEffect(() => {
     loadData().catch(() => undefined);
@@ -214,6 +255,11 @@ export const MatchesScreen: React.FC = () => {
   useEffect(() => {
     const loadMatchPhotos = async () => {
       const profileFallbacks = new Map<string, string>();
+      pendingRequests.forEach((match) => {
+        if (match.profileId) {
+          profileFallbacks.set(match.profileId, match.avatarUrl);
+        }
+      });
       unmatched.forEach((match) => {
         if (match.profileId) {
           profileFallbacks.set(match.profileId, match.avatarUrl);
@@ -254,14 +300,105 @@ export const MatchesScreen: React.FC = () => {
     };
 
     loadMatchPhotos().catch(() => undefined);
-  }, [unmatched, chats, matchPhotoByProfile]);
+  }, [pendingRequests, unmatched, chats, matchPhotoByProfile]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPendingDetails = async () => {
+      const nextMessages: Record<string, string> = {};
+      const nextProfiles: Record<string, Profile> = {};
+
+      await Promise.all(
+        pendingRequests.map(async (request) => {
+          if (!request.id) return;
+          const hasMessage = Boolean(pendingMessagesByMatchId[request.id]);
+          const hasProfile = Boolean(pendingProfilesByMatchId[request.id]);
+          if (hasMessage && hasProfile) return;
+          try {
+            const chat = await chatService.getChatByMatchId(request.id);
+            if (!chat) return;
+            if (!hasProfile && chat.profile) {
+              nextProfiles[request.id] = chat.profile;
+            }
+            if (!hasMessage) {
+              const messages = await chatService.getMessages(chat.id);
+              if (messages.length > 0) {
+                const ordered = [...messages].sort(
+                  (a, b) =>
+                    Date.parse(a.createdAtIso) - Date.parse(b.createdAtIso)
+                );
+                nextMessages[request.id] = ordered[0]?.text ?? '';
+              }
+            }
+          } catch (error) {
+            console.warn('[MatchesScreen] Error loading pending details:', error);
+          }
+        })
+      );
+
+      if (!isMounted) return;
+      if (Object.keys(nextMessages).length > 0) {
+        setPendingMessagesByMatchId((prev) => ({ ...prev, ...nextMessages }));
+      }
+      if (Object.keys(nextProfiles).length > 0) {
+        setPendingProfilesByMatchId((prev) => ({ ...prev, ...nextProfiles }));
+      }
+    };
+
+    if (pendingRequests.length > 0) {
+      loadPendingDetails().catch(() => undefined);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pendingRequests, pendingMessagesByMatchId, pendingProfilesByMatchId]);
 
   const emptyMessage = useMemo(() => {
     if (errorMessage) return errorMessage;
-    return matches.length === 0 && chats.length === 0
+    return matches.length === 0 && chats.length === 0 && pendingRequests.length === 0
       ? 'Aun no tienes matches'
       : 'No hay mensajes todavia';
-  }, [errorMessage, matches.length, chats.length]);
+  }, [errorMessage, matches.length, chats.length, pendingRequests.length]);
+
+  const handleAcceptRequest = async (request: Match) => {
+    try {
+      await matchService.updateMatchStatus(request.id, 'accepted');
+      await loadData();
+
+      // Navigate to chat to show the initial message
+      const chat = await chatService.getChatByMatchId(request.id);
+      if (chat) {
+        navigation.navigate('Chat', {
+          chatId: chat.id,
+          matchId: chat.matchId,
+          name: chat.name,
+          avatarUrl: chat.avatarUrl,
+          profile: chat.profile,
+        });
+        return;
+      }
+      navigation.navigate('Chat', {
+        matchId: request.id,
+        name: request.name,
+        avatarUrl: request.avatarUrl,
+      });
+    } catch (error) {
+      console.error('Error aceptando solicitud:', error);
+      Alert.alert('Error', 'No se pudo aceptar la solicitud');
+    }
+  };
+
+  const handleRejectRequest = async (request: Match) => {
+    try {
+      await matchService.updateMatchStatus(request.id, 'rejected');
+      await loadData();
+    } catch (error) {
+      console.error('Error rechazando solicitud:', error);
+      Alert.alert('Error', 'No se pudo rechazar la solicitud');
+    }
+  };
 
   const handleOpenMatch = async (match: Match) => {
     try {
@@ -418,6 +555,114 @@ export const MatchesScreen: React.FC = () => {
     );
   };
 
+  const PendingRequestCard = ({ request }: { request: Match }) => {
+    const photoUrl = matchPhotoByProfile[request.profileId] || request.avatarUrl;
+    const pendingMessage =
+      pendingMessagesByMatchId[request.id] || 'Solicitud de chat';
+    const isExpanded = Boolean(expandedPendingIds[request.id]);
+    const previewProfile = pendingProfilesByMatchId[request.id];
+    const previewAge = calculateAge(previewProfile?.birth_date ?? null);
+    const previewOccupation = previewProfile?.occupation?.trim() || null;
+    const previewBudget =
+      previewProfile?.budget_min != null || previewProfile?.budget_max != null
+        ? previewProfile?.budget_min != null && previewProfile?.budget_max != null
+          ? `${previewProfile.budget_min}-${previewProfile.budget_max} EUR`
+          : previewProfile?.budget_min != null
+          ? `Desde ${previewProfile.budget_min} EUR`
+          : `Hasta ${previewProfile?.budget_max} EUR`
+        : null;
+
+    const previewChips = [
+      previewAge ? `${previewAge} años` : null,
+      previewOccupation,
+      previewBudget,
+    ].filter((item): item is string => Boolean(item));
+
+    return (
+      <View
+        style={[
+          styles.pendingRequestCard,
+          { borderColor: theme.colors.glassBorderSoft },
+        ]}
+      >
+        <Image source={{ uri: photoUrl }} style={styles.pendingAvatar} />
+        <View style={styles.pendingInfo}>
+          <Text style={styles.pendingName}>{request.name}</Text>
+          <Text
+            style={styles.pendingMessage}
+            numberOfLines={isExpanded ? undefined : 2}
+          >
+            {pendingMessage}
+          </Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.pendingExpandButton,
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() =>
+              setExpandedPendingIds((prev) => ({
+                ...prev,
+                [request.id]: !prev[request.id],
+              }))
+            }
+          >
+            <Text style={styles.pendingExpandText}>
+              {isExpanded ? 'Ver menos' : 'Ver mensaje completo'}
+            </Text>
+          </Pressable>
+          {isExpanded && previewChips.length > 0 ? (
+            <View style={styles.pendingPreviewRow}>
+              {previewChips.map((chip) => (
+                <View key={`${request.id}-${chip}`} style={styles.pendingMetaChip}>
+                  <Text style={styles.pendingMetaText}>{chip}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {isExpanded && previewProfile ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.pendingProfileButton,
+                pressed && { opacity: 0.85 },
+              ]}
+              onPress={() =>
+                navigation.navigate('ProfileDetail', {
+                  profile: previewProfile,
+                  fromMatch: true,
+                })
+              }
+            >
+              <Ionicons name="person-circle-outline" size={16} color={theme.colors.primary} />
+              <Text style={styles.pendingProfileText}>Ver perfil</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <View style={styles.pendingActions}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionButton,
+              styles.acceptButton,
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => handleAcceptRequest(request)}
+          >
+            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionButton,
+              styles.rejectButton,
+              pressed && { opacity: 0.8 },
+            ]}
+            onPress={() => handleRejectRequest(request)}
+          >
+            <Ionicons name="close" size={16} color="#FFFFFF" />
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.surfaceMutedAlt }]}>
       <ImageBackground
@@ -448,7 +693,7 @@ export const MatchesScreen: React.FC = () => {
         </Text>
       </View>
 
-      {matches.length === 0 && chats.length === 0 ? (
+      {matches.length === 0 && chats.length === 0 && pendingRequests.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={[styles.emptyText, { color: theme.colors.text }]}>
             {emptyMessage}
@@ -465,24 +710,38 @@ export const MatchesScreen: React.FC = () => {
           ]}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            unmatched.length > 0 ? (
-              <View style={styles.matchesSection}>
-                <Text style={styles.sectionTitle}>Nuevos matches</Text>
-                <FlatList
-                  data={unmatched}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderMatch}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.matchesRow}
-                />
-                <View style={styles.sectionDivider} />
-              </View>
-            ) : (
-              <View style={styles.matchesSectionEmpty}>
-                <Text style={styles.sectionTitle}>Sin nuevos matches</Text>
-              </View>
-            )
+            <View>
+              {pendingRequests.length > 0 ? (
+                <View style={styles.pendingSection}>
+                  <Text style={styles.sectionTitle}>Solicitudes pendientes</Text>
+                  <FlatList
+                    data={pendingRequests}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => <PendingRequestCard request={item} />}
+                    scrollEnabled={false}
+                  />
+                  <View style={styles.sectionDivider} />
+                </View>
+              ) : null}
+              {unmatched.length > 0 ? (
+                <View style={styles.matchesSection}>
+                  <Text style={styles.sectionTitle}>Nuevos matches</Text>
+                  <FlatList
+                    data={unmatched}
+                    keyExtractor={(item) => item.id}
+                    renderItem={renderMatch}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.matchesRow}
+                  />
+                  <View style={styles.sectionDivider} />
+                </View>
+              ) : (
+                <View style={styles.matchesSectionEmpty}>
+                  <Text style={styles.sectionTitle}>Sin nuevos matches</Text>
+                </View>
+              )}
+            </View>
           }
           ListEmptyComponent={
             chats.length === 0 ? (

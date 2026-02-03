@@ -183,6 +183,10 @@ export const styles = (theme: Theme) => {
     fontWeight: '600',
     color: colors.textSecondary,
     letterSpacing: 0.2,
+    flex: 1,
+    flexWrap: 'wrap',
+    flexShrink: 1,
+    minWidth: 0,
   },
   checkLabelActive: {
     color: colors.primary,

@@ -15,6 +15,8 @@ import { ProfileDetailScreen } from '../screens/ProfileDetailScreen';
 import { EditProfileScreen } from '../screens/EditProfileScreen';    
 import { FiltersScreen } from '../screens/FiltersScreen';
 import { ChatScreen } from '../screens/ChatScreen';
+import { SubscriptionScreen } from '../screens/SubscriptionScreen';
+import { AccountOptionsScreen } from '../screens/AccountOptionsScreen';
 import { RoomManagementScreen } from '../screens/RoomManagementScreen';
 import { RoomEditScreen } from '../screens/RoomEditScreen';
 import { RoomInterestsScreen } from '../screens/RoomInterestsScreen';
@@ -25,6 +27,8 @@ import { EditFlatScreen } from '../screens/EditFlatScreen';
 import { RoomDetailScreen } from '../screens/RoomDetailScreen';
 import { FlatExpensesScreen } from '../screens/FlatExpensesScreen';
 import { FlatSettlementScreen } from '../screens/FlatSettlementScreen';
+import { GroupMembersScreen } from '../screens/GroupMembersScreen';
+import { BugReportScreen } from '../screens/BugReportScreen';
 import { useTheme } from '../theme/ThemeContext';    
 import { authService } from '../services/authService';
 import { notificationService } from '../services/notificationService';
@@ -33,10 +37,8 @@ import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomService } from '../services/roomService';
 import { navigationRef } from './navigationRef';
     
-const Stack = createStackNavigator();    
+const Stack = createStackNavigator();
 const POST_INVITE_PREVIEW_KEY = 'postInvitePreview';
-const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
-const FORCE_ONBOARDING_KEY = 'forceOnboarding';
     
 // Simple loading screen component    
 const LoadingScreen: React.FC = () => {    
@@ -74,46 +76,16 @@ export const AppNavigator: React.FC = () => {
 
     const checkProfile = async () => {
       try {
-        const forced = await AsyncStorage.getItem(FORCE_ONBOARDING_KEY);
-        if (forced === '1') {
-          if (isActive) {
-            setNeedsOnboarding(true);
-          }
-          return;
-        }
-        const onboardingStatus = await AsyncStorage.getItem(
-          ONBOARDING_COMPLETED_KEY
-        );
-        console.log(
-          '[AppNavigator] onboardingCompleted:',
-          onboardingStatus ?? 'null'
-        );
-        if (onboardingStatus === '1') {
-          if (isActive) {
-            setNeedsOnboarding(false);
-          }
-          return;
-        }
-        if (onboardingStatus === '0') {
-          if (isActive) {
-            setNeedsOnboarding(true);
-          }
-          return;
-        }
-
         const profile = await profileService.getProfile();
         if (isActive) {
-          if (profile) {
-            await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, '1');
-            setNeedsOnboarding(false);
-          } else {
-            setNeedsOnboarding(true);
-          }
+          // Simple logic: check the onboarding_completed field from the profile
+          setNeedsOnboarding(!profile?.onboarding_completed);
         }
       } catch (error) {
         console.warn('[AppNavigator] Error checking onboarding state:', error);
         if (isActive) {
-          setNeedsOnboarding(false);
+          // On error, show onboarding as a safety measure
+          setNeedsOnboarding(true);
         }
       }
     };
@@ -301,6 +273,8 @@ export const AppNavigator: React.FC = () => {
             <Stack.Screen name="ProfileDetail" component={ProfileDetailScreen} />    
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />    
             <Stack.Screen name="Filters" component={FiltersScreen} />
+            <Stack.Screen name="Subscription" component={SubscriptionScreen} />
+            <Stack.Screen name="AccountOptions" component={AccountOptionsScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="RoomManagement" component={RoomManagementScreen} />
             <Stack.Screen name="RoomEdit" component={RoomEditScreen} />
@@ -312,6 +286,8 @@ export const AppNavigator: React.FC = () => {
             <Stack.Screen name="RoomDetail" component={RoomDetailScreen} />
             <Stack.Screen name="FlatExpenses" component={FlatExpensesScreen} />
             <Stack.Screen name="FlatSettlement" component={FlatSettlementScreen} />
+            <Stack.Screen name="GroupMembers" component={GroupMembersScreen} />
+            <Stack.Screen name="BugReport" component={BugReportScreen} />
           </>    
         ) : null}    
       </Stack.Navigator>    

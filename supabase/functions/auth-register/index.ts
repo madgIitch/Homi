@@ -3,6 +3,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
 import { AuthSignupRequest, AuthResponse } from '../_shared/types.ts'  
+import { hasValidEmailDomain } from '../_shared/emailDomain.ts'
   
 /**      
  * Edge Function para registro de usuarios en HomiMatch      
@@ -57,11 +58,22 @@ async function handler(req: Request): Promise<Response> {
         }  
       )  
     }  
+
+    const hasDomain = await hasValidEmailDomain(body.email)
+    if (!hasDomain) {
+      return new Response(
+        JSON.stringify({ error: 'Email domain does not exist' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
   
     // Validar longitud de contraseña  
-    if (body.password.length < 6) {  
+    if (body.password.length < 8) {  
       return new Response(  
-        JSON.stringify({ error: 'Password must be at least 6 characters' }),  
+        JSON.stringify({ error: 'Password must be at least 8 characters' }),  
         {       
           status: 400,       
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }  

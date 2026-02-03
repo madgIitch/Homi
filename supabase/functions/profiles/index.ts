@@ -43,10 +43,10 @@ interface ProfileValidationData {
   housing_situation?: 'seeking' | 'offering';
   is_seeking?: boolean;
   preferred_zones?: string[];
-  budget_min?: number;
-  budget_max?: number;
-  desired_roommates_min?: number;
-  desired_roommates_max?: number;
+  budget_min?: number | string;
+  budget_max?: number | string;
+  desired_roommates_min?: number | string;
+  desired_roommates_max?: number | string;
   is_searchable?: boolean;
 }
 
@@ -127,14 +127,34 @@ async function getProfile(userId: string): Promise<Profile | null> {
 }
 
 async function createProfile(profileData: ProfileCreateRequest): Promise<Profile> {
+  const dataWithOnboarding = {
+    ...profileData,
+    onboarding_completed: false,
+  };
+
   const { data, error } = await supabaseClient
     .from('profiles')
-    .insert(profileData)
+    .insert(dataWithOnboarding)
     .select()
     .single();
 
   if (error) {
     throw new Error(`Failed to create profile: ${error.message}`);
+  }
+
+  return data as Profile;
+}
+
+async function completeOnboarding(userId: string): Promise<Profile> {
+  const { data, error } = await supabaseClient
+    .from('profiles')
+    .update({ onboarding_completed: true })
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to complete onboarding: ${error.message}`);
   }
 
   return data as Profile;
@@ -152,10 +172,72 @@ async function updateProfile(
     .single();
 
   if (error) {
+    console.error('[profiles] updateProfile failed:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
     throw new Error(`Failed to update profile: ${error.message}`);
   }
 
   return data as Profile;
+}
+
+async function ensureProvinceRecords(preferredZones?: string[] | null) {
+  if (!preferredZones || preferredZones.length === 0) return;
+
+  console.info('[profiles] ensureProvinceRecords', {
+    preferredZonesCount: preferredZones.length,
+  });
+
+  const { data: cityPlaces, error: placesError } = await supabaseClient
+    .from('city_places')
+    .select('city_id')
+    .in('id', preferredZones);
+
+  if (placesError) {
+    console.error('[profiles] Failed to load city places for provinces:', {
+      code: placesError.code,
+      message: placesError.message,
+      details: placesError.details,
+      hint: placesError.hint,
+    });
+    return;
+  }
+
+  const provinceCodes = [
+    ...new Set(
+      (cityPlaces ?? [])
+        .map((place) => place.city_id?.substring(0, 2))
+        .filter(Boolean)
+    ),
+  ] as string[];
+
+  if (provinceCodes.length === 0) return;
+
+  console.info('[profiles] ensureProvinceRecords province codes', {
+    provinceCodes,
+  });
+
+  const { error: upsertError } = await supabaseClient
+    .from('province_user_counts')
+    .upsert(
+      provinceCodes.map((code) => ({
+        province_code: code,
+        is_active: false,
+      })),
+      { onConflict: 'province_code', ignoreDuplicates: true }
+    );
+
+  if (upsertError) {
+    console.error('[profiles] Failed to ensure province rows:', {
+      code: upsertError.code,
+      message: upsertError.message,
+      details: upsertError.details,
+      hint: upsertError.hint,
+    });
+  }
 }
 
 function validateProfileData(data: ProfileValidationData): {
@@ -237,23 +319,41 @@ function validateProfileData(data: ProfileValidationData): {
     errors.push('Preferred zones must be an array');
   }
 
-  if (data.budget_min !== undefined && typeof data.budget_min !== 'number') {
-    errors.push('Budget min must be a number');
+  if (data.budget_min !== undefined) {
+    const budgetMinValue =
+      typeof data.budget_min === 'string'
+        ? Number(data.budget_min)
+        : data.budget_min;
+    if (typeof budgetMinValue !== 'number' || Number.isNaN(budgetMinValue)) {
+      errors.push('Budget min must be a number');
+    }
   }
-  if (data.budget_max !== undefined && typeof data.budget_max !== 'number') {
-    errors.push('Budget max must be a number');
+  if (data.budget_max !== undefined) {
+    const budgetMaxValue =
+      typeof data.budget_max === 'string'
+        ? Number(data.budget_max)
+        : data.budget_max;
+    if (typeof budgetMaxValue !== 'number' || Number.isNaN(budgetMaxValue)) {
+      errors.push('Budget max must be a number');
+    }
   }
-  if (
-    data.desired_roommates_min != null &&
-    typeof data.desired_roommates_min !== 'number'
-  ) {
-    errors.push('desired_roommates_min must be a number');
+  if (data.desired_roommates_min != null) {
+    const desiredMinValue =
+      typeof data.desired_roommates_min === 'string'
+        ? Number(data.desired_roommates_min)
+        : data.desired_roommates_min;
+    if (typeof desiredMinValue !== 'number' || Number.isNaN(desiredMinValue)) {
+      errors.push('desired_roommates_min must be a number');
+    }
   }
-  if (
-    data.desired_roommates_max != null &&
-    typeof data.desired_roommates_max !== 'number'
-  ) {
-    errors.push('desired_roommates_max must be a number');
+  if (data.desired_roommates_max != null) {
+    const desiredMaxValue =
+      typeof data.desired_roommates_max === 'string'
+        ? Number(data.desired_roommates_max)
+        : data.desired_roommates_max;
+    if (typeof desiredMaxValue !== 'number' || Number.isNaN(desiredMaxValue)) {
+      errors.push('desired_roommates_max must be a number');
+    }
   }
   if (data.is_searchable !== undefined && typeof data.is_searchable !== 'boolean') {
     errors.push('is_searchable must be a boolean');
@@ -296,8 +396,20 @@ const handler = withAuth(
   async (req: Request, payload: JWTPayload): Promise<Response> => {
     const userId = getUserId(payload);
     const method = req.method;
+    const url = new URL(req.url);
 
     try {
+      // Handle complete-onboarding action
+      if (method === 'POST' && url.searchParams.get('action') === 'complete-onboarding') {
+        const updatedProfile = await completeOnboarding(userId);
+        const response: ApiResponse<Profile> = { data: updatedProfile };
+
+        return new Response(JSON.stringify(response), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       if (method === 'GET') {
         const profile = await getProfile(userId);
 
@@ -357,6 +469,7 @@ const handler = withAuth(
         }
 
         const profile = await createProfile(profileData);
+        await ensureProvinceRecords(profileData.preferred_zones);
         if (firstName !== undefined || lastName !== undefined) {
           await updateUserNames(userId, firstName, lastName);
         }
@@ -378,22 +491,38 @@ const handler = withAuth(
         }
 
         const updates = await req.json();
+        console.info('[profiles] PATCH received', {
+          userId,
+          keys: Object.keys(updates ?? {}),
+          preferredZonesCount: Array.isArray(updates?.preferred_zones)
+            ? updates.preferred_zones.length
+            : null,
+        });
         delete updates.id;
         delete updates.updated_at;
+        delete updates.birth_date;
+        const gender =
+          typeof updates.gender === 'string' ? updates.gender : undefined;
         const firstName =
           typeof updates.first_name === 'string' ? updates.first_name : undefined;
         const lastName =
           typeof updates.last_name === 'string' ? updates.last_name : undefined;
+        delete updates.gender;
         delete updates.first_name;
         delete updates.last_name;
 
         const validation = validateProfileData({
           ...existingProfile,
           ...updates,
+          ...(gender !== undefined ? { gender } : {}),
           ...(firstName !== undefined ? { first_name: firstName } : {}),
           ...(lastName !== undefined ? { last_name: lastName } : {}),
         });
         if (!validation.isValid) {
+          console.warn('[profiles] PATCH validation failed', {
+            userId,
+            errors: validation.errors,
+          });
           return new Response(
             JSON.stringify({
               error: 'Validation failed',
@@ -407,16 +536,27 @@ const handler = withAuth(
         }
 
         const updatedProfile = await updateProfile(userId, updates);
+        if (Object.prototype.hasOwnProperty.call(updates, 'preferred_zones')) {
+          await ensureProvinceRecords(updatedProfile.preferred_zones ?? null);
+        }
         if (firstName !== undefined || lastName !== undefined) {
           await updateUserNames(userId, firstName, lastName);
         }
-        if (
-          updatedProfile.gender &&
-          updatedProfile.gender !== existingProfile.gender
-        ) {
+        if (gender !== undefined && gender !== existingProfile.gender) {
+          const { error: userGenderError } = await supabaseClient
+            .from('users')
+            .update({ gender })
+            .eq('id', userId);
+          if (userGenderError) {
+            console.error(
+              '[profiles] Failed to sync gender to users table:',
+              userGenderError
+            );
+          }
+
           const { error: authUpdateError } =
             await supabaseClient.auth.admin.updateUserById(userId, {
-              user_metadata: { gender: updatedProfile.gender },
+              user_metadata: { gender },
             });
           if (authUpdateError) {
             console.error(

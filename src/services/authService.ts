@@ -13,6 +13,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { createClient } from '@supabase/supabase-js';
 
+const devLog = (...args: unknown[]) => {
+  if (__DEV__) {
+    console.log(...args);
+  }
+};
+
 export const supabaseClient = createClient(
   API_CONFIG.SUPABASE_URL,
   API_CONFIG.SUPABASE_ANON_KEY,
@@ -27,8 +33,8 @@ export const supabaseClient = createClient(
 );
 
 // Logs de diagnóstico de configuración Supabase
-console.log('[Supabase][init] URL:', API_CONFIG.SUPABASE_URL);
-console.log(
+devLog('[Supabase][init] URL:', API_CONFIG.SUPABASE_URL);
+devLog(
   '[Supabase][init] ANON key length:',
   API_CONFIG.SUPABASE_ANON_KEY ? API_CONFIG.SUPABASE_ANON_KEY.length : 'undefined'
 );
@@ -39,10 +45,10 @@ try {
   const restUrl = (supabaseClient as any).rest?.url;
   // @ts-ignore acceso interno para debug
   const storageUrl = (supabaseClient as any).storage?.url;
-  console.log('[Supabase][init] Internal rest URL:', restUrl);
-  console.log('[Supabase][init] Internal storage URL:', storageUrl);
+  devLog('[Supabase][init] Internal rest URL:', restUrl);
+  devLog('[Supabase][init] Internal storage URL:', storageUrl);
 } catch (e) {
-  console.log('[Supabase][init] No internal URLs available for logging', e);
+  devLog('[Supabase][init] No internal URLs available for logging', e);
 }
 
 // Función auxiliar para mapear el usuario
@@ -100,7 +106,7 @@ class AuthService {
     });
 
     if (error || !data.session) {
-      console.log('[AuthService.persistSession] setSession failed:', error?.message);
+      devLog('[AuthService.persistSession] setSession failed:', error?.message);
       const refreshAttempt = await supabaseClient.auth.refreshSession({ refresh_token: refreshToken });
       if (refreshAttempt.data.session) {
         await AsyncStorage.setItem(
@@ -140,12 +146,12 @@ class AuthService {
       return;
     }
 
-    console.log('[AuthService.bootstrapSession] refresh failed:', error?.message);
+    devLog('[AuthService.bootstrapSession] refresh failed:', error?.message);
     await this.persistSession(accessToken, refreshToken);
   }
 
   async login(credentials: LoginRequest): Promise<AuthResponse> {
-    console.log('[AuthService.login] called with email:', credentials.email);
+    devLog('[AuthService.login] called with email:', credentials.email);
 
     const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-login`, {
       method: 'POST',
@@ -153,7 +159,7 @@ class AuthService {
       body: JSON.stringify(credentials),
     });
 
-    console.log('[AuthService.login] response:', {
+    devLog('[AuthService.login] response:', {
       status: response.status,
       ok: response.ok,
       url: response.url,
@@ -174,8 +180,19 @@ class AuthService {
   }
 
   async loginWithGoogle(requireExisting: boolean = true): Promise<AuthResponse> {
-    console.log('[AuthService.loginWithGoogle] Iniciando login con Google');
-    await GoogleSignin.hasPlayServices();
+    devLog('[AuthService.loginWithGoogle] Iniciando login con Google');
+
+    // Check if Google Play Services are available and Activity is ready
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    } catch (error: any) {
+      devLog('[AuthService.loginWithGoogle] hasPlayServices error:', error?.code);
+      if (error?.code === 'NULL_ACTIVITY') {
+        throw new Error('La app no está lista. Por favor, intenta de nuevo en unos segundos.');
+      }
+      throw error;
+    }
+
     const result = await GoogleSignin.signIn();
     const idToken = result.data?.idToken;
     const email =
@@ -184,7 +201,7 @@ class AuthService {
       (result as any)?.data?.profile?.email ||
       (result as any)?.profile?.email;
 
-    console.log('[AuthService.loginWithGoogle] Google idToken exists:', !!idToken);
+    devLog('[AuthService.loginWithGoogle] Google idToken exists:', !!idToken);
 
     if (!idToken) {
       throw new Error('No se pudo obtener el idToken de Google');
@@ -224,7 +241,7 @@ class AuthService {
       token: idToken,
     });
 
-    console.log('[AuthService.loginWithGoogle] Supabase response:', {
+    devLog('[AuthService.loginWithGoogle] Supabase response:', {
       hasUser: !!data?.user,
       hasSession: !!data?.session,
       error: error?.message,
@@ -244,7 +261,7 @@ class AuthService {
     redirectTo?: string
   ): Promise<void> {
     const trimmedEmail = email.trim();
-    console.log('[AuthService.requestPasswordReset] email:', trimmedEmail);
+    devLog('[AuthService.requestPasswordReset] email:', trimmedEmail);
 
     const options = redirectTo ? { redirectTo } : undefined;
     const { error } = await supabaseClient.auth.resetPasswordForEmail(
@@ -343,7 +360,7 @@ class AuthService {
   }
 
   async register(userData: RegisterRequest): Promise<AuthResponse> {
-    console.log('🔧 AuthService.register() llamado con:', {
+    devLog('🔧 AuthService.register() llamado con:', {
       email: userData.email,
       password: userData.password ? '***' : 'vacío',
       firstName: userData.firstName,
@@ -363,7 +380,7 @@ class AuthService {
       },
     };
 
-    console.log('📦 Datos transformados para backend:', {
+    devLog('📦 Datos transformados para backend:', {
       ...registerData,
       password: registerData.password ? '***' : 'vacío',
     });
@@ -374,7 +391,7 @@ class AuthService {
       body: JSON.stringify(registerData),
     });
 
-    console.log('📥 Respuesta recibida:', {
+    devLog('📥 Respuesta recibida:', {
       status: response.status,
       statusText: response.statusText,
       ok: response.ok,
@@ -387,7 +404,7 @@ class AuthService {
     }
 
     const data = await response.json();
-    console.log('✅ Datos de respuesta:', data);
+    devLog('✅ Datos de respuesta:', data);
 
     return {
       user: data.user,
@@ -397,7 +414,7 @@ class AuthService {
   }
 
   async logout(): Promise<void> {
-    console.log('[AuthService.logout] Removing authToken from storage');
+    devLog('[AuthService.logout] Removing authToken from storage');
     await AsyncStorage.removeItem('authToken');
     await AsyncStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
     await AsyncStorage.removeItem(ONBOARDING_COMPLETED_KEY);
@@ -405,17 +422,17 @@ class AuthService {
   }
 
   async refreshToken(): Promise<string | null> {
-    console.log('[AuthService.refreshToken] Attempting refreshSession');
+    devLog('[AuthService.refreshToken] Attempting refreshSession');
 
     try {
       const refreshToken = await AsyncStorage.getItem(AUTH_REFRESH_TOKEN_KEY);
       if (!refreshToken) {
-        console.log('[AuthService.refreshToken] Missing refresh token');
+        devLog('[AuthService.refreshToken] Missing refresh token');
         return null;
       }
       const { data, error } = await supabaseClient.auth.refreshSession({ refresh_token: refreshToken });
 
-      console.log('[AuthService.refreshToken] Supabase response:', {
+      devLog('[AuthService.refreshToken] Supabase response:', {
         hasSession: !!data?.session,
         error: error?.message,
       });
@@ -429,7 +446,7 @@ class AuthService {
         AUTH_REFRESH_TOKEN_KEY,
         data.session.refresh_token
       );
-      console.log('[AuthService.refreshToken] New token stored');
+      devLog('[AuthService.refreshToken] New token stored');
       return data.session.access_token;
     } catch (error) {
       console.error('Error refreshing token:', error);
@@ -439,15 +456,15 @@ class AuthService {
 
   // Registro por fases
   async registerPhase1(data: Phase1Data): Promise<TempRegistration> {
-    console.log('🔧 registerPhase1 called with:', {
+    devLog('🔧 registerPhase1 called with:', {
       email: data.email,
       hasPassword: !!data.password,
       isGoogleUser: data.isGoogleUser,
     });
 
     const url = `${API_CONFIG.FUNCTIONS_URL}/auth-register-phase1`;
-    console.log('🌐 Fetch URL:', url);
-    console.log('🔧 API_CONFIG.FUNCTIONS_URL:', API_CONFIG.FUNCTIONS_URL);
+    devLog('🌐 Fetch URL:', url);
+    devLog('🔧 API_CONFIG.FUNCTIONS_URL:', API_CONFIG.FUNCTIONS_URL);
 
     try {
       const response = await fetch(url, {
@@ -460,7 +477,7 @@ class AuthService {
         }),
       });
 
-      console.log('📥 Response received:', {
+      devLog('📥 Response received:', {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
@@ -470,11 +487,31 @@ class AuthService {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Error response body:', errorText);
-        throw new Error('Error en fase 1 del registro');
+        let friendlyMessage = 'Error en fase 1 del registro';
+        try {
+          const parsed = JSON.parse(errorText);
+          const backendError =
+            typeof parsed?.error === 'string' ? parsed.error : '';
+          if (backendError === 'Email domain does not exist') {
+            friendlyMessage = 'El dominio del correo no existe';
+          } else if (backendError === 'Invalid email format') {
+            friendlyMessage = 'El formato del correo no es valido';
+          } else if (backendError === 'Password must be at least 8 characters') {
+            friendlyMessage = 'La contrasena debe tener al menos 8 caracteres';
+          } else if (backendError === 'Password is required') {
+            friendlyMessage = 'Por favor ingresa una contrasena';
+          }
+        } catch (parseError) {
+          console.error(
+            '[AuthService.registerPhase1] Failed to parse error body:',
+            parseError
+          );
+        }
+        throw new Error(friendlyMessage);
       }
 
       const result = await response.json();
-      console.log('✅ Phase1 response:', result);
+      devLog('✅ Phase1 response:', result);
 
       return {
         tempToken: result.temp_token,
@@ -558,7 +595,7 @@ class AuthService {
 
   // Verificar si un email ya existe en la base de datos
   async checkEmailExists(email: string): Promise<boolean> {
-    console.log('[AuthService.checkEmailExists] Checking email:', email);
+    devLog('[AuthService.checkEmailExists] Checking email:', email);
 
     try {
       const response = await fetch(`${API_CONFIG.FUNCTIONS_URL}/auth-check-email`, {
@@ -567,7 +604,7 @@ class AuthService {
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
-      console.log('[AuthService.checkEmailExists] Response:', {
+      devLog('[AuthService.checkEmailExists] Response:', {
         status: response.status,
         ok: response.ok,
       });
@@ -579,7 +616,7 @@ class AuthService {
       }
 
       const result = await response.json();
-      console.log('[AuthService.checkEmailExists] Result:', result);
+      devLog('[AuthService.checkEmailExists] Result:', result);
       
       return result.exists === true;
     } catch (error) {

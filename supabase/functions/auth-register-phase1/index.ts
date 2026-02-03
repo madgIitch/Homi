@@ -2,6 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  
 import { corsHeaders, handleCORS } from '../_shared/cors.ts'  
 import { Phase1Request, TempRegistrationResponse } from '../_shared/types.ts'  
+import { hasValidEmailDomain } from '../_shared/emailDomain.ts'
   
 async function handler(req: Request): Promise<Response> {  
   const corsResponse = handleCORS(req)  
@@ -32,6 +33,30 @@ async function handler(req: Request): Promise<Response> {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }  
       )  
     }  
+
+    if (!body.is_google_user) {
+      if (!body.password) {
+        return new Response(
+          JSON.stringify({ error: 'Password is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (body.password.length < 8) {
+        return new Response(
+          JSON.stringify({ error: 'Password must be at least 8 characters' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
+    const hasDomain = await hasValidEmailDomain(body.email)
+    if (!hasDomain) {
+      return new Response(
+        JSON.stringify({ error: 'Email domain does not exist' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
   
     const supabaseClient = createClient(  
       Deno.env.get('SUPABASE_URL') ?? '',  

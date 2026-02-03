@@ -38,13 +38,17 @@ class ShareService {
     };
   }
 
-  async getProfileShareImage(profileId?: string): Promise<ArrayBuffer> {
+  private appendListParam(url: URL, key: string, values?: string[]) {
+    if (!values || values.length === 0) return;
+    url.searchParams.set(key, values.join(','));
+  }
+
+  private async fetchShareImage(
+    url: URL,
+    logLabel: string
+  ): Promise<ArrayBuffer> {
     let headers = await this.getAuthHeaders();
-    const url = new URL(`${API_CONFIG.FUNCTIONS_URL}/profile-share-image`);
-    if (profileId) {
-      (url.searchParams as any).set?.('profile_id', profileId);
-    }
-    console.log('[ShareService] Request profile share image', {
+    console.log(`[ShareService] Request ${logLabel} share image`, {
       url: url.toString(),
       hasAuth: Boolean(headers.Authorization),
     });
@@ -53,20 +57,23 @@ class ShareService {
       method: 'GET',
       headers,
     });
-    console.log('[ShareService] Response status', response.status);
+    console.log(`[ShareService] Response status ${logLabel}`, response.status);
 
     if (response.status === 401) {
       const newToken = await authService.refreshToken();
       if (newToken) {
         headers = await this.getAuthHeaders();
-        console.log('[ShareService] Retrying with refreshed token', {
+        console.log(`[ShareService] Retrying ${logLabel} with refreshed token`, {
           hasAuth: Boolean(headers.Authorization),
         });
         response = await fetch(url.toString(), {
           method: 'GET',
           headers,
         });
-        console.log('[ShareService] Response status after refresh', response.status);
+        console.log(
+          `[ShareService] Response status after refresh ${logLabel}`,
+          response.status
+        );
       }
     }
 
@@ -77,7 +84,7 @@ class ShareService {
       } catch {
         errorBody = '';
       }
-      console.error('[ShareService] Share image error body', {
+      console.error(`[ShareService] ${logLabel} share image error body`, {
         status: response.status,
         errorBody,
       });
@@ -89,10 +96,12 @@ class ShareService {
     return await response.arrayBuffer();
   }
 
-  async getProfileShareImageFile(profileId?: string): Promise<string> {
-    const buffer = await this.getProfileShareImage(profileId);
+  private async writeShareImageFile(
+    buffer: ArrayBuffer,
+    prefix: string
+  ): Promise<string> {
     const base64 = arrayBufferToBase64(buffer);
-    const fileName = `profile-share-${Date.now()}.png`;
+    const fileName = `${prefix}-${Date.now()}.png`;
     const baseDir =
       Platform.OS === 'android'
         ? `${RNFS.PicturesDirectoryPath}/HomiMatch`
@@ -109,6 +118,65 @@ class ShareService {
     }
     console.log('[ShareService] Imagen guardada en:', path);
     return `file://${path}`;
+  }
+
+  async getProfileShareImage(
+    profileId?: string,
+    options?: {
+      include?: string[];
+      photoIds?: string[];
+      zoneIds?: string[];
+      theme?: string;
+    }
+  ): Promise<ArrayBuffer> {
+    const url = new URL(`${API_CONFIG.FUNCTIONS_URL}/profile-share-image`);
+    if (profileId) {
+      (url.searchParams as any).set?.('profile_id', profileId);
+    }
+    if (options?.include?.length) {
+      (url.searchParams as any).set?.('include', options.include.join(','));
+    }
+    this.appendListParam(url, 'photo_ids', options?.photoIds);
+    this.appendListParam(url, 'zone_ids', options?.zoneIds);
+    if (options?.theme) {
+      (url.searchParams as any).set?.('theme', options.theme);
+    }
+    return this.fetchShareImage(url, 'profile');
+  }
+
+  async getFlatShareImage(flatId: string): Promise<ArrayBuffer> {
+    const url = new URL(`${API_CONFIG.FUNCTIONS_URL}/flat-share-image`);
+    (url.searchParams as any).set?.('flat_id', flatId);
+    return this.fetchShareImage(url, 'flat');
+  }
+
+  async getRoomShareImage(roomId: string): Promise<ArrayBuffer> {
+    const url = new URL(`${API_CONFIG.FUNCTIONS_URL}/room-share-image`);
+    (url.searchParams as any).set?.('room_id', roomId);
+    return this.fetchShareImage(url, 'room');
+  }
+
+  async getProfileShareImageFile(
+    profileId?: string,
+    options?: {
+      include?: string[];
+      photoIds?: string[];
+      zoneIds?: string[];
+      theme?: string;
+    }
+  ): Promise<string> {
+    const buffer = await this.getProfileShareImage(profileId, options);
+    return this.writeShareImageFile(buffer, 'profile-share');
+  }
+
+  async getFlatShareImageFile(flatId: string): Promise<string> {
+    const buffer = await this.getFlatShareImage(flatId);
+    return this.writeShareImageFile(buffer, 'flat-share');
+  }
+
+  async getRoomShareImageFile(roomId: string): Promise<string> {
+    const buffer = await this.getRoomShareImage(roomId);
+    return this.writeShareImageFile(buffer, 'room-share');
   }
 }
 

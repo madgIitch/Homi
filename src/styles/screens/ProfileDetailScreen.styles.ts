@@ -1,14 +1,10 @@
 import { StyleSheet } from 'react-native';
-import {
-  borderRadius,
-  colors,
-  semanticRadii,
-  semanticSizes,
-  sizes,
-  spacing,
-} from '../../theme';
+import type { Theme } from '../../theme';
 
-export const styles = StyleSheet.create({
+export const styles = (theme: Theme) => {
+  const { colors, spacing, sizes, borderRadius, semanticRadii, semanticSizes } =
+    theme;
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surfaceMutedAlt,
@@ -204,6 +200,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.xs,
+    gap: spacing.s10,
   },
   statusDot: {
     width: 10,
@@ -216,6 +213,41 @@ export const styles = StyleSheet.create({
   },
   statusDotInactive: {
     backgroundColor: '#9CA3AF',
+  },
+  toggleContainer: {
+    width: 40,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+  },
+  toggleActive: {
+    backgroundColor: colors.primaryTint,
+    borderColor: colors.primaryMuted,
+  },
+  toggleInactive: {
+    backgroundColor: colors.glassSurface,
+    borderColor: colors.glassBorderSoft,
+  },
+  toggleThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.textSecondary,
+    shadowColor: colors.shadowDark,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  thumbActive: {
+    alignSelf: 'flex-end',
+  },
+  thumbInactive: {
+    alignSelf: 'flex-start',
   },
   profileStatusText: {
     fontSize: 14,
@@ -421,6 +453,18 @@ export const styles = StyleSheet.create({
     lineHeight: 18,
     color: colors.text,
   },
+  listItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s6,
+    paddingVertical: spacing.xxs,
+  },
+  listItemText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.text,
+    flex: 1,
+  },
   listBullet: {
     color: colors.textTertiary,
   },
@@ -595,6 +639,34 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
+  categoryGrid: {
+    gap: spacing.s12,
+  },
+  categoryCard: {
+    borderRadius: semanticRadii.soft,
+    borderWidth: 1,
+    backgroundColor: colors.glassSurface,
+    paddingHorizontal: spacing.s14,
+    paddingVertical: spacing.s12,
+    gap: spacing.s8,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  categoryTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryItems: {
+    gap: spacing.xs,
+  },
+  categoryItem: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
   chipIcon: {
     marginRight: spacing.s6,
   },
@@ -611,6 +683,22 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  manageSubscriptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.s10,
+    paddingVertical: spacing.s14,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+  },
+  manageSubscriptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
   },
   ctaButton: {
     marginBottom: spacing.xl,
@@ -671,6 +759,105 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+  requestTipCard: {
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+    borderRadius: borderRadius.lg,
+    padding: spacing.s12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s10,
+  },
+  requestTipText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.text,
+  },
+  requestTipButton: {
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+  },
+  requestTipButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  requestPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s12,
+    paddingVertical: spacing.xs,
+  },
+  requestAvatarWrap: {
+    width: sizes.s40,
+    height: sizes.s40,
+    borderRadius: sizes.s20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  requestAvatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestPreviewInfo: {
+    flex: 1,
+  },
+  requestPreviewName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  requestPreviewMeta: {
+    fontSize: 12,
+    marginTop: spacing.xxs,
+  },
+  requestLimitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.s10,
+  },
+  requestLimitChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.surfaceLight,
+  },
+  requestLimitText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  requestUpgradeButton: {
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+  },
+  requestUpgradeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
   requestModalInput: {
     minHeight: sizes.s86,
     borderRadius: borderRadius.s14,
@@ -680,6 +867,48 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     textAlignVertical: 'top',
     backgroundColor: colors.surfaceLight,
+  },
+  requestCounterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  requestHintText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  requestCounterText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  requestUsageCard: {
+    marginTop: spacing.s10,
+    padding: spacing.s12,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+    backgroundColor: colors.glassSurface,
+    gap: spacing.xs,
+  },
+  requestUsageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  requestUsageTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  requestUsageValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  requestUsageHint: {
+    fontSize: 11,
+    color: colors.textSecondary,
   },
   requestModalActions: {
     flexDirection: 'row',
@@ -710,6 +939,208 @@ export const styles = StyleSheet.create({
     color: colors.background,
   },
   requestModalButtonDisabled: {
+    opacity: 0.7,
+  },
+  shareConfigOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.s8,
+    backgroundColor: colors.overlayDark,
+  },
+  shareConfigBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  shareConfigCard: {
+    width: '100%',
+    maxHeight: '95%',
+    borderRadius: semanticRadii.sheet,
+    padding: spacing.s12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    gap: spacing.s8,
+    overflow: 'hidden',
+  },
+  shareConfigTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  shareConfigSubtitle: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  shareConfigScroll: {
+    flexGrow: 0,
+  },
+  shareConfigSection: {
+    marginTop: spacing.s6,
+  },
+  shareConfigSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: spacing.s4,
+  },
+  shareConfigHint: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  shareSectionDisabled: {
+    opacity: 0.5,
+  },
+  sharePhotoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.s6,
+    justifyContent: 'flex-start',
+  },
+  sharePhotoTile: {
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: borderRadius.s12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
+  },
+  sharePhotoTileSelected: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+  },
+  sharePhotoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  sharePhotoCheck: {
+    position: 'absolute',
+    right: spacing.xs,
+    top: spacing.xs,
+    width: sizes.s18,
+    height: sizes.s18,
+    borderRadius: sizes.s9,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareZonesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.s6,
+  },
+  shareZoneChip: {
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.s6,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
+  },
+  shareZoneChipSelected: {
+    backgroundColor: colors.primaryTint,
+    borderColor: colors.primaryMuted,
+  },
+  shareZoneText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  shareZoneTextSelected: {
+    color: colors.primary,
+  },
+  shareFieldGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: spacing.s10,
+    rowGap: spacing.s4,
+  },
+  shareFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.s4,
+  },
+  shareFieldItem: {
+    width: '48%',
+  },
+  shareFieldCard: {
+    borderRadius: borderRadius.s14,
+    backgroundColor: 'transparent',
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.s8,
+  },
+  shareFieldCardActive: {
+    backgroundColor: 'transparent',
+  },
+  shareFieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  shareFieldToggleWrap: {
+    padding: spacing.xs,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'transparent',
+  },
+  shareFieldToggleActive: {
+    backgroundColor: 'transparent',
+  },
+  shareFieldSwitch: {
+    transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
+  },
+  shareThemeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.s6,
+  },
+  shareThemeChip: {
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.s6,
+    borderRadius: semanticRadii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceLight,
+  },
+  shareThemeChipSelected: {
+    borderColor: colors.primaryMuted,
+    backgroundColor: colors.primaryTint,
+  },
+  shareThemeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  shareThemeTextSelected: {
+    color: colors.primary,
+  },
+  shareConfigActions: {
+    flexDirection: 'row',
+    gap: spacing.s10,
+    marginTop: spacing.s12,
+  },
+  shareConfigButton: {
+    flex: 1,
+    paddingVertical: spacing.s12,
+    borderRadius: semanticRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareConfigCancel: {
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  shareConfigConfirm: {
+    backgroundColor: colors.primary,
+  },
+  shareConfigButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  shareConfigConfirmText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  shareConfigButtonDisabled: {
     opacity: 0.7,
   },
   lightboxOverlay: {
@@ -778,6 +1209,25 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  lightboxZoomChip: {
+    position: 'absolute',
+    top: spacing.s12,
+    right: spacing.s12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.s10,
+    paddingVertical: spacing.xs,
+    borderRadius: semanticRadii.pill,
+    backgroundColor: colors.glassSurface,
+    borderWidth: 1,
+    borderColor: colors.glassBorderSoft,
+  },
+  lightboxZoomText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textStrong,
+  },
   lightboxNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -810,4 +1260,5 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textStrong,
   },
-});
+  });
+};

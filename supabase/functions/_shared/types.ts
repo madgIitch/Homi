@@ -261,7 +261,9 @@ export type MatchStatus =
   | 'room_assigned'
   | 'room_declined'
   | 'unmatched'
-  
+
+export type LocationDisplayLevel = 'zone-city' | 'city-province' | 'province'
+
 // ====================    
 // Tipos para Errores    
 // ====================    
@@ -280,10 +282,19 @@ export interface RoomRecommendation {
   profile: Profile  
   compatibility_score: number  
   match_reasons: string[]  
+  location_display_level?: LocationDisplayLevel | null
+  location_zone_id?: string | null
+  location_zone_name?: string | null
+  location_city_id?: string | null
+  location_city_name?: string | null
+  location_province_code?: string | null
+  location_province_name?: string | null
 }  
   
-export interface RecommendationResponse {  
-  recommendations: RoomRecommendation[]  
+export interface RecommendationResponse {
+  recommendations: RoomRecommendation[]
+  all_provinces_blocked?: boolean
+  blocked_provinces?: string[]
 }
 
 

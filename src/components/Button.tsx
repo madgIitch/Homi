@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   type StyleProp,
   type ViewStyle,
+  type TextStyle,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -18,6 +19,7 @@ interface ButtonProps {
   loading?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -28,6 +30,7 @@ export const Button: React.FC<ButtonProps> = ({
   loading = false,
   disabled = false,
   style,
+  textStyle,
 }) => {
   const theme = useTheme();
   const isDisabled = disabled || loading;
@@ -46,7 +49,7 @@ export const Button: React.FC<ButtonProps> = ({
       borderColor: 'transparent',
     },
   }[variant];
-  const textStyle = {
+  const variantTextStyle = {
     primary: { color: theme.colors.background },
     secondary: { color: theme.colors.text },
     tertiary: { color: theme.colors.primary },
@@ -77,7 +80,14 @@ export const Button: React.FC<ButtonProps> = ({
           color={variant === 'primary' ? theme.colors.background : theme.colors.text}
         />
       ) : (
-        <Text style={[styles.text, textStyle, isDisabled && textDisabledStyle]}>
+        <Text
+          style={[
+            styles.text,
+            variantTextStyle,
+            textStyle,
+            isDisabled && textDisabledStyle,
+          ]}
+        >
           {title}
         </Text>
       )}

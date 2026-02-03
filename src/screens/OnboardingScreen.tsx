@@ -13,10 +13,10 @@ import {
   Alert,
   Image,
   ImageBackground,
+  Platform,
   Pressable,
   type StyleProp,
   StyleSheet,
-  Switch,
   Text,
   View,
   type ViewStyle,
@@ -27,19 +27,22 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import LinearGradient from 'react-native-linear-gradient';
 import { BlurView } from '@react-native-community/blur';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { launchImageLibrary } from 'react-native-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ImageCropPicker from 'react-native-image-crop-picker';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { useTheme } from '../theme/ThemeContext';
+import { useTheme, useThemeController } from '../theme/ThemeContext';
 import { Button } from '../components/Button';
+import { BudgetRangeSlider } from '../components/BudgetRangeSlider';
 import { Input } from '../components/Input';
 import { ChipGroup } from '../components/ChipGroup';
+import { AppearanceModeSelector } from '../components/AppearanceModeSelector';
 import { AuthContext } from '../context/AuthContext';
 import { useSwipeFilters } from '../context/SwipeFiltersContext';
 import { profilePhotoService } from '../services/profilePhotoService';
 import { profileService } from '../services/profileService';
+import { roomAssignmentService } from '../services/roomAssignmentService';
 import { roomService } from '../services/roomService';
 import { locationService } from '../services/locationService';
 import {
@@ -50,16 +53,14 @@ import {
   DEFAULT_BUDGET_MIN,
   DEFAULT_ROOMMATES_MAX,
   DEFAULT_ROOMMATES_MIN,
+  ESTILO_VIDA_GROUPS,
   INTERESES_OPTIONS,
   lifestyleLabelById,
 } from '../constants/swipeFilters';
-import type {
-  HousingSituation,
-  ProfileCreateRequest,
-  ProfilePhoto,
-} from '../types/profile';
+import type { ProfileCreateRequest, ProfilePhoto, AppearanceMode } from '../types/profile';
 import type { GenderPolicy } from '../types/room';
 import { OnboardingScreenStyles as styles } from '../styles/screens';
+import { mapAppearanceModeToProfile } from '../utils/appearanceMode';
 
 type OnboardingScreenProps = {
   onComplete?: () => void;
@@ -71,6 +72,8 @@ type OnboardingFlowContextValue = {
   loading: boolean;
   situacionVivienda: 'busco_piso' | 'tengo_piso';
   setSituacionVivienda: (value: 'busco_piso' | 'tengo_piso') => void;
+  appearanceMode: AppearanceMode;
+  setAppearanceMode: (value: AppearanceMode) => void;
   address: string;
   setAddress: (value: string) => void;
   cityQuery: string;
@@ -120,14 +123,19 @@ const DEFAULT_ESTILO_VIDA = [
   'smoking_no',
   'pets_ok',
 ];
+const LIFESTYLE_GROUP_ICONS: Record<string, string> = {
+  schedule: 'time-outline',
+  cleaning: 'brush-outline',
+  guests: 'people-outline',
+  smoking: 'flame-outline',
+  pets: 'paw-outline',
+};
 const GENDER_POLICY_OPTIONS: { id: GenderPolicy; label: string }[] = [
   { id: 'mixed', label: 'Mixto' },
   { id: 'men_only', label: 'Solo hombres' },
   { id: 'flinta', label: 'Solo FLINTA' },
 ];
-const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
 const JOINED_WITH_INVITE_KEY = 'joinedWithInvite';
-const FORCE_ONBOARDING_KEY = 'forceOnboarding';
 
 const SEEKING_STEPS = [
   'OnboardingRole',
@@ -138,8 +146,16 @@ const SEEKING_STEPS = [
   'OnboardingPhoto',
   'OnboardingFinish',
 ];
+const INVITE_STEPS = [
+  'OnboardingRole',
+  'OnboardingInterests',
+  'OnboardingLifestyle',
+  'OnboardingPhoto',
+  'OnboardingFinish',
+];
 const OFFERING_STEPS = [
   'OnboardingRole',
+  'OnboardingAppearance',
   'OnboardingLocation',
   'OnboardingInterests',
   'OnboardingLifestyle',
@@ -175,6 +191,8 @@ const OnboardingFlowProvider: React.FC<
   const [situacionVivienda, setSituacionVivienda] = useState<
     'busco_piso' | 'tengo_piso'
   >('busco_piso');
+  const [appearanceMode, setAppearanceMode] =
+    useState<AppearanceMode>('owner-only');
   const [intereses, setIntereses] = useState<string[]>(
     DEFAULT_INTERESES.length > 0 ? DEFAULT_INTERESES : ['musica']
   );
@@ -347,7 +365,7 @@ const OnboardingFlowProvider: React.FC<
         const joined = flag === '1';
         setJoinedWithInvite(joined);
         if (joined) {
-          setSituacionVivienda('tengo_piso');
+          setSituacionVivienda('busco_piso');
         }
       } catch (error) {
         console.warn('[Onboarding] Error leyendo invite flag:', error);
@@ -360,6 +378,50 @@ const OnboardingFlowProvider: React.FC<
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!joinedWithInvite) return;
+    let isActive = true;
+
+    const loadInviteLocation = async () => {
+      try {
+        const assignmentsResponse =
+          await roomAssignmentService.getAssignmentsForAssignee();
+        const assignment = assignmentsResponse.assignments[0] ?? null;
+        if (!assignment?.room_id) return;
+        const room =
+          assignment.room ?? (await roomService.getRoomById(assignment.room_id));
+        const flat = room?.flat ?? null;
+        const cityId = flat?.city_id;
+        const placeId = flat?.place_id;
+        if (!cityId || !placeId) return;
+
+        const nextCity: LocationOption = {
+          id: cityId,
+          label: flat?.city || cityId,
+        };
+        const nextPlace: LocationOption = {
+          id: placeId,
+          label: flat?.district || placeId,
+        };
+
+        if (!isActive) return;
+        setSelectedCity(nextCity);
+        setSelectedPlaces([nextPlace]);
+        setSelectedPlace(nextPlace);
+        setCityQuery('');
+        setPlaceQuery('');
+      } catch (error) {
+        console.warn('[Onboarding] Error cargando invitacion:', error);
+      }
+    };
+
+    loadInviteLocation();
+
+    return () => {
+      isActive = false;
+    };
+  }, [joinedWithInvite]);
 
   useEffect(() => {
     let isActive = true;
@@ -437,6 +499,18 @@ const OnboardingFlowProvider: React.FC<
     });
   }, [selectedPlace, situacionVivienda]);
 
+  useEffect(() => {
+    if (situacionVivienda === 'busco_piso') {
+      if (appearanceMode !== 'seeker-only') {
+        setAppearanceMode('seeker-only');
+      }
+      return;
+    }
+    if (appearanceMode === 'seeker-only') {
+      setAppearanceMode('owner-only');
+    }
+  }, [appearanceMode, situacionVivienda]);
+
   const handleSelectCity = useCallback(
     (id: string) => {
       const picked = cityOptions.find((item) => item.id === id) ?? null;
@@ -494,29 +568,10 @@ const OnboardingFlowProvider: React.FC<
 
   const validateLocationStep = useCallback(() => {
     const isSeekingFlow = situacionVivienda === 'busco_piso';
-    const zoneIds = isSeekingFlow
-      ? selectedPlaces.map((item) => item.id)
-      : selectedPlace
-      ? [selectedPlace.id]
-      : [];
-
-    if (!selectedCity) {
-      Alert.alert('Error', 'Selecciona una ciudad');
-      return false;
-    }
-
-    if (zoneIds.length === 0) {
-      Alert.alert('Error', 'Selecciona al menos una zona');
-      return false;
-    }
 
     if (!isSeekingFlow) {
       if (!address.trim()) {
         Alert.alert('Error', 'Introduce la calle o direccion del piso');
-        return false;
-      }
-      if (!selectedPlace) {
-        Alert.alert('Error', 'Selecciona una zona');
         return false;
       }
       if (!allowedPolicies.has(genderPolicy)) {
@@ -533,9 +588,6 @@ const OnboardingFlowProvider: React.FC<
     address,
     allowedPolicies,
     genderPolicy,
-    selectedCity,
-    selectedPlace,
-    selectedPlaces,
     situacionVivienda,
   ]);
 
@@ -560,18 +612,22 @@ const OnboardingFlowProvider: React.FC<
   const buildProfilePayload = useCallback(
     (input: { zoneIds: string[]; budgetMin?: number; budgetMax?: number }) => {
       const interesesFinal = intereses.length > 0 ? intereses : DEFAULT_INTERESES;
-      const housingSituation: HousingSituation =
-        situacionVivienda === 'busco_piso' ? 'seeking' : 'offering';
-      const isSeeking = situacionVivienda === 'busco_piso';
+      const { housing_situation, is_seeking } = mapAppearanceModeToProfile(
+        appearanceMode,
+        situacionVivienda === 'tengo_piso'
+      );
+      const isSeeking = housing_situation === 'seeking' || is_seeking === true;
       const scheduleId = estiloVida.find((id) => id.startsWith('schedule_'));
       const cleaningId = estiloVida.find((id) => id.startsWith('cleaning_'));
       const guestsId = estiloVida.find((id) => id.startsWith('guests_'));
       const smokingId = estiloVida.find((id) => id.startsWith('smoking_'));
       const petsId = estiloVida.find((id) => id.startsWith('pets_'));
-      const shouldSaveBudget =
-        isSeeking &&
+      const hasBudgetValues =
         typeof input.budgetMin === 'number' &&
         typeof input.budgetMax === 'number';
+      const shouldSaveBudget = isSeeking && hasBudgetValues;
+      const fallbackBudgetMin = hasBudgetValues ? input.budgetMin : DEFAULT_BUDGET_MIN;
+      const fallbackBudgetMax = hasBudgetValues ? input.budgetMax : DEFAULT_BUDGET_MAX;
 
       const profileData: ProfileCreateRequest = {
         interests: interesesFinal,
@@ -582,48 +638,40 @@ const OnboardingFlowProvider: React.FC<
           smoking: smokingId ? lifestyleLabelById.get(smokingId) : undefined,
           pets: petsId ? lifestyleLabelById.get(petsId) : undefined,
         },
-        housing_situation: housingSituation,
-        is_seeking: isSeeking,
+        housing_situation,
+        is_seeking,
         preferred_zones: input.zoneIds,
-        budget_min: shouldSaveBudget ? input.budgetMin : undefined,
-        budget_max: shouldSaveBudget ? input.budgetMax : undefined,
+        budget_min: shouldSaveBudget ? input.budgetMin : fallbackBudgetMin,
+        budget_max: shouldSaveBudget ? input.budgetMax : fallbackBudgetMax,
         desired_roommates_min: isSeeking ? DEFAULT_ROOMMATES_MIN : undefined,
         desired_roommates_max: isSeeking ? DEFAULT_ROOMMATES_MAX : undefined,
         is_searchable: true,
       };
 
-      return { profileData, interesesFinal, housingSituation, isSeeking };
+      return { profileData, interesesFinal, housingSituation: housing_situation, isSeeking };
     },
-    [intereses, estiloVida, situacionVivienda]
+    [appearanceMode, intereses, estiloVida, situacionVivienda]
   );
 
   const handleFinish = useCallback(
     async (goToEditProfile: boolean) => {
       if (loading) return;
       const isSeekingFlow = situacionVivienda === 'busco_piso';
+      const isOwnerFlow = situacionVivienda === 'tengo_piso';
+      const nextHousingFilter = appearanceMode === 'both' ? 'any' : 'seeking';
       const zoneIds = isSeekingFlow
-        ? selectedPlaces.map((item) => item.id)
+        ? selectedPlaces.length > 0
+          ? selectedPlaces.map((item) => item.id)
+          : joinedWithInvite && selectedPlace
+          ? [selectedPlace.id]
+          : []
         : selectedPlace
         ? [selectedPlace.id]
         : [];
 
-      if (!selectedCity) {
-        Alert.alert('Error', 'Selecciona una ciudad');
-        return;
-      }
-
-      if (zoneIds.length === 0) {
-        Alert.alert('Error', 'Selecciona al menos una zona');
-        return;
-      }
-
       if (!isSeekingFlow) {
         if (!address.trim()) {
           Alert.alert('Error', 'Introduce la calle o direccion del piso');
-          return;
-        }
-        if (!selectedPlace) {
-          Alert.alert('Error', 'Selecciona una zona');
           return;
         }
         if (!allowedPolicies.has(genderPolicy)) {
@@ -661,7 +709,7 @@ const OnboardingFlowProvider: React.FC<
 
         await profileService.createOrUpdateProfile(profileData);
 
-        if (!isSeeking && selectedPlace) {
+        if (isOwnerFlow && selectedCity && selectedPlace) {
           await roomService.createFlat({
             address: address.trim(),
             city: selectedCity.label,
@@ -682,7 +730,7 @@ const OnboardingFlowProvider: React.FC<
 
         await setFilters({
           ...filters,
-          housingSituation: isSeeking ? 'seeking' : 'offering',
+          housingSituation: nextHousingFilter,
           budgetMin: isSeeking ? budgetMinValue : DEFAULT_BUDGET_MIN,
           budgetMax: isSeeking ? budgetMaxValue : DEFAULT_BUDGET_MAX,
           roommatesMin: DEFAULT_ROOMMATES_MIN,
@@ -693,9 +741,8 @@ const OnboardingFlowProvider: React.FC<
           interests: interesesFinal,
         });
 
-        await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, '1');
-        await AsyncStorage.removeItem(FORCE_ONBOARDING_KEY);
-        console.log('[Onboarding] onboardingCompleted set to 1');
+        await profileService.completeOnboarding();
+        console.log('[Onboarding] onboarding_completed set to true in DB');
         onComplete?.();
 
         if (goToEditProfile) {
@@ -718,6 +765,7 @@ const OnboardingFlowProvider: React.FC<
       }
     },
     [
+      appearanceMode,
       address,
       allowedPolicies,
       budgetMax,
@@ -733,6 +781,7 @@ const OnboardingFlowProvider: React.FC<
       selectedPlaces,
       setFilters,
       situacionVivienda,
+      joinedWithInvite,
       estiloVida,
     ]
   );
@@ -742,6 +791,8 @@ const OnboardingFlowProvider: React.FC<
       loading,
       situacionVivienda,
       setSituacionVivienda,
+      appearanceMode,
+      setAppearanceMode,
       address,
       setAddress,
       cityQuery,
@@ -784,6 +835,7 @@ const OnboardingFlowProvider: React.FC<
     }),
     [
       address,
+      appearanceMode,
       allowedPolicies,
       budgetMax,
       budgetMin,
@@ -811,6 +863,7 @@ const OnboardingFlowProvider: React.FC<
       selectedPlace,
       selectedPlaces,
       setAddress,
+      setAppearanceMode,
       setBudgetMax,
       setBudgetMin,
       setCityQuery,
@@ -841,6 +894,8 @@ const OnboardingStepLayout: React.FC<{
   routeName: string;
   onHeaderLayout?: (height: number) => void;
   contentStyle?: StyleProp<ViewStyle>;
+  fixedFooter?: React.ReactNode;
+  footerStyle?: StyleProp<ViewStyle>;
   onSkip?: () => void;
   children: React.ReactNode;
 }> = ({
@@ -849,76 +904,117 @@ const OnboardingStepLayout: React.FC<{
   routeName,
   onHeaderLayout,
   contentStyle,
+  fixedFooter,
+  footerStyle,
   onSkip: _onSkip,
   children,
 }) => {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { situacionVivienda } = useOnboardingFlow();
-  const steps =
-    situacionVivienda === 'busco_piso' ? SEEKING_STEPS : OFFERING_STEPS;
+  const { situacionVivienda, joinedWithInvite } = useOnboardingFlow();
+  const steps = joinedWithInvite
+    ? INVITE_STEPS
+    : situacionVivienda === 'busco_piso'
+    ? SEEKING_STEPS
+    : OFFERING_STEPS;
   const stepIndex = Math.max(steps.indexOf(routeName), 0) + 1;
   const stepTotal = steps.length;
   const navigation = useNavigation<StackNavigationProp<any>>();
   const canGoBack = navigation.canGoBack();
+  const [footerHeight, setFooterHeight] = useState(0);
+  const bottomPadding = fixedFooter
+    ? footerHeight + insets.bottom + theme.spacing.md
+    : Math.max(
+        insets.bottom,
+        Platform.OS === 'android' ? theme.spacing.s20 : 0
+      ) + theme.spacing.lg;
 
   return (
-    <KeyboardAwareScrollView
-      contentContainerStyle={[
-        styles.stepContent,
-        { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 },
-        contentStyle,
-      ]}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      enableOnAndroid
-      extraScrollHeight={120}
-    >
-      <View
-        onLayout={(event) => {
-          onHeaderLayout?.(event.nativeEvent.layout.height);
-        }}
+    <View style={styles.stepContainer}>
+      <KeyboardAwareScrollView
+        style={styles.stepScroll}
+        contentContainerStyle={[
+          styles.stepContent,
+          {
+            paddingTop: insets.top + theme.spacing.md,
+            paddingBottom: bottomPadding,
+          },
+          contentStyle,
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={120}
       >
-        <View style={styles.topBar}>
-          {canGoBack ? (
-            <Pressable
-              onPress={() => navigation.goBack()}
-              style={styles.topBarButton}
-            >
-              <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
-            </Pressable>
-          ) : (
-            <View style={styles.topBarButton} />
-          )}
-          <Text style={[styles.stepProgress, { color: theme.colors.textSecondary }]}>
-            Paso {stepIndex} de {stepTotal}
-          </Text>
-          <View style={styles.topBarButton} />
-        </View>
-        {title ? (
-          <View style={styles.stepHeader}>
-            <Text style={[styles.stepTitle, { color: theme.colors.text }]}>
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text
-                style={[styles.stepSubtitle, { color: theme.colors.textSecondary }]}
+        <View
+          onLayout={(event) => {
+            onHeaderLayout?.(event.nativeEvent.layout.height);
+          }}
+        >
+          <View style={styles.topBar}>
+            {canGoBack ? (
+              <Pressable
+                onPress={() => navigation.goBack()}
+                style={styles.topBarButton}
               >
-                {subtitle}
-              </Text>
-            ) : null}
+                <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
+              </Pressable>
+            ) : (
+              <View style={styles.topBarButton} />
+            )}
+            <Text style={[styles.stepProgress, { color: theme.colors.textSecondary }]}>
+              Paso {stepIndex} de {stepTotal}
+            </Text>
+            <View style={styles.topBarButton} />
           </View>
-        ) : null}
-      </View>
-      {children}
-    </KeyboardAwareScrollView>
+          {title ? (
+            <View style={styles.stepHeader}>
+              <Text style={[styles.stepTitle, { color: theme.colors.text }]}>
+                {title}
+              </Text>
+              {subtitle ? (
+                <Text
+                  style={[styles.stepSubtitle, { color: theme.colors.textSecondary }]}
+                >
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+        {children}
+      </KeyboardAwareScrollView>
+      {fixedFooter ? (
+        <SafeAreaView edges={['bottom']} style={[styles.fixedFooter, footerStyle]}>
+          <View
+            onLayout={(event) => {
+              const nextHeight = event.nativeEvent.layout.height;
+              if (nextHeight !== footerHeight) {
+                setFooterHeight(nextHeight);
+              }
+            }}
+          >
+            {fixedFooter}
+          </View>
+        </SafeAreaView>
+      ) : null}
+    </View>
   );
 };
 
 const RoleStep: React.FC = () => {
   const theme = useTheme();
-  const { cardStyle, situacionVivienda, setSituacionVivienda, joinedWithInvite } =
-    useOnboardingFlow();
+  const {
+    cardStyle,
+    situacionVivienda,
+    setSituacionVivienda,
+    joinedWithInvite,
+    primaryButtonStyle,
+  } = useOnboardingFlow();
+  const { isDark } = useThemeController();
+  const roleTextColor = isDark ? theme.colors.textTertiary : theme.colors.text;
+  const roleActiveTextColor = isDark ? theme.colors.textLight : theme.colors.text;
+  const rolePressedTextColor = isDark ? theme.colors.textStrong : theme.colors.text;
   const navigation = useNavigation<StackNavigationProp<any>>();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -957,24 +1053,50 @@ const RoleStep: React.FC = () => {
             ]}
             onPress={() => setSituacionVivienda('busco_piso')}
           >
-            <BlurView
-              blurType="light"
-              blurAmount={situacionVivienda === 'busco_piso' ? 8 : 16}
-              reducedTransparencyFallbackColor={theme.colors.glassOverlay}
-              style={StyleSheet.absoluteFillObject}
-              pointerEvents="none"
-            />
-            <View
-              style={[
-                styles.roleCardTint,
-                situacionVivienda === 'busco_piso' && styles.roleCardTintActive,
-              ]}
-              pointerEvents="none"
-            />
-            <Ionicons name="search-outline" size={22} color={theme.colors.text} />
-            <Text style={[styles.roleCardText, { color: theme.colors.text }]}>
-              Busco piso
-            </Text>
+            {({ pressed }) => (
+              <>
+                <BlurView
+                  blurType="light"
+                  blurAmount={situacionVivienda === 'busco_piso' ? 8 : 16}
+                  reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+                  style={StyleSheet.absoluteFillObject}
+                  pointerEvents="none"
+                />
+                <View
+                  style={[
+                    styles.roleCardTint,
+                    situacionVivienda === 'busco_piso' && styles.roleCardTintActive,
+                    pressed && styles.roleCardTintPressed,
+                  ]}
+                  pointerEvents="none"
+                />
+                <Ionicons
+                  name="search-outline"
+                  size={22}
+                  color={
+                    pressed
+                      ? rolePressedTextColor
+                      : situacionVivienda === 'busco_piso'
+                      ? roleActiveTextColor
+                      : roleTextColor
+                  }
+                />
+                <Text
+                  style={[
+                    styles.roleCardText,
+                    {
+                      color: pressed
+                        ? rolePressedTextColor
+                        : situacionVivienda === 'busco_piso'
+                        ? roleActiveTextColor
+                        : roleTextColor,
+                    },
+                  ]}
+                >
+                  Busco piso
+                </Text>
+              </>
+            )}
           </Pressable>
           <Pressable
             disabled={joinedWithInvite}
@@ -987,31 +1109,103 @@ const RoleStep: React.FC = () => {
             ]}
             onPress={() => setSituacionVivienda('tengo_piso')}
           >
-            <BlurView
-              blurType="light"
-              blurAmount={situacionVivienda === 'tengo_piso' ? 8 : 16}
-              reducedTransparencyFallbackColor={theme.colors.glassOverlay}
-              style={StyleSheet.absoluteFillObject}
-              pointerEvents="none"
-            />
-            <View
-              style={[
-                styles.roleCardTint,
-                situacionVivienda === 'tengo_piso' && styles.roleCardTintActive,
-              ]}
-              pointerEvents="none"
-            />
-            <Ionicons name="key-outline" size={22} color={theme.colors.text} />
-            <Text style={[styles.roleCardText, { color: theme.colors.text }]}>
-              Tengo piso
-            </Text>
+            {({ pressed }) => (
+              <>
+                <BlurView
+                  blurType="light"
+                  blurAmount={situacionVivienda === 'tengo_piso' ? 8 : 16}
+                  reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+                  style={StyleSheet.absoluteFillObject}
+                  pointerEvents="none"
+                />
+                <View
+                  style={[
+                    styles.roleCardTint,
+                    situacionVivienda === 'tengo_piso' && styles.roleCardTintActive,
+                    pressed && styles.roleCardTintPressed,
+                  ]}
+                  pointerEvents="none"
+                />
+                <Ionicons
+                  name="key-outline"
+                  size={22}
+                  color={
+                    pressed
+                      ? rolePressedTextColor
+                      : situacionVivienda === 'tengo_piso'
+                      ? roleActiveTextColor
+                      : roleTextColor
+                  }
+                />
+                <Text
+                  style={[
+                    styles.roleCardText,
+                    {
+                      color: pressed
+                        ? rolePressedTextColor
+                        : situacionVivienda === 'tengo_piso'
+                        ? roleActiveTextColor
+                        : roleTextColor,
+                    },
+                  ]}
+                >
+                  Tengo piso
+                </Text>
+              </>
+            )}
           </Pressable>
         </View>
         <Button
           title="Continuar"
-          onPress={() => navigation.navigate('OnboardingLocation')}
+          onPress={() => {
+            if (joinedWithInvite) {
+              navigation.navigate('OnboardingInterests');
+              return;
+            }
+            navigation.navigate(
+              situacionVivienda === 'tengo_piso'
+                ? 'OnboardingAppearance'
+                : 'OnboardingLocation'
+            );
+          }}
+          style={[styles.roleContinueButton, primaryButtonStyle]}
         />
       </View>
+    </OnboardingStepLayout>
+  );
+};
+
+const AppearanceStep: React.FC = () => {
+  const theme = useTheme();
+  const { appearanceMode, setAppearanceMode, primaryButtonStyle } =
+    useOnboardingFlow();
+  const navigation = useNavigation<StackNavigationProp<any>>();
+
+  return (
+    <OnboardingStepLayout
+      routeName="OnboardingAppearance"
+      title="Como quieres aparecer"
+      subtitle="Elige donde quieres salir en la app."
+    >
+      <View style={[styles.glassCard, { backgroundColor: theme.colors.glassSurface }]}>
+        <BlurView
+          blurType="light"
+          blurAmount={16}
+          reducedTransparencyFallbackColor={theme.colors.glassOverlay}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        <View style={styles.glassTint} pointerEvents="none" />
+        <AppearanceModeSelector
+          value={appearanceMode}
+          onChange={setAppearanceMode}
+        />
+      </View>
+      <Button
+        title="Continuar"
+        onPress={() => navigation.navigate('OnboardingLocation')}
+        style={primaryButtonStyle}
+      />
     </OnboardingStepLayout>
   );
 };
@@ -1042,6 +1236,7 @@ const LocationStep: React.FC = () => {
     setGenderPolicy,
     allowedPolicies,
     validateLocationStep,
+    primaryButtonStyle,
   } = useOnboardingFlow();
   const navigation = useNavigation<StackNavigationProp<any>>();
   const cityOptions = useMemo(() => {
@@ -1253,8 +1448,10 @@ const LocationStep: React.FC = () => {
             navigation.navigate('OnboardingInterests');
           }
         }}
+        style={primaryButtonStyle}
       />
-      <Pressable
+      <Button
+        title="Saltar"
         onPress={() => {
           if (situacionVivienda === 'busco_piso') {
             navigation.navigate('OnboardingBudget');
@@ -1262,20 +1459,22 @@ const LocationStep: React.FC = () => {
             navigation.navigate('OnboardingInterests');
           }
         }}
-        style={styles.skipTextButton}
-      >
-        <Text style={[styles.skipTextButtonLabel, { color: theme.colors.textSecondary }]}>
-          Saltar
-        </Text>
-      </Pressable>
+        style={primaryButtonStyle}
+      />
     </OnboardingStepLayout>
   );
 };
 
 const BudgetStep: React.FC = () => {
   const theme = useTheme();
-  const { budgetMin, budgetMax, setBudgetMin, setBudgetMax, validateBudgetStep } =
-    useOnboardingFlow();
+  const {
+    budgetMin,
+    budgetMax,
+    setBudgetMin,
+    setBudgetMax,
+    validateBudgetStep,
+    primaryButtonStyle,
+  } = useOnboardingFlow();
   const navigation = useNavigation<StackNavigationProp<any>>();
 
   return (
@@ -1302,11 +1501,15 @@ const BudgetStep: React.FC = () => {
             {budgetMax} EUR
           </Text>
         </View>
-        <BudgetRange
+        <BudgetRangeSlider
+          styles={styles}
           minValue={budgetMin}
           maxValue={budgetMax}
           onChangeMin={setBudgetMin}
           onChangeMax={setBudgetMax}
+          showLabels={false}
+          hitSlopSize={12}
+          thumbOffset={9}
         />
       </View>
       <Button
@@ -1315,22 +1518,20 @@ const BudgetStep: React.FC = () => {
           if (!validateBudgetStep()) return;
           navigation.navigate('OnboardingInterests');
         }}
+        style={primaryButtonStyle}
       />
-      <Pressable
+      <Button
+        title="Saltar"
         onPress={() => navigation.navigate('OnboardingInterests')}
-        style={styles.skipTextButton}
-      >
-        <Text style={[styles.skipTextButtonLabel, { color: theme.colors.textSecondary }]}>
-          Saltar
-        </Text>
-      </Pressable>
+        style={primaryButtonStyle}
+      />
     </OnboardingStepLayout>
   );
 };
 
 const InterestsStep: React.FC = () => {
   const theme = useTheme();
-  const { intereses, toggleInteres, cardStyle } =
+  const { intereses, toggleInteres, cardStyle, primaryButtonStyle } =
     useOnboardingFlow();
   const navigation = useNavigation<StackNavigationProp<any>>();
 
@@ -1360,15 +1561,13 @@ const InterestsStep: React.FC = () => {
       <Button
         title="Continuar"
         onPress={() => navigation.navigate('OnboardingLifestyle')}
+        style={primaryButtonStyle}
       />
-      <Pressable
+      <Button
+        title="Saltar"
         onPress={() => navigation.navigate('OnboardingLifestyle')}
-        style={styles.skipTextButton}
-      >
-        <Text style={[styles.skipTextButtonLabel, { color: theme.colors.textSecondary }]}>
-          Saltar
-        </Text>
-      </Pressable>
+        style={primaryButtonStyle}
+      />
     </OnboardingStepLayout>
   );
 };
@@ -1376,9 +1575,7 @@ const InterestsStep: React.FC = () => {
 const LifestyleStep: React.FC = () => {
   const theme = useTheme();
   const {
-    isSmoker,
-    hasPets,
-    isSocial,
+    estiloVida,
     setLifestyleOption,
     cardStyle,
     primaryButtonStyle,
@@ -1401,86 +1598,45 @@ const LifestyleStep: React.FC = () => {
           pointerEvents="none"
         />
         <View style={styles.glassTint} pointerEvents="none" />
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleCopy}>
-            <Text style={[styles.toggleLabel, { color: theme.colors.text }]}>
-              Fumador
-            </Text>
-            <Text style={[styles.toggleHint, { color: theme.colors.textSecondary }]}>
-              Indica si fumas habitualmente.
-            </Text>
-          </View>
-          <Switch
-            value={isSmoker}
-            onValueChange={(value) =>
-              setLifestyleOption(value ? 'smoking_si' : 'smoking_no')
-            }
-            trackColor={{
-              false: theme.colors.glassBorderSoft,
-              true: theme.colors.primaryMuted,
-            }}
-            thumbColor={isSmoker ? theme.colors.primary : theme.colors.textTertiary}
-            ios_backgroundColor={theme.colors.glassBorderSoft}
-          />
-        </View>
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleCopy}>
-            <Text style={[styles.toggleLabel, { color: theme.colors.text }]}>
-              Mascotas
-            </Text>
-            <Text style={[styles.toggleHint, { color: theme.colors.textSecondary }]}>
-              Si convives con mascotas.
-            </Text>
-          </View>
-          <Switch
-            value={hasPets}
-            onValueChange={(value) =>
-              setLifestyleOption(value ? 'pets_si' : 'pets_no')
-            }
-            trackColor={{
-              false: theme.colors.glassBorderSoft,
-              true: theme.colors.primaryMuted,
-            }}
-            thumbColor={hasPets ? theme.colors.primary : theme.colors.textTertiary}
-            ios_backgroundColor={theme.colors.glassBorderSoft}
-          />
-        </View>
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleCopy}>
-            <Text style={[styles.toggleLabel, { color: theme.colors.text }]}>
-              Vida social
-            </Text>
-            <Text style={[styles.toggleHint, { color: theme.colors.textSecondary }]}>
-              Prefieres un ambiente mas social.
-            </Text>
-          </View>
-          <Switch
-            value={isSocial}
-            onValueChange={(value) =>
-              setLifestyleOption(value ? 'guests_frecuentes' : 'guests_pocas')
-            }
-            trackColor={{
-              false: theme.colors.glassBorderSoft,
-              true: theme.colors.primaryMuted,
-            }}
-            thumbColor={isSocial ? theme.colors.primary : theme.colors.textTertiary}
-            ios_backgroundColor={theme.colors.glassBorderSoft}
-          />
-        </View>
+        {ESTILO_VIDA_GROUPS.map((group) => {
+          const selectedId = estiloVida.find((id) =>
+            id.startsWith(`${group.id}_`)
+          );
+          const iconName = LIFESTYLE_GROUP_ICONS[group.id] ?? 'options-outline';
+          return (
+            <View key={group.id} style={styles.lifestyleGroup}>
+              <View style={styles.lifestyleGroupHeader}>
+                <Ionicons
+                  name={iconName}
+                  size={16}
+                  color={theme.colors.text}
+                />
+                <Text style={[styles.inlineLabel, { color: theme.colors.text }]}>
+                  {group.label}
+                </Text>
+              </View>
+              <ChipGroup
+                options={group.options}
+                selectedIds={selectedId ? [selectedId] : []}
+                onSelect={setLifestyleOption}
+                chipContainerStyle={styles.lifestyleChipContainer}
+                chipStyle={styles.lifestyleChip}
+                textStyle={styles.lifestyleChipText}
+              />
+            </View>
+          );
+        })}
       </View>
       <Button
         title="Continuar"
         onPress={() => navigation.navigate('OnboardingPhoto')}
         style={primaryButtonStyle}
       />
-      <Pressable
+      <Button
+        title="Saltar"
         onPress={() => navigation.navigate('OnboardingPhoto')}
-        style={styles.skipTextButton}
-      >
-        <Text style={[styles.skipTextButtonLabel, { color: theme.colors.textSecondary }]}>
-          Saltar
-        </Text>
-      </Pressable>
+        style={primaryButtonStyle}
+      />
     </OnboardingStepLayout>
   );
 };
@@ -1508,33 +1664,45 @@ const PhotoStep: React.FC = () => {
 
   const handleUpload = useCallback(async () => {
     if (uploading) return;
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-    });
-
-    if (result.didCancel || !result.assets || result.assets.length === 0) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    if (!asset.uri) return;
-
     try {
+      const image = await ImageCropPicker.openPicker({
+        mediaType: 'photo',
+        cropping: true,
+        width: 500,
+        height: 500,
+        compressImageQuality: 0.8,
+        cropperToolbarTitle: 'Recorta tu foto',
+        cropperStatusBarColor: theme.colors.surfaceMutedAlt,
+        cropperToolbarColor: theme.colors.surfaceMutedAlt,
+        cropperToolbarWidgetColor: theme.colors.text,
+        cropperActiveWidgetColor: theme.colors.primary,
+      });
+      if (!image?.path) {
+        return;
+      }
+
       setUploading(true);
+      const uri = image.path.startsWith('file://')
+        ? image.path
+        : `file://${image.path}`;
+      const fileName = image.filename || `photo-${Date.now()}.jpg`;
+      const mimeType = image.mime || 'image/jpeg';
       const uploaded = await profilePhotoService.uploadPhoto(
-        asset.uri,
-        asset.fileName,
-        asset.type
+        uri,
+        fileName,
+        mimeType
       );
       setPhoto(uploaded);
     } catch (error) {
+      if ((error as any)?.code === 'E_PICKER_CANCELLED') {
+        return;
+      }
       console.error('[Onboarding] Error subiendo foto:', error);
       Alert.alert('Error', 'No se pudo subir la foto');
     } finally {
       setUploading(false);
     }
-  }, [uploading]);
+  }, [uploading, theme.colors.surfaceMutedAlt]);
 
   return (
     <OnboardingStepLayout
@@ -1583,14 +1751,11 @@ const PhotoStep: React.FC = () => {
           onPress={() => navigation.navigate('OnboardingFinish')}
           style={primaryButtonStyle}
         />
-        <Pressable
+        <Button
+          title="Saltar"
           onPress={() => navigation.navigate('OnboardingFinish')}
-          style={styles.skipTextButton}
-        >
-          <Text style={[styles.skipTextButtonLabel, { color: theme.colors.textSecondary }]}>
-            Saltar
-          </Text>
-        </Pressable>
+          style={primaryButtonStyle}
+        />
       </View>
     </OnboardingStepLayout>
   );
@@ -1600,118 +1765,47 @@ const FinishStep: React.FC = () => {
   const theme = useTheme();
   const { loading, handleFinish, primaryButtonStyle, secondaryButtonStyle } =
     useOnboardingFlow();
+  const finishFooter = (
+    <View style={styles.footer}>
+      <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
+        Te llevaremos al inicio para explorar.
+      </Text>
+      <Button
+        title="Continuar"
+        onPress={() => handleFinish(false)}
+        loading={loading}
+        style={primaryButtonStyle}
+      />
+      <Button
+        title="Completar perfil ahora"
+        variant="secondary"
+        onPress={() => handleFinish(true)}
+        disabled={loading}
+        style={secondaryButtonStyle}
+      />
+    </View>
+  );
 
   return (
     <OnboardingStepLayout
       routeName="OnboardingFinish"
       title="Todo listo"
       subtitle="Puedes editar todo en cualquier momento desde tu perfil."
+      fixedFooter={finishFooter}
     >
-      <View style={styles.footer}>
-        <Button
-          title="Continuar"
-          onPress={() => handleFinish(false)}
-          loading={loading}
-          style={primaryButtonStyle}
-        />
-        <Button
-          title="Completar perfil ahora"
-          variant="secondary"
-          onPress={() => handleFinish(true)}
-          disabled={loading}
-          style={secondaryButtonStyle}
-        />
-        <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}> 
-          Te llevaremos al inicio para explorar.
-        </Text>
+      <View style={styles.finishContent}>
+        <View style={styles.finishIllustrationWrap}>
+          <Image
+            source={require('../assets/onboarding-seccion7.png')}
+            style={styles.finishIllustration}
+            resizeMode="contain"
+          />
+        </View>
       </View>
     </OnboardingStepLayout>
   );
 };
 
-const BudgetRange: React.FC<{
-  minValue: number;
-  maxValue: number;
-  onChangeMin: (value: number) => void;
-  onChangeMax: (value: number) => void;
-}> = ({ minValue, maxValue, onChangeMin, onChangeMax }) => {
-  const [trackWidth, setTrackWidth] = useState(0);
-  const minValueRef = useRef(minValue);
-  const maxValueRef = useRef(maxValue);
-  const activeThumbRef = useRef<'min' | 'max' | null>(null);
-
-  useEffect(() => {
-    minValueRef.current = minValue;
-    maxValueRef.current = maxValue;
-  }, [minValue, maxValue]);
-
-  const valueToX = (value: number) => {
-    if (!trackWidth) return 0;
-    return ((value - BUDGET_MIN) / (BUDGET_MAX - BUDGET_MIN)) * trackWidth;
-  };
-
-  const xToValue = (x: number) => {
-    if (!trackWidth) return BUDGET_MIN;
-    const raw = BUDGET_MIN + (x / trackWidth) * (BUDGET_MAX - BUDGET_MIN);
-    return clamp(snapToBudgetStep(raw), BUDGET_MIN, BUDGET_MAX);
-  };
-
-  const minX = valueToX(minValue);
-  const maxX = valueToX(maxValue);
-
-  return (
-    <View
-      style={styles.sliderContainer}
-      onLayout={(event) => {
-        setTrackWidth(event.nativeEvent.layout.width);
-      }}
-      pointerEvents="box-only"
-      onStartShouldSetResponder={() => true}
-      onMoveShouldSetResponder={() => true}
-      onResponderGrant={(event) => {
-        if (!trackWidth) return;
-        const touchX = event.nativeEvent.locationX;
-        const minPos = valueToX(minValueRef.current);
-        const maxPos = valueToX(maxValueRef.current);
-        activeThumbRef.current =
-          Math.abs(touchX - minPos) <= Math.abs(touchX - maxPos) ? 'min' : 'max';
-      }}
-      onResponderMove={(event) => {
-        if (!trackWidth || !activeThumbRef.current) return;
-        const nextX = clamp(event.nativeEvent.locationX, 0, trackWidth);
-        if (activeThumbRef.current === 'min') {
-          const bounded = clamp(nextX, 0, valueToX(maxValueRef.current));
-          onChangeMin(xToValue(bounded));
-        } else {
-          const bounded = clamp(nextX, valueToX(minValueRef.current), trackWidth);
-          onChangeMax(xToValue(bounded));
-        }
-      }}
-      onResponderRelease={() => {
-        activeThumbRef.current = null;
-      }}
-      onResponderTerminate={() => {
-        activeThumbRef.current = null;
-      }}
-    >
-      <View style={styles.sliderTrack} />
-      <View
-        style={[
-          styles.sliderTrackActive,
-          { left: minX, width: Math.max(0, maxX - minX) },
-        ]}
-      />
-      <View
-        style={[styles.sliderThumb, { left: minX - 9 }]}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      />
-      <View
-        style={[styles.sliderThumb, { left: maxX - 9 }]}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      />
-    </View>
-  );
-};
 
 const OnboardingStack = createStackNavigator();
 
@@ -1745,6 +1839,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({
           initialRouteName="OnboardingRole"
         >
           <OnboardingStack.Screen name="OnboardingRole" component={RoleStep} />
+          <OnboardingStack.Screen
+            name="OnboardingAppearance"
+            component={AppearanceStep}
+          />
           <OnboardingStack.Screen
             name="OnboardingLocation"
             component={LocationStep}

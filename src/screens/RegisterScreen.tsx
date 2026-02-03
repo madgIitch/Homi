@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthContext } from '../context/AuthContext';  
 import { Button } from '../components/Button';  
 import { KeyboardAwareContainer } from '../components/KeyboardAwareContainer';
-import { useTheme } from '../theme/ThemeContext';  
+import { useTheme, useThemeController } from '../theme/ThemeContext';  
 import { authService } from '../services/authService';
 import LinearGradient from 'react-native-linear-gradient';
 import { Phase1Email } from './register/Phase1Email';  
@@ -62,6 +62,7 @@ export const RegisterScreen: React.FC = () => {
   const authContext = useContext(AuthContext);  
   
   const theme = useTheme();  
+  const { isDark } = useThemeController();
     
   const [currentPhase, setCurrentPhase] = useState(1);  
   const [tempRegistration, setTempRegistration] = useState<TempRegistration | null>(null);  
@@ -69,6 +70,7 @@ export const RegisterScreen: React.FC = () => {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleSession, setGoogleSession] = useState<GoogleSession | null>(null);
+  const [phase1Error, setPhase1Error] = useState<string | null>(null);
 
   useEffect(() => {
     const loadSavedState = async () => {
@@ -138,6 +140,7 @@ export const RegisterScreen: React.FC = () => {
     console.log('ÐY"? RegisterScreen: authService available:', !!authService);  
     console.log('ÐY"? RegisterScreen: registerPhase1 method available:', typeof authService.registerPhase1);  
       
+    setPhase1Error(null);
     setLoading(true);  
     try {  
       if (data.isGoogleUser) {  
@@ -168,7 +171,11 @@ export const RegisterScreen: React.FC = () => {
         name: error instanceof Error ? error.name : 'Unknown'  
       });  
         
-      Alert.alert('Error', errorMessage);  
+      if (data.isGoogleUser) {
+        Alert.alert('Error', errorMessage);
+      } else {
+        setPhase1Error(errorMessage);
+      }
     } finally {  
       setLoading(false);  
     }  
@@ -313,8 +320,22 @@ export const RegisterScreen: React.FC = () => {
           resizeMode="contain"
         />
   
-        <Text style={[styles.logo, { color: theme.colors.text }]}>HomiMatch</Text>  
-        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>  
+        <Text
+          style={[
+            styles.logo,
+            { color: isDark ? theme.colors.textTertiary : theme.colors.text },
+          ]}
+        >
+          HomiMatch
+        </Text>  
+        <Text
+          style={[
+            styles.subtitle,
+            {
+              color: isDark ? theme.colors.textTertiary : theme.colors.textSecondary,
+            },
+          ]}
+        >  
           Crea tu cuenta - Paso {currentPhase} de 5  
         </Text>  
       </View>  
@@ -325,6 +346,8 @@ export const RegisterScreen: React.FC = () => {
             onNext={handlePhase1}  
             onGoogleSignIn={handleGoogleSignIn}  
             onGoToLogin={() => navigation.navigate('Login')}
+            serverError={phase1Error}
+            onClearServerError={() => setPhase1Error(null)}
             loading={loading}  
           />  
         )}
@@ -363,6 +386,9 @@ export const RegisterScreen: React.FC = () => {
           title="¿Ya tienes cuenta? Inicia sesión"  
           onPress={() => navigation.navigate('Login')}  
           variant="secondary"  
+          textStyle={{
+            color: isDark ? theme.colors.textTertiary : theme.colors.text,
+          }}
         />  
       </View>  
       </KeyboardAwareContainer>

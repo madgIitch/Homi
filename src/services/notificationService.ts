@@ -82,6 +82,24 @@ const openFlatSettlements = async () => {
   (navigationRef.navigate as any)('FlatSettlement');
 };
 
+const openGroupExpenses = async (data?: Record<string, string>) => {
+  const groupId = data?.group_id;
+  if (!groupId) return;
+
+  if (!navigationRef.isReady()) {
+    await AsyncStorage.setItem(
+      PENDING_NOTIFICATION_KEY,
+      JSON.stringify({ type: 'group_expense', groupId })
+    );
+    return;
+  }
+
+  (navigationRef.navigate as any)('FlatExpenses', {
+    initialMode: 'group',
+    initialGroupId: groupId,
+  });
+};
+
 const openChatFromMatchId = async (matchId?: string) => {
   if (!matchId) return;
 
@@ -123,6 +141,10 @@ const openFromData = async (data?: Record<string, string>) => {
   }
   if (type === 'flat_settlement') {
     await openFlatSettlements();
+    return;
+  }
+  if (type === 'group_expense') {
+    await openGroupExpenses(data);
     return;
   }
   await openChatFromData(data);
@@ -238,6 +260,9 @@ export const notificationService = {
       }
       if (parsed.type === 'flat_settlement') {
         await openFlatSettlements();
+      }
+      if (parsed.type === 'group_expense' && parsed.groupId) {
+        await openGroupExpenses({ group_id: parsed.groupId });
       }
     } catch (error) {
       console.log('[notificationService.consumePendingMatchNavigation] error:', error);

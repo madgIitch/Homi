@@ -33,7 +33,13 @@ export const TextArea: React.FC<TextAreaProps> = ({
   ...props  
 }) => {  
   const theme = useTheme();  
-  const [charCount, setCharCount] = React.useState(0);  
+  const [charCount, setCharCount] = React.useState(
+    props.value ? props.value.toString().length : 0
+  );
+
+  React.useEffect(() => {
+    setCharCount(props.value ? props.value.toString().length : 0);
+  }, [props.value]);
   
   return (  
     <View style={[styles.container, containerStyle]}>  

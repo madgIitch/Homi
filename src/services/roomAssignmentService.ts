@@ -156,6 +156,22 @@ class RoomAssignmentService {
 
     return payload.data;
   }
+
+  async cancelAssignment(assignmentId: string): Promise<void> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${API_CONFIG.FUNCTIONS_URL}/room-assignments?assignment_id=${assignmentId}`,
+      {
+        method: 'DELETE',
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error || 'Error al cancelar asignacion');
+    }
+  }
 }
 
 export const roomAssignmentService = new RoomAssignmentService();

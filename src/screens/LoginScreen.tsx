@@ -67,24 +67,38 @@ export const LoginScreen: React.FC = () => {
     }  
   };  
   
-  const handleGoogleSignIn = async () => {  
-    setLoading(true);  
-    try {  
-      const result = await authService.loginWithGoogle(true);  
-      await loginWithSession(result.user, result.token, result.refreshToken);  
-      // La navegación se manejará automáticamente por el AuthContext  
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    try {
+      const result = await authService.loginWithGoogle(true);
+      await loginWithSession(result.user, result.token, result.refreshToken);
+      // La navegación se manejará automáticamente por el AuthContext
     } catch (error) {
       const typedError = error as { code?: string; message?: string };
       console.error('? Error en login con Google:', error);
       console.log('[GoogleSignIn] error.code:', typedError?.code);
       console.log('[GoogleSignIn] error.message:', typedError?.message);
+
+      // Handle specific error cases
       if (typedError?.code === statusCodes.SIGN_IN_CANCELLED) {
         console.log('[GoogleSignIn] User cancelled sign-in');
+        // Don't show alert for cancelled sign-in
+        return;
       }
-      Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');  
-    } finally {  
-      setLoading(false);  
-    }  
+
+      // Handle NULL_PRESENTER error (activity not ready)
+      if (typedError?.code === 'NULL_PRESENTER') {
+        Alert.alert(
+          'Error',
+          'La app no está lista. Por favor, espera un momento e intenta de nuevo.'
+        );
+        return;
+      }
+
+      Alert.alert('Error', error instanceof Error ? error.message : 'Error desconocido');
+    } finally {
+      setLoading(false);
+    }
   };  
     
   return (  

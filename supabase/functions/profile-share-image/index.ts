@@ -18,16 +18,53 @@ interface ProfilePhotoRow {
 
 const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1800;
+const PHOTO_GAP = 18;
+const PHOTO_SIZE = 200;
 
-const COLORS = {
-  lavender: '#E7E6FF',
-  darkCard: '#1B1C20',
-  darkSurface: '#222329',
-  lightText: '#F7F7FB',
-  mutedText: '#B8B9C3',
-  accent: '#7F83FF',
-  border: '#2C2D35',
+const THEMES = {
+  lavender: {
+    background: '#E7E6FF',
+    card: '#1B1C20',
+    surface: '#222329',
+    text: '#F7F7FB',
+    muted: '#B8B9C3',
+    accent: '#7F83FF',
+    border: '#2C2D35',
+    brand: '#1B1C20',
+  },
+  sunset: {
+    background: '#FFE6D6',
+    card: '#251B1A',
+    surface: '#2E2221',
+    text: '#FFF6F0',
+    muted: '#E0B8A7',
+    accent: '#FF8A5B',
+    border: '#3C2A28',
+    brand: '#251B1A',
+  },
+  mint: {
+    background: '#DDF7EF',
+    card: '#17201D',
+    surface: '#1F2A26',
+    text: '#F2FFFB',
+    muted: '#A9D2C5',
+    accent: '#35C5A3',
+    border: '#2B3A35',
+    brand: '#17201D',
+  },
+  ocean: {
+    background: '#DDEEFF',
+    card: '#141D2A',
+    surface: '#1B2534',
+    text: '#F0F6FF',
+    muted: '#A3B6D4',
+    accent: '#4FA3FF',
+    border: '#263248',
+    brand: '#141D2A',
+  },
 };
+
+type ThemeColors = typeof THEMES.lavender;
 
 async function listPhotos(profileId: string): Promise<ProfilePhotoRow[]> {
   const { data, error } = await supabaseAdmin
@@ -204,6 +241,29 @@ async function getPlaceLabels(placeIds: string[]): Promise<string[]> {
   return labels;
 }
 
+async function getInterestLabels(interestIds: string[]): Promise<string[]> {
+  const filtered = interestIds.filter((value) => value);
+  if (filtered.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from('interests')
+    .select('id, name')
+    .in('id', filtered);
+
+  if (error || !data) {
+    return filtered;
+  }
+
+  const map = new Map<string, string>();
+  (data as Array<{ id?: string | null; name?: string | null }>).forEach((row) => {
+    if (row.id && row.name) {
+      map.set(row.id, row.name);
+    }
+  });
+
+  return filtered.map((id) => map.get(id) ?? id);
+}
+
 function calculateAge(birthDate?: string | null): number | null {
   if (!birthDate) return null;
   const date = new Date(birthDate);
@@ -230,7 +290,7 @@ function formatBudget(profile: Profile): string | null {
 
 const h = React.createElement;
 
-function chip(text: string, isFilled = false) {
+function chip(text: string, theme: ThemeColors) {
   return h(
     'div',
     {
@@ -240,8 +300,8 @@ function chip(text: string, isFilled = false) {
         fontSize: '22px',
         fontWeight: 600,
         letterSpacing: '1px',
-        color: isFilled ? COLORS.darkCard : COLORS.darkCard,
-        border: `2px solid ${COLORS.darkCard}`,
+        color: theme.brand,
+        border: `2px solid ${theme.brand}`,
         marginRight: '16px',
       },
     },
@@ -249,7 +309,7 @@ function chip(text: string, isFilled = false) {
   );
 }
 
-function locationChip(text: string, chipKey?: string) {
+function locationChip(text: string, theme: ThemeColors, chipKey?: string) {
   return h(
     'div',
     {
@@ -263,8 +323,8 @@ function locationChip(text: string, chipKey?: string) {
         alignItems: 'center',
         flexShrink: 0,
         whiteSpace: 'nowrap',
-        color: COLORS.lightText,
-        border: `2px solid ${COLORS.lightText}`,
+        color: theme.text,
+        border: `2px solid ${theme.text}`,
         marginRight: '14px',
         marginBottom: '10px',
       },
@@ -277,9 +337,11 @@ function infoRow(
   icon: string,
   label: React.ReactNode,
   detail?: string | null,
-  options?: { iconSize?: number; iconBoxWidth?: number; minHeight?: number }
+  options?: { iconSize?: number; iconBoxWidth?: number; minHeight?: number },
+  theme?: ThemeColors
 ) {
   const hasDetail = Boolean(detail);
+  const colors = theme ?? THEMES.lavender;
   const iconSize = options?.iconSize ?? 34;
   const iconBoxWidth = options?.iconBoxWidth ?? 40;
   const minHeight = options?.minHeight ?? 120;
@@ -290,7 +352,7 @@ function infoRow(
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: COLORS.darkSurface,
+        backgroundColor: colors.surface,
         borderRadius: '48px',
         padding: '32px 38px',
         marginTop: '26px',
@@ -333,7 +395,7 @@ function infoRow(
             justifyContent: 'flex-start',
             fontSize: '34px',
             fontWeight: 600,
-            color: COLORS.lightText,
+            color: colors.text,
             lineHeight: '40px',
             flex: 1,
             minWidth: 0,
@@ -349,7 +411,7 @@ function infoRow(
           {
             style: {
               fontSize: '26px',
-              color: COLORS.mutedText,
+              color: colors.muted,
               lineHeight: '34px',
               textAlign: 'right',
               whiteSpace: 'pre-wrap',
@@ -369,7 +431,10 @@ function renderShareCard({
   cityLabels,
   housingLabel,
   budgetLabel,
+  interestsLabel,
+  availabilityLabel,
   photos,
+  theme,
 }: {
   name: string;
   age: string | null;
@@ -377,14 +442,17 @@ function renderShareCard({
   cityLabels: string[];
   housingLabel: string;
   budgetLabel: string | null;
+  interestsLabel: string | null;
+  availabilityLabel: string | null;
   photos: Array<string | null>;
+  theme: ThemeColors;
 }) {
   const nameLine = age ? `${name}, ${age}` : name;
   const cityChipLabels = cityLabels.filter((label) => label.trim().length > 0);
   const cityChipContent =
     cityChipLabels.length > 0
       ? cityChipLabels.map((label, index) =>
-          locationChip(label, `city-${index}`)
+          locationChip(label, theme, `city-${index}`)
         )
       : cityLabels.join(' - ');
   return h(
@@ -393,7 +461,7 @@ function renderShareCard({
       style: {
         width: '100%',
         height: '100%',
-        backgroundColor: COLORS.lavender,
+        backgroundColor: theme.background,
         padding: '80px 72px',
         display: 'flex',
         flexDirection: 'column',
@@ -413,7 +481,7 @@ function renderShareCard({
       h(
         'div',
         { style: { display: 'flex', alignItems: 'center' } },
-        chip('SEARCH')
+        chip('SEARCH', theme)
       ),
       h(
         'div',
@@ -421,7 +489,7 @@ function renderShareCard({
           style: {
             fontSize: '30px',
             fontWeight: 700,
-            color: COLORS.darkCard,
+            color: theme.brand,
           },
         },
         'HomiMatch'
@@ -432,50 +500,62 @@ function renderShareCard({
       {
         style: {
           marginTop: '48px',
-          backgroundColor: COLORS.darkCard,
+          backgroundColor: theme.card,
           borderRadius: '56px',
           padding: '48px',
-          color: COLORS.lightText,
+          color: theme.text,
           display: 'flex',
           flexDirection: 'column',
           boxSizing: 'border-box',
-          border: `2px solid ${COLORS.border}`,
+          border: `2px solid ${theme.border}`,
           flex: 1,
         },
       },
-      h(
-        'div',
-        { style: { display: 'flex', marginBottom: '28px' } },
-        photos.map((photo, index) =>
-          photo
-            ? h('img', {
-                key: `photo-${index}`,
-                src: photo,
-                style: {
-                  width: '220px',
-                  height: '220px',
-                  borderRadius: '36px',
-                  objectFit: 'cover',
-                  marginRight: index < photos.length - 1 ? '18px' : '0',
-                  border: `2px solid ${COLORS.border}`,
-                },
-              })
-            : h(
-                'div',
-                {
-                  key: `photo-${index}`,
-                  style: {
-                    width: '220px',
-                    height: '220px',
-                    borderRadius: '36px',
-                    backgroundColor: COLORS.darkSurface,
-                    marginRight: index < photos.length - 1 ? '18px' : '0',
-                  },
-                },
-                null
-              )
-        )
-      ),
+      photos.length > 0
+        ? h(
+            'div',
+            {
+              style: {
+                display: 'flex',
+                flexWrap: 'wrap',
+                marginBottom: '28px',
+              },
+            },
+            photos.map((photo, index) => {
+              const isLeft = index % 2 === 0;
+              const isTop = index < 2;
+              const tileStyle = {
+                width: `${PHOTO_SIZE}px`,
+                height: `${PHOTO_SIZE}px`,
+                borderRadius: '36px',
+                marginRight: isLeft ? `${PHOTO_GAP}px` : '0',
+                marginBottom: isTop ? `${PHOTO_GAP}px` : '0',
+              };
+
+              return photo
+                ? h('img', {
+                    key: `photo-${index}`,
+                    src: photo,
+                    style: {
+                      ...tileStyle,
+                      objectFit: 'cover',
+                      border: `2px solid ${theme.border}`,
+                    },
+                  })
+                : h(
+                    'div',
+                    {
+                      key: `photo-${index}`,
+                      style: {
+                        ...tileStyle,
+                        backgroundColor: theme.surface,
+                      },
+                    },
+                    null
+                  );
+            })
+          )
+        : null,
       h(
         'div',
         { style: { display: 'flex', alignItems: 'center' } },
@@ -497,8 +577,8 @@ function renderShareCard({
               width: '34px',
               height: '34px',
               borderRadius: '50%',
-              border: `2px solid ${COLORS.accent}`,
-              color: COLORS.accent,
+              border: `2px solid ${theme.accent}`,
+              color: theme.accent,
               fontSize: '16px',
               display: 'flex',
               alignItems: 'center',
@@ -508,23 +588,34 @@ function renderShareCard({
           'OK'
         )
       ),
-      infoRow('\u{1F3D9}', cityChipContent, null, { iconBoxWidth: 40 }),
-      infoRow('\u{1F3E0}', housingLabel, budgetLabel),
-      infoRow('\u{1F4C5}', 'Disponible', 'Desde hoy'),
-      h(
-        'div',
-        {
-          style: {
-            fontSize: '26px',
-            color: COLORS.mutedText,
-            marginTop: '24px',
-            padding: '18px 22px',
-            backgroundColor: '#262730',
-            borderRadius: '20px',
-          },
-        },
-        bio
-      ),
+      cityLabels.length > 0
+        ? infoRow('\u{1F3D9}', cityChipContent, null, { iconBoxWidth: 40 }, theme)
+        : null,
+      housingLabel || budgetLabel
+        ? infoRow('\u{1F3E0}', housingLabel, budgetLabel, undefined, theme)
+        : null,
+      availabilityLabel
+        ? infoRow('\u{1F4C5}', availabilityLabel, 'Desde hoy', undefined, theme)
+        : null,
+      interestsLabel
+        ? infoRow('\u{2728}', interestsLabel, null, undefined, theme)
+        : null,
+      bio
+        ? h(
+            'div',
+            {
+              style: {
+                fontSize: '26px',
+                color: theme.muted,
+                marginTop: '24px',
+                padding: '18px 22px',
+                backgroundColor: theme.surface,
+                borderRadius: '20px',
+              },
+            },
+            bio
+          )
+        : null,
       h(
         'div',
         {
@@ -532,7 +623,7 @@ function renderShareCard({
             marginTop: 'auto',
             display: 'flex',
             justifyContent: 'center',
-            color: COLORS.mutedText,
+            color: theme.muted,
             fontSize: '20px',
           },
         },
@@ -554,6 +645,22 @@ serve(
 
       const url = new URL(req.url);
       const profileId = url.searchParams.get('profile_id');
+      const includeParam = url.searchParams.get('include');
+      const includeSet = includeParam
+        ? new Set(includeParam.split(',').map((value) => value.trim()))
+        : null;
+      const includePhotos = includeSet ? includeSet.has('photos') : true;
+      const includeBio = includeSet ? includeSet.has('bio') : true;
+      const includeBudget = includeSet ? includeSet.has('budget') : true;
+      const includeZones = includeSet ? includeSet.has('zones') : true;
+      const includeInterests = includeSet ? includeSet.has('interests') : true;
+      const includeAvailability = includeSet ? includeSet.has('availability') : true;
+      const includeHousing = includeSet ? includeSet.has('housing') : true;
+      const includeAge = includeSet ? includeSet.has('age') : true;
+      const themeKey = url.searchParams.get('theme') ?? 'lavender';
+      const theme = THEMES[themeKey as keyof typeof THEMES] ?? THEMES.lavender;
+      const photoIdsParam = url.searchParams.get('photo_ids');
+      const zoneIdsParam = url.searchParams.get('zone_ids');
       const userId = getUserId(payload);
       console.log('[profile-share-image] request', {
         profileId: profileId ?? null,
@@ -575,26 +682,46 @@ serve(
         });
       }
 
-    const photoRows = await listPhotos(profile.id);
-    const signedPhotoUrls = await Promise.all(
-      photoRows.slice(0, 3).map(async (row) => {
-        return await signedUrlForPath(row.path);
-      })
-    );
+      const photoRows = await listPhotos(profile.id);
+      const selectedPhotoIds = photoIdsParam
+        ? photoIdsParam
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : [];
+      const filteredPhotoRows =
+        selectedPhotoIds.length > 0
+          ? photoRows.filter((row) => selectedPhotoIds.includes(row.id))
+          : photoRows;
+      const signedPhotoUrls = includePhotos
+        ? await Promise.all(
+            filteredPhotoRows.slice(0, 4).map(async (row) => {
+              return await signedUrlForPath(row.path);
+            })
+          )
+        : [];
 
-    const photos = signedPhotoUrls.filter(Boolean);
-    if (photos.length === 0 && profile.avatar_url) {
-      photos.push(profile.avatar_url);
-    }
-    while (photos.length < 3) photos.push(null);
+      const photos = includePhotos ? signedPhotoUrls.filter(Boolean) : [];
+      if (includePhotos && photos.length === 0 && profile.avatar_url) {
+        photos.push(profile.avatar_url);
+      }
 
       const ageValue = profile.birth_date ? calculateAge(profile.birth_date) : null;
-      const ageLabel = ageValue != null ? `${ageValue}` : null;
+      const ageLabel = includeAge && ageValue != null ? `${ageValue}` : null;
       const nameParts = [profile.first_name?.trim(), profile.last_name?.trim()].filter(Boolean);
       const name = nameParts.length > 0 ? nameParts.join(' ') : 'Usuario';
-      const bio = profile.bio ?? 'Sin descripcion por ahora.';
-      const preferredPlaces = profile.preferred_zones ?? [];
-      const resolvedPlaces = await getPlaceLabels(preferredPlaces);
+      const bio = includeBio
+        ? profile.bio ?? 'Sin descripcion por ahora.'
+        : '';
+      const preferredPlaces = includeZones
+        ? zoneIdsParam
+          ? zoneIdsParam
+              .split(',')
+              .map((value) => value.trim())
+              .filter(Boolean)
+          : profile.preferred_zones ?? []
+        : [];
+      const resolvedPlaces = includeZones ? await getPlaceLabels(preferredPlaces) : [];
       const maxPlaces = 4;
       const cityLabels = resolvedPlaces.slice(0, maxPlaces);
       const extraCityCount =
@@ -614,13 +741,18 @@ serve(
         extraCityCount,
         cityLabelText,
       });
-    const housingLabel =
-      profile.housing_situation === 'offering'
-        ? 'Tengo piso'
-        : profile.housing_situation === 'seeking'
-        ? 'Busco habitacion con estas caracteristicas'
-        : 'Busco habitacion con estas caracteristicas';
-      const budgetLabel = formatBudget(profile);
+      const housingLabel = includeHousing
+        ? profile.housing_situation === 'offering'
+          ? 'Tengo piso'
+          : profile.housing_situation === 'seeking'
+          ? 'Busco habitacion con estas caracteristicas'
+          : 'Busco habitacion con estas caracteristicas'
+        : '';
+      const budgetLabel = includeBudget ? formatBudget(profile) : null;
+      const interestsLabel = includeInterests
+        ? (await getInterestLabels(profile.interests ?? [])).join(' - ') || null
+        : null;
+      const availabilityLabel = includeAvailability ? 'Disponible' : null;
 
       const element = renderShareCard({
         name,
@@ -629,7 +761,10 @@ serve(
         cityLabels: cityLabelsWithExtra,
         housingLabel,
         budgetLabel,
+        interestsLabel,
+        availabilityLabel,
         photos,
+        theme,
       });
 
       return new ImageResponse(element, {
